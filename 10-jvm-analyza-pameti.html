@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P10 – JVM: analýza paměti a kolekce · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="09-efektivni-servery-c10k.html">← předchozí: Efektivní servery</a>
+    <a class="nav-link" href="11-jvm-alokace-objektu.html">další: Alokace objektů →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 10 · <span class="badge badge-java">Java/JVM část</span></div>
+    <h1>JVM: analýza paměti a kolekce pro výkon</h1>
+    <p class="perex">Jak v JVM analyzovat a optimalizovat spotřebu paměti. Rozlišíme statickou analýzu
+    (snímek v daném okamžiku – histogram objektů, heap dump, shallow vs. retained size) od dynamické
+    (chování v čase – GC telemetrie, porovnání heap dumpů, allocation tracking). Podíváme se na
+    rozložení objektů a polí v paměti (hlavička, padding, komprimované OOP), cenu autoboxingu a
+    obalových objektů, a nakonec na to, proč jsou standardní Java kolekce paměťově neefektivní a jak
+    to řeší specializované kolekce (Trove, FastUtil) postavené na open addressing hashování.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#faktory">Faktory výkonu a analýza paměti</a></li>
+      <li><a href="#staticka">Statická analýza, histogram, heap dump</a></li>
+      <li><a href="#shallow">Shallow vs. retained size</a></li>
+      <li><a href="#plytvani">Plýtvání pamětí, memory leak, výkon</a></li>
+      <li><a href="#dynamicka">Dynamická analýza (GC, allocation tracking)</a></li>
+      <li><a href="#primitiva">Primitiva vs. objekty (hlavička, padding)</a></li>
+      <li><a href="#pole">Pole</a></li>
+      <li><a href="#autoboxing">Autoboxing a jeho cena</a></li>
+      <li><a href="#efektivita">Paměťová efektivita a kolekce</a></li>
+      <li><a href="#openhash">Open hashing a řešení kolizí</a></li>
+      <li><a href="#resize">Strategie zvětšování kolekcí</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="faktory">Faktory výkonu a analýza paměti</h2>
+  <p>Výkon aplikace ovlivňují dvě hlavní veličiny, a <strong>datové struktury</strong> figurují
+  v obou:</p>
+  <ul>
+    <li><strong>Celková doba běhu</strong>
+      <ul>
+        <li>algoritmy (složitost, počet instrukcí, synchronizace),</li>
+        <li>režie správy paměti (garbage collection),</li>
+        <li><strong>datové struktury</strong> – rychlost přístupu k datům, efektivita cache, tlak na GC.</li>
+      </ul>
+    </li>
+    <li><strong>Spotřeba paměti</strong>
+      <ul>
+        <li><strong>datové struktury</strong> – paměťová efektivita.</li>
+      </ul>
+    </li>
+  </ul>
+
+  <p>Analýza paměti přichází ve dvou podobách:</p>
+  <table>
+    <thead><tr><th>Statická analýza</th><th>Dynamická analýza</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>analyzuje spotřebu paměti <strong>v daném okamžiku</strong></td>
+        <td>analyzuje chování paměti <strong>v čase</strong></td>
+      </tr>
+      <tr>
+        <td>vhodná pro rozbor efektivity datových struktur a prohlížení obsahu paměti</td>
+        <td>vhodná pro analýzu alokace objektů a identifikaci <strong>memory leaků</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="staticka">Statická analýza, histogram, heap dump</h2>
+
+  <h3>Histogram objektů</h3>
+  <p>Pořízení <strong>histogramu objektů</strong> vyžaduje <strong>globální safepoint (stop the world)</strong>
+  – běh aplikace se zastaví. Pořídíme jej příkazem:</p>
+  <pre><code>jmap -histo:live {PID}</code></pre>
+  <p>Výstup obsahuje sloupce <code>num</code>, <code>#instances</code>, <code>#bytes</code> a název třídy:</p>
+  <pre><code> num     #instances         #bytes  class name
+----------------------------------------------
+   1:       3000257       72006168  java.lang.Integer
+   2:       1000122       48005856  java.util.HashMap$Node
+   3:       1000012       40000480  java.util.LinkedList$Node
+   4:       1000000       40000000  gnu.trove.list.linked.TIntLinkedList$TIntLink
+   5:             2       33913088  [D
+   6:           162       24963896  [I
+   7:       1000001       24000024  java.lang.Double
+   8:            26       16781936  [Ljava.util.HashMap$Node;
+   9:           604        8056600  [Ljava.lang.Object;
+  10:            37        2176208  [B
+  11:          1549         184864  [C
+  12:           635         109344  java.lang.Class
+  13:          1519          48608  java.lang.String
+  14:           307          14736  java.util.concurrent.ConcurrentHashMap$Node
+  15:           108          12960  java.lang.reflect.Field
+  16:            85           8840  java.net.URL
+  17:           257           6168  java.lang.Byte
+  18:           257           6168  java.lang.Long
+  19:           257           6168  java.lang.Short
+  20:           123           5904  java.util.Hashtable$Entry
+  21:           102           5712  java.lang.ref.SoftReference
+  22:             5           4984  [Ljava.util.concurrent.ConcurrentHashMap$Node;</code></pre>
+  <div class="box poznamka">
+    <p class="box-title">💬 Deskriptory typů polí</p>
+    <p><code>[D</code> = <code>double[]</code>, <code>[I</code> = <code>int[]</code>,
+    <code>[B</code> = <code>byte[]</code>, <code>[C</code> = <code>char[]</code>,
+    <code>[Ljava.lang.Object;</code> = <code>Object[]</code>. V počtu instancí dominují obalené
+    <code>Integer</code>/<code>Double</code> a uzly kolekcí (<code>Node</code>).</p>
+  </div>
+
+  <h3>Heap dump</h3>
+  <p>Pořízení <strong>heap dumpu</strong> rovněž vyžaduje <strong>globální safepoint (stop the world)</strong>.
+  Možnosti:</p>
+  <ul>
+    <li><code>-XX:+HeapDumpOnOutOfMemoryError</code> – automatický dump při <code>OutOfMemoryError</code>,</li>
+    <li><code>jmap -dump:live,format=b,file={name}.hprof {PID}</code> – ruční dump,</li>
+    <li>nástroje pro analýzu: <strong>VisualVM, YourKit</strong>, …</li>
+  </ul>
+  <p>Analyzátor heap dumpu vypisuje pro každý objekt jeho <strong>Retained Size</strong> a
+  <strong>Shallow Size</strong>, umožňuje procházet <strong>cesty od GC Roots</strong>, prohlížet
+  <strong>Allocations</strong>, <strong>Ages</strong>, <strong>Class Hierarchy</strong> a
+  <strong>Incoming References</strong>. V příkladu má vybraný objekt <code>java.lang.Thread</code>
+  ("main") shallow size <strong>176 B</strong>, ale retained size <strong>309 803 648 B</strong>
+  (vlákno drží celý dosažitelný graf objektů); celá halda má ~<strong>295 MB</strong> silně
+  dosažitelných objektů.</p>
+
+  <h2 id="shallow">Shallow vs. retained size</h2>
+  <div class="box pisnicka" id="pisen-ritejnd">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Ritejnd</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s10">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <div class="box pojmy">
+    <p class="box-title">🔑 Dvě velikosti objektu</p>
+    <dl class="pojmy-list">
+      <dt>Shallow size</dt>
+      <dd>paměť alokovaná pro <strong>samotný objekt</strong> – jen jeho vlastní hlavička a pole.</dd>
+      <dt>Retained size</dt>
+      <dd>množství paměti, které objekt drží a které <strong>GC nemůže uvolnit</strong>, dokud objekt
+      žije; tedy paměť, která <strong>by se uvolnila, kdyby byl objekt uvolněn GC</strong>. Rovná se
+      vlastní shallow size <strong>+</strong> shallow size všech objektů přímo či nepřímo dosažitelných
+      <strong>POUZE</strong> z tohoto objektu.</dd>
+    </dl>
+  </div>
+  <p>Klíčový rozdíl: objekt je v retained setu jiného objektu, jen pokud <strong>každá cesta od GC
+  roots k němu vede přes tento objekt</strong>. Pokud existuje druhá cesta od jiného kořene, sdílený
+  podgraf se z retained size vyloučí.</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-amber"><span class="dn-title">GC Roots</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">obj1</span><span class="dn-sub">drží {obj2, obj3, obj4}</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">obj2 → obj4</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">obj3</span><span class="dn-sub">dosažitelný JEN přes obj1</span></div>
+    </div>
+    <div class="diag-cap">Vlevo: obj3 je dosažitelný jen přes obj1 → obj1 drží {obj2, obj3, obj4} (i přes pomocnou cestu obj5 → obj1)</div>
+  </div>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-amber"><span class="dn-title">GC Roots</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">obj1 → obj2 → obj4</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node muted"><span class="dn-title">obj3 / obj4</span><span class="dn-sub">druhá cesta přes obj5</span></div>
+    </div>
+    <div class="diag-cap">Vpravo: obj3 je dosažitelný i přes obj5 (druhá cesta ke sdílenému podgrafu) → obj3/obj4 nedrží jen obj1, jsou z retained setu vyloučeny</div>
+  </div>
+
+  <h2 id="plytvani">Plýtvání pamětí, memory leak, výkon</h2>
+
+  <h3>Plýtvání pamětí (wasting memory)</h3>
+  <p>Paměť neobsahuje užitečná data:</p>
+  <ul>
+    <li><strong>duplicitní řetězce</strong> – sdílet instance řetězců poolingem nebo <code>intern()</code>;</li>
+    <li><strong>duplicitní objekty</strong> se shodným obsahem polí – sdílet je, použít líné vytváření,
+      dočasné (neperzistentní) použití;</li>
+    <li><strong>pole nulové délky</strong> – zbytečná režie pro garbage collector; použít na třídu jeden
+      <strong>sdílený singleton prázdného pole</strong> (např. ve <code>static</code> poli třídy);</li>
+    <li><strong>null pole</strong> – objekty s mnoha <code>null</code> poli; pro zřídka přiřazovaná pole
+      použít podtřídy;</li>
+    <li><strong>řídká pole (sparse arrays)</strong> – mnoho <code>null</code>, nulových nebo shodných prvků;
+      použít jinou datovou strukturu (např. mapu) nebo přepracovat algoritmus;</li>
+    <li><strong>neefektivní datová struktura</strong> – velká režie na zbytečný obsah; použít jinou
+      datovou strukturu.</li>
+  </ul>
+
+  <h3>Memory leak</h3>
+  <p>Objekty, které se už nepoužívají, ale zůstávají dosažitelné kvůli přetrvávajícím referencím:</p>
+  <ul>
+    <li><strong>objekt držený zpětnou referencí z nestatické vnitřní třídy</strong> – implicitní zpětná
+      reference z instance vnitřní třídy (<strong>i anonymní</strong>), např. u callback objektů;</li>
+    <li>řešení: <strong>minimalizovat použití instancí nestatických vnitřních tříd</strong>.</li>
+  </ul>
+
+  <h3>Výkon</h3>
+  <p>Propustnost čtení/zápisu dat:</p>
+  <ul>
+    <li><strong>hashovací tabulky s nerovnoměrně rozloženými hash kódy</strong> – zhoršený výkon kvůli
+      kolizím; řešení je <strong>lepší implementace <code>hashCode</code></strong>.</li>
+  </ul>
+
+  <h2 id="dynamicka">Dynamická analýza (GC, allocation tracking)</h2>
+
+  <h3>GC telemetrie</h3>
+  <p>Analýza <strong>GC telemetrie</strong> – např. VisualVM s pluginem <strong>VisualGC</strong>:</p>
+  <ul>
+    <li>vytížení <strong>Eden space</strong> v čase,</li>
+    <li><strong>GC cykly (sběry) a jejich trvání</strong>,</li>
+    <li>s <strong>minimálním dopadem</strong> na výkon sledované aplikace.</li>
+  </ul>
+  <p>Pohled VisualGC vykresluje generace JVM jako stohované časové řady. Příklad hodnot ze slidu:</p>
+  <ul>
+    <li><strong>GC Time:</strong> 11 sběrů, 4,021 s; <em>Last Cause: Allocation Failure</em></li>
+    <li><strong>Eden Space</strong> (1,332 G, 234,000 M): 203,527 M, 8 kolekcí, 987,665 ms</li>
+    <li><strong>Survivor 0</strong> (455,000 M, 254,000 M): 176,657 M</li>
+    <li><strong>Survivor 1</strong> (455,000 M, 265,500 M): 0</li>
+    <li><strong>Old Gen</strong> (2,667 G, 635,500 M): 319,685 M, 3 kolekce, 3,033 s</li>
+  </ul>
+  <p>Řada Eden vykazuje charakteristický „pilový“ tvar (zaplní se, pak ji minor GC srazí dolů).</p>
+
+  <h3>Porovnání heap dumpů</h3>
+  <p><strong>Porovnání heap dumpů</strong>:</p>
+  <ul>
+    <li>rozdíly v <strong>počtech a velikostech objektů</strong> mezi stavy aplikace;</li>
+    <li>dumpy se <strong>všemi objekty</strong> (nejen živými) pomohou analyzovat <strong>alokace</strong>,
+      pokud mezi nimi neproběhl GC cyklus;</li>
+    <li>každý heap dump vyžaduje <strong>globální safepoint</strong> (čas závisí na velikosti haldy).</li>
+  </ul>
+  <p>Nástroj zobrazí per-třídu diff tabulku mezi „starým snímkem (baseline)“ a „tímto snímkem“ se sloupci
+  <strong>Objects (+/-)</strong> a <strong>Size (+/-)</strong>, kde zvýrazní, které třídy mezi oběma stavy
+  narostly nebo se zmenšily.</p>
+
+  <h3>Allocation tracking</h3>
+  <p>Prezentovány jsou dva přístupy:</p>
+
+  <h4>1) Memory profiler s bytecode instrumentací</h4>
+  <ul>
+    <li><strong>sleduje každou n-tou alokaci objektu</strong> (kompromis mezi přesností a rychlostí);</li>
+    <li>ovlivňuje výkon profilované aplikace – <strong>vkládá bytecode <code>traceObjAlloc</code></strong>:
+      <ul>
+        <li>přidává značné množství bytecode navíc a spotřebovává paměť,</li>
+        <li><strong>snižuje možnosti JIT optimalizací</strong>.</li>
+      </ul>
+    </li>
+    <li>profiler ukáže alokační <strong>Call Tree</strong> s počtem <strong>Objects</strong> a
+      <strong>Size</strong> na jednotlivá místa volání (např. <code>AppMain.main(String)</code> v kořeni,
+      detail do <code>Lambda.java</code> / <code>Comparator.compare</code>), plus záložky Packages,
+      Object Explorer, Generations, Ages, Reachability, Class Loaders, Web Applications, Callee List,
+      Quick Info.</li>
+  </ul>
+
+  <h4>2) Flight recording přes JMC – BEZ bytecode instrumentace</h4>
+  <ul>
+    <li>cíl: <strong>identifikovat velké alokace objektů mimo TLAB</strong> (Thread Local Allocation Buffer);</li>
+    <li>JMC (Java Mission Control) prezentuje:
+      <ul>
+        <li><strong>statistiky TLAB</strong> – příklad: TLAB Count 393; Maximum TLAB Size 16,26 MB;
+          Minimum TLAB Size 2,05 MB; Average TLAB Size 2,45 MB; Total Memory Allocated for TLABs
+          961,48 MB; Allocation Rate for TLABs 15,65 MB/s;</li>
+        <li><strong>statistiky alokací mimo TLAB</strong> – příklad: Count 48; Maximum Object Size
+          16,34 MB; Minimum Object Size 24 bytes; Average Object Size 5,67 MB; Total Memory Allocated
+          for Objects 272,12 MB; Allocation Rate for Objects 4,43 MB/s;</li>
+        <li><strong>Allocation by Class</strong> s výsečovým grafem (pie chart) <strong>Allocation Pressure</strong> a tabulkou
+          po třídách. Dominantní třídy: <code>double[]</code> (~329,37 MB), <code>java.lang.Object[]</code>,
+          <code>java.util.HashMap$Node[]</code>, <code>gnu.trove.list.linked.TIntLinkedList$TIntLink</code>,
+          <code>java.util.LinkedList$Node</code>, plus rozpad <strong>Pressure %</strong> na třídu
+          (např. <code>double[]</code> 47,54 %, <code>int[]</code> 83,76 %);</li>
+        <li>panel <strong>Stack Trace</strong> přiřazující alokační tlak ke konkrétním místům volání
+          (např. <code>java.util.ArrayList.&lt;init&gt;</code>, <code>ObjectStreamClass</code>,
+          <code>MappedMXBeanType</code> / <code>OpenTypeData</code>).</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h2 id="primitiva">Primitiva vs. objekty (hlavička, padding)</h2>
+  <div class="box pisnicka" id="pisen-intizr-neni-int">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Intížr není int</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s14">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+
+  <h3>Primitiva</h3>
+  <p>Velikosti v bajtech: <code>boolean</code> (1), <code>byte</code> (1), <code>char</code> (2),
+  <code>int</code> (4), <code>long</code> (8), <code>float</code> (4), <code>double</code> (8).</p>
+  <ul>
+    <li><strong>bez implicitní alokace</strong>,</li>
+    <li>uloženy v proměnných nebo na <strong>operand stacku</strong> v rámci JVM.</li>
+  </ul>
+
+  <h3>Objekty</h3>
+  <p>Objekty (s nevyhnutelnou režií <strong>hlavičky objektu</strong>) jsou alokovány <strong>na haldě</strong>:</p>
+  <ul>
+    <li>každý objekt je standardně potomkem <code>Object</code> – metody <code>clone()</code>,
+      <code>equals</code>, <code>getClass()</code>, <code>hashCode()</code>, <code>wait(…)</code>,
+      <code>notify(…)</code>, <code>finalize()</code>;</li>
+    <li>objekty pro primitiva: <code>Boolean</code>, <code>Byte</code>, <code>Character</code>,
+      <code>Integer</code>, <code>Long</code>, <code>Float</code>, <code>Double</code> – <strong>mohou být
+      <code>null</code></strong>;</li>
+    <li>objekty s více poli používají <strong>zarovnání a padding podle skupin typů</strong>, rozložené
+      v tomto pořadí (uvnitř téže skupiny v pořadí deklarace):
+      <ul>
+        <li><code>long</code> a <code>double</code> (8 B),</li>
+        <li><code>int</code> a <code>float</code> (4 B),</li>
+        <li><code>short</code> a <code>char</code> (2 B),</li>
+        <li><code>byte</code> a <code>boolean</code> (1 B),</li>
+        <li><strong>reference</strong> (4 B / 8 B).</li>
+      </ul>
+    </li>
+  </ul>
+
+  <p><strong>Struktura objektu (64bitová JVM):</strong> hlavička má <strong>12 nebo 16 bajtů</strong>,
+  pak následují data objektu (pole nadtřídy první):</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">mark word</span><span class="db-sub">8 B</span></div>
+      <div class="diag-box accent"><span class="db-title">Klass ref.</span><span class="db-sub">4 B / 8 B</span></div>
+      <div class="diag-box"><span class="db-title">… data objektu</span><span class="db-sub">pole nadtřídy první</span></div>
+    </div>
+  </div>
+
+  <h3>Příklad – 64 bit, halda &lt; 32 GB (komprimované OOP)</h3>
+  <p>Třída, jejíž pole se rozkládají v paměti:</p>
+  <pre><code>class Structure {
+    private boolean boolean1;
+    private byte     byte1;
+    private char     char1;
+    private short    short1;
+    private int      int1;
+    private long     long1;
+    private float    float1;
+    private double   double1;
+    private Object   object1;
+    private boolean  boolean2;
+    private byte     byte2;
+    private char     char2;
+    private short    short2;
+    private int      int2;
+    private float    float2;
+    private long     long2;
+    private double   double2;
+    private Object   object2;
+
+    Structure(int value, Object ref) { … }
+
+    @Override
+    public String toString() { … }
+}</code></pre>
+  <p>S <strong>komprimovanými OOP</strong> (halda &lt; 32 GB) je Klass reference i reference na objekty
+  <strong>4 B</strong>, takže celková <strong>velikost objektu je 80 bajtů</strong>. Rozložení (offsety
+  vlevo, každý řádek = 8 bajtů / dva 4bajtové sloty, šedé buňky = hlavička):</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Slot 1 (4 B)</th><th>Slot 2 (4 B)</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x00</code></td><td colspan="2">mark word (8 B)</td></tr>
+      <tr><td></td><td>Klass ref. (4 B)</td><td>int1 (4 B)</td></tr>
+      <tr><td><code>0x10</code></td><td colspan="2">long1 (8 B)</td></tr>
+      <tr><td></td><td colspan="2">double1 (8 B)</td></tr>
+      <tr><td><code>0x20</code></td><td colspan="2">long2 (8 B)</td></tr>
+      <tr><td></td><td colspan="2">double2 (8 B)</td></tr>
+      <tr><td><code>0x30</code></td><td>float1 (4 B)</td><td>int2 (4 B)</td></tr>
+      <tr><td></td><td>float2 (4 B)</td><td>char1 (2 B) | short1 (2 B)</td></tr>
+      <tr><td><code>0x40</code></td><td>char2 (2 B) | short2 (2 B)</td><td>bo1 | by1 | bo2 | by2 (1 B každý)</td></tr>
+      <tr><td></td><td>object1 ref. (4 B)</td><td>object2 ref. (4 B)</td></tr>
+    </tbody>
+  </table>
+  <p>Pořadí rozložení respektuje skupiny typů: hlavička → 8B pole (long/double) → 4B pole (int/float)
+  → 2B pole (char/short) → 1B pole (boolean/byte) → reference. Komprimovaná Klass reference sdílí svůj
+  8bajtový řádek s prvním 4bajtovým polem (<code>int1</code>).</p>
+
+  <h3>Příklad – 64 bit, halda ≥ 32 GB (standardní OOP)</h3>
+  <p>Se <strong>standardními OOP</strong> (halda ≥ 32 GB) je Klass reference i reference na objekty
+  <strong>8 B</strong>, takže celková <strong>velikost objektu je 96 bajtů (+20 % oproti
+  komprimovanému případu)</strong>. Širší Klass reference teď zabírá celý 8bajtový řádek a je potřeba
+  <strong>prázdný padding</strong>, aby zůstaly 8bajtové reference zarovnané:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Slot 1 (4 B)</th><th>Slot 2 (4 B)</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x00</code></td><td colspan="2">mark word (8 B)</td></tr>
+      <tr><td></td><td colspan="2">Klass ref. (8 B)</td></tr>
+      <tr><td><code>0x10</code></td><td colspan="2">long1 (8 B)</td></tr>
+      <tr><td></td><td colspan="2">double1 (8 B)</td></tr>
+      <tr><td><code>0x20</code></td><td colspan="2">long2 (8 B)</td></tr>
+      <tr><td></td><td colspan="2">double2 (8 B)</td></tr>
+      <tr><td><code>0x30</code></td><td>int1 (4 B)</td><td>float1 (4 B)</td></tr>
+      <tr><td></td><td>int2 (4 B)</td><td>float2 (4 B)</td></tr>
+      <tr><td><code>0x40</code></td><td>char1 (2 B) | short1 (2 B)</td><td>char2 (2 B) | short2 (2 B)</td></tr>
+      <tr><td></td><td>bo1 | by1 | bo2 | by2</td><td>empty padding</td></tr>
+      <tr><td><code>0x50</code></td><td colspan="2">object1 ref. (8 B)</td></tr>
+      <tr><td></td><td colspan="2">object2 ref. (8 B)</td></tr>
+    </tbody>
+  </table>
+  <div class="box insight">
+    <p class="box-title">💡 Postřeh</p>
+    <p>Zapnutí/vypnutí komprimovaných OOP (překročení prahu 32 GB haldy) nafoukne každý objekt nesoucí
+    reference – pro tuto třídu o 20 % (80 B → 96 B). Udržet haldu pod 32 GB je běžný způsob, jak ušetřit
+    paměť.</p>
+  </div>
+
+  <h2 id="pole">Pole</h2>
+  <p><strong>Jednorozměrná pole</strong>:</p>
+  <ul>
+    <li>speciální datová struktura, která ukládá více prvků <strong>stejného typu v lineárním pořadí</strong>;
+      mají <strong>pevnou velikost</strong> danou při alokaci;</li>
+    <li>Java automaticky <strong>kontroluje meze</strong>;</li>
+    <li>alokována na <strong>haldě</strong>;</li>
+    <li><strong>primitiva</strong> – hodnoty primitiv uloženy <strong>přímo</strong>;</li>
+    <li><strong>objekty</strong> – ukládají <strong>reference</strong> na objekty (4 B nebo 8 B).</li>
+  </ul>
+  <p><strong>Vícerozměrná pole</strong>:</p>
+  <ul>
+    <li><strong>pole polí</strong> – <em>ragged array</em> (nestejné délky podúrovní);</li>
+    <li><strong>pomalejší přístup</strong> kvůli dereferencím (více čtení z paměti) a kontrole více indexů;</li>
+    <li>zvažte <strong>zploštěné (flattened) pole</strong>.</li>
+  </ul>
+  <p><strong>Struktura objektu pole (64bitová JVM):</strong> hlavička má <strong>16 nebo 20 bajtů</strong>
+  (8 B mark word + 4 B / 8 B Klass reference + <strong>4 B délka pole</strong>), pak následuje sekvence
+  hodnot:</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">mark word</span><span class="db-sub">8 B</span></div>
+      <div class="diag-box accent"><span class="db-title">Klass ref.</span><span class="db-sub">4 B / 8 B</span></div>
+      <div class="diag-box accent"><span class="db-title">délka pole</span><span class="db-sub">4 B</span></div>
+      <div class="diag-box"><span class="db-title">sekvence hodnot</span><span class="db-sub">prvky pole</span></div>
+    </div>
+  </div>
+
+  <h2 id="autoboxing">Autoboxing a jeho cena</h2>
+
+  <h3>Paměťová efektivita obalových objektů</h3>
+  <p><strong>Paměťová efektivita</strong> – 100 % efektivita znamená <strong>nulovou režii</strong>:</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-teal"><span class="dn-title">velikost užitečného obsahu</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-title">÷ retained size</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">× 100</span><span class="dn-sub">= efektivita [%]</span></div>
+    </div>
+    <div class="diag-cap">efektivita = (velikost užitečného obsahu / retained size) × 100 [%]</div>
+  </div>
+  <ul>
+    <li>koreluje s <strong>efektivitou cache</strong> – jeden <strong>cache line</strong> načítá souvislý
+      blok <strong>64 B</strong> paměti;</li>
+    <li><strong>datová lokalita</strong> dále zrychluje zpracování využitím už cachovaných dat.</li>
+  </ul>
+  <p>Efektivita jednoho obaleného primitiva (užitečná data vs. retained velikost objektu):</p>
+  <table>
+    <thead><tr><th>Objekt</th><th>Užitečná velikost</th><th>Retained (efektivita) – halda &lt; 32 GB</th><th>Retained (efektivita) – halda ≥ 32 GB</th></tr></thead>
+    <tbody>
+      <tr><td><code>Boolean</code></td><td>1 bit</td><td>16 B (0,78 %)</td><td>24 B (0,52 %)</td></tr>
+      <tr><td><code>Byte</code></td><td>1 B</td><td>16 B (6,25 %)</td><td>24 B (4,17 %)</td></tr>
+      <tr><td><code>Short</code>, <code>Character</code></td><td>2 B</td><td>16 B (12,50 %)</td><td>24 B (8,34 %)</td></tr>
+      <tr><td><code>Integer</code>, <code>Float</code></td><td>4 B</td><td>16 B (25,00 %)</td><td>24 B (16,67 %)</td></tr>
+      <tr><td><code>Long</code>, <code>Double</code></td><td>8 B</td><td>24 B (33,34 %)</td><td>24 B (33,34 %)</td></tr>
+    </tbody>
+  </table>
+  <p>I 8bajtový <code>Long</code>/<code>Double</code> dosáhne jen ~33 % efektivity; obalený
+  <code>Boolean</code> promrhá téměř vše. To je jádro motivace pro primitivní kolekce.</p>
+
+  <h3>Autoboxing / unboxing</h3>
+  <ul>
+    <li><strong>autoboxing</strong> a <strong>unboxing</strong> se dějí při přiřazení a předávání parametrů
+      – přes metody <code>valueOf({primitive})</code> (boxing) a <code>{primitive}Value()</code> (unboxing);</li>
+    <li>všechny obalové objekty primitiv jsou <strong>neměnné (immutable)</strong> – finální hodnoty;</li>
+    <li><strong>pozor na neefektivity způsobené autoboxingem a unboxingem</strong>.</li>
+  </ul>
+  <p>Příklad ukazující skrytý boxing/unboxing v bytecode:</p>
+  <pre><code>public class PrimitiveObject {
+    private static Integer integer = 0;
+
+    public static void main(String[] args) {
+        integer++;
+    }
+}</code></pre>
+  <p>Statický inicializátor (<code>static {}</code>) – boxing <code>0</code> na <code>Integer</code>:</p>
+  <pre><code>Code:
+   0: iconst_0
+   1: invokestatic  #4    // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+   4: putstatic     #2    // Field integer:Ljava/lang/Integer;
+   7: return</code></pre>
+  <p><code>main(java.lang.String[])</code> – <code>integer++</code> se rozvine na
+  <strong>unbox → inkrement → rebox</strong>:</p>
+  <pre><code>Code:
+   0: getstatic     #2    // Field integer:Ljava/lang/Integer;
+   3: invokevirtual #3    // Method java/lang/Integer.intValue:()I
+   6: iconst_1
+   7: iadd
+   8: invokestatic  #4    // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+  11: putstatic     #2    // Field integer:Ljava/lang/Integer;</code></pre>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Cena jednoho <code>integer++</code></p>
+    <p>Jediný <code>integer++</code> nad obaleným polem vyvolá virtuální volání <code>intValue()</code>
+    <strong>a</strong> nový obalený objekt přes <code>valueOf</code> – v horké smyčce velmi nákladné.</p>
+  </div>
+
+  <h3>Konverze v praxi – histogram četnosti slov</h3>
+  <p>Histogram, který při každé aktualizaci tiše boxuje/unboxuje:</p>
+  <pre><code>public static void main(String[] args) {
+    Map&lt;String, Integer&gt; m = new TreeMap&lt;String, Integer&gt;();
+    for (String word : args) {
+        Integer freq = m.get(word);
+        m.put(word, (freq == null ? 1 : freq + 1));
+    }
+    System.out.println(m);
+}</code></pre>
+  <p>Každé <code>freq + 1</code> unboxuje <code>freq</code>, přičte a výsledek reboxuje přes
+  <code>Integer.valueOf</code>; u velkých vstupů boxing dominuje.</p>
+
+  <h3>Identita vs. rovnost</h3>
+  <pre><code>int i = 2;
+int j = 2;
+ArrayList&lt;Integer&gt; list = new ArrayList&lt;Integer&gt;();
+list.add(i);
+list.add(j);
+System.out.printf(Boolean.toString(i == j));
+System.out.printf(Boolean.toString(list.get(0) == list.get(1)));
+System.out.printf(Boolean.toString(list.get(0).equals(list.get(1))));</code></pre>
+  <p><strong>Jaký je výstup? A co se změní pro <code>i = 2000</code> a <code>j = 2000</code>?</strong></p>
+  <table>
+    <thead><tr><th>Výraz</th><th><code>i = j = 2</code></th><th><code>i = j = 2000</code></th></tr></thead>
+    <tbody>
+      <tr><td><code>i == j</code> (porovnání primitiv)</td><td><strong>true</strong></td><td><strong>true</strong></td></tr>
+      <tr><td><code>list.get(0) == list.get(1)</code> (porovnání referencí obalených hodnot)</td><td><strong>true</strong></td><td><strong>false</strong></td></tr>
+      <tr><td><code>list.get(0).equals(list.get(1))</code> (porovnání hodnot)</td><td><strong>true</strong></td><td><strong>true</strong></td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>Pro malé hodnoty (2) vrátí autoboxing <strong>tutéž cachovanou instanci <code>Integer</code></strong>,
+      takže <code>==</code> na referencích je <code>true</code>.</li>
+    <li>Pro <code>2000</code> (mimo rozsah cache) každé <code>add</code> obalí na <strong>jiný objekt
+      <code>Integer</code></strong>, takže <code>==</code> je <code>false</code>, zatímco <code>equals</code>
+      je stále <code>true</code>.</li>
+    <li><strong>Pozor:</strong> <em>po serializaci je druhé porovnání vždy <code>false</code></em> –
+      deserializace vytvoří čerstvé instance a obejde cache.</li>
+  </ul>
+
+  <h3>Identitní sémantika – cache ve <code>valueOf</code></h3>
+  <p><strong>Identitní sémantika</strong> pochází z <strong>cache používané metodou
+  <code>valueOf({primitive})</code></strong>:</p>
+  <ul>
+    <li><code>Short</code>, <code>Integer</code>, <code>Long</code> – cachují rozsah <strong>&lt;-128; +127&gt;</strong>;</li>
+    <li><code>Byte</code> – cachuje <strong>všechny</strong> hodnoty;</li>
+    <li><code>Character</code> – cachuje <strong>&lt;0; +127&gt;</strong>.</li>
+  </ul>
+  <p>To <strong>neplatí</strong> pro objekty vytvořené konstruktorem (např. <code>new Integer(1)</code>) –
+  ty vždy vytvoří novou instanci.</p>
+  <p>Zjednodušená implementace cache pro <code>Short</code> (konceptuálně, z JDK):</p>
+  <pre><code>private static class ShortCache {
+    private ShortCache() {}
+
+    static final Short cache[] = new Short[-(-128) + 127 + 1];
+
+    static {
+        for (int i = 0; i &lt; cache.length; i++)
+            cache[i] = new Short((short)(i - 128));
+    }
+}
+
+public static Short valueOf(short s) {
+    final int offset = 128;
+    int sAsInt = s;
+    if (sAsInt &gt;= -128 &amp;&amp; sAsInt &lt;= 127) { // must cache
+        return ShortCache.cache[sAsInt + offset];
+    }
+    return new Short(s);
+}
+
+public short shortValue() {
+    return value;
+}</code></pre>
+
+  <h2 id="efektivita">Paměťová efektivita a kolekce</h2>
+
+  <h3>Proč jsou standardní Java kolekce neefektivní</h3>
+  <p>Jak standardní JDK kolekce ukládají data:</p>
+  <ul>
+    <li><strong><code>LinkedList&lt;E&gt;</code></strong> – používá objekt <strong><code>Node&lt;E&gt;</code></strong>
+      s obousměrnými odkazy (prev/next);</li>
+    <li><strong><code>ArrayList&lt;E&gt;</code></strong> – postavený na poli <strong><code>elementData</code></strong>
+      s <strong>referencemi na objekty</strong>;</li>
+    <li><strong><code>HashMap&lt;K,V&gt;</code></strong> – zálohovaná hashovací tabulkou
+      <strong><code>Node&lt;K,V&gt;</code></strong> s <strong>cachovaným <code>hashCode</code></strong> a
+      <strong>zřetězenými kolizemi</strong> (separate chaining).</li>
+  </ul>
+  <p>Tři zdroje neefektivity se sčítají: <strong>boxing</strong> (každý prvek je samostatný obalový objekt),
+  <strong>reference</strong> (pole referencí místo hodnot) a <strong>režie uzlů</strong> (<code>Node</code>
+  s hlavičkou a odkazy). Měřená retained size a efektivita pro <strong>1 milion prvků</strong>:</p>
+  <table>
+    <thead><tr><th>Objekt</th><th>Užitečná velikost</th><th>Retained (efektivita) – &lt; 32 GB</th><th>Retained (efektivita) – ≥ 32 GB</th></tr></thead>
+    <tbody>
+      <tr><td><code>LinkedList&lt;Integer&gt;</code></td><td>4 MiB</td><td>34,33 MiB (11,65 %)</td><td>47,26 MiB (8,46 %)</td></tr>
+      <tr><td><code>ArrayList&lt;Integer&gt;</code></td><td>4 MiB</td><td>17,73 MiB (22,56 %)</td><td>25,72 MiB (15,55 %)</td></tr>
+      <tr><td><code>HashMap&lt;Integer,Double&gt;</code></td><td>12 MiB</td><td>70,19 MiB (17,10 %)</td><td>87,67 MiB (13,69 %)</td></tr>
+    </tbody>
+  </table>
+  <p><code>LinkedList</code> je nejhorší (každý prvek potřebuje <code>Node</code> se dvěma referencemi
+  <strong>plus</strong> obalený <code>Integer</code>). <code>ArrayList</code> je lepší, ale stále platí za
+  boxing a pole referencí.</p>
+
+  <h3>Specializované kolekce pro výkon</h3>
+  <p>Dvě známé knihovny:</p>
+  <ul>
+    <li><strong>Trove</strong> – licence LGPL (Lesser GNU Public License);</li>
+    <li><strong>FastUtil</strong> – licence Apache License 2.0.</li>
+  </ul>
+  <p>Existují i další (např. <strong>Eclipse Collections</strong>). Specializované kolekce poskytují:</p>
+  <ul>
+    <li><strong>typově specifické</strong> mapy, množiny, seznamy a fronty – eliminují režii
+      <strong>autoboxingu a unboxingu</strong>;</li>
+    <li><strong>malou paměťovou stopu</strong> – mnohem lepší cachování, sekvenční přístup je velmi rychlý;</li>
+    <li><strong>rychlý přístup a vkládání</strong>;</li>
+    <li>v mapách používají <strong>open addressing hashing</strong> místo zřetězování (chaining);</li>
+    <li>podporu <strong>velmi velkých kolekcí (&gt; 2³¹ prvků)</strong> ve <strong>FastUtil</strong>;</li>
+    <li>podporu <strong>vlastních hashovacích strategií</strong> v <strong>Trove</strong>.</li>
+  </ul>
+
+  <table>
+    <thead><tr><th>Objekt</th><th>Užitečná velikost</th><th>Retained (efektivita) – &lt; 32 GB</th><th>Retained (efektivita) – ≥ 32 GB</th></tr></thead>
+    <tbody>
+      <tr><td><code>LinkedList&lt;Integer&gt;</code></td><td>4 MiB</td><td>34,33 MiB (11,65 %)</td><td>47,26 MiB (8,46 %)</td></tr>
+      <tr><td><code>TIntLinkedList</code> (Trove)</td><td>4 MiB</td><td>20,60 MiB (19,42 %)</td><td>24,54 MiB (13,54 %)</td></tr>
+      <tr><td><code>ArrayList&lt;Integer&gt;</code></td><td>4 MiB</td><td>17,73 MiB (22,56 %)</td><td>25,72 MiB (15,55 %)</td></tr>
+      <tr><td><code>TIntArrayList</code> (Trove)</td><td>4 MiB</td><td>~4,00 MiB (~100,00 %)</td><td>~4,00 MiB (~100,00 %)</td></tr>
+      <tr><td><code>IntArrayList</code> (FastUtil)</td><td>4 MiB</td><td>~4,00 MiB (~100,00 %)</td><td>~4,00 MiB (~100,00 %)</td></tr>
+      <tr><td><code>HashMap&lt;Integer,Double&gt;</code></td><td>12 MiB</td><td>70,19 MiB (17,10 %)</td><td>87,67 MiB (13,69 %)</td></tr>
+      <tr><td><code>TIntDoubleHashMap</code> (Trove)</td><td>12 MiB</td><td>27,85 MiB (43,09 %)</td><td>27,85 MiB (43,09 %)</td></tr>
+      <tr><td><code>Int2DoubleOpenHashMap</code> (FastUtil)</td><td>12 MiB</td><td>25,17 MiB (47,68 %)</td><td>25,17 MiB (47,68 %)</td></tr>
+    </tbody>
+  </table>
+  <div class="box insight">
+    <p class="box-title">💡 Výsledek</p>
+    <p>Primitivní <strong>array listy dosahují ~100 % efektivity</strong> (holé <code>int[]</code>, žádný
+    boxing, žádná režie uzlů) a jsou <strong>nezávislé na prahu 32 GB</strong> (žádné reference ke
+    komprimaci). Primitivní hashovací mapy zhruba <strong>zdvojnásobí až ztrojnásobí</strong> efektivitu
+    oproti <code>HashMap</code> a jsou rovněž nezávislé na velikosti haldy.</p>
+  </div>
+
+  <h2 id="openhash">Open hashing a řešení kolizí</h2>
+  <p>Open addressing (otevřené adresování) <strong>eliminuje potřebu obalu <code>Map.Entry&lt;K,V&gt;</code></strong>,
+  který chaining vyžaduje. Místo zřetězeného seznamu uzlů se kolize ukládají do <strong>jiných slotů téže
+  tabulky</strong>. Pro hledání volného slotu existují různá schémata.</p>
+
+  <h3>Datové pole místo uzlů</h3>
+  <ul>
+    <li><strong>typovaná pole klíčů a hodnot</strong>;</li>
+    <li><strong>stavové pole <code>byte</code></strong> – <code>FREE</code>, <code>FULL</code>,
+      <code>REMOVED</code> (<strong>Trove</strong>, celkem <strong>3 pole</strong>);</li>
+    <li>speciální sledování nulového/null klíče + <strong>výchozí návratová hodnota</strong> pro prázdné
+      sloty (<strong>FastUtil</strong>, celkem <strong>2 pole</strong>).</li>
+  </ul>
+  <p><strong>Load factor:</strong> menší load factor znamená méně konfliktů (<strong>Trove 0,5</strong>,
+  <strong>FastUtil 0,75</strong>).</p>
+
+  <h3>Řešení kolizí</h3>
+  <p>Klasická schémata otevřeného adresování (zkoumáme posloupnost slotů, dokud nenajdeme volný/hledaný):</p>
+  <ul>
+    <li><strong>lineární sondování (linear probing)</strong> – při kolizi zkusíme následující slot
+      (krok +1); lepší využití cache díky datové lokalitě. Používá <strong>FastUtil</strong>;</li>
+    <li><strong>kvadratické sondování (quadratic probing)</strong> – krok roste kvadraticky (+1², +2², …),
+      což snižuje shlukování (clustering) typické pro lineární probing;</li>
+    <li><strong>dvojí hashování (double hashing)</strong> – krok je dán druhou hashovací funkcí; nejméně
+      konfliktů, sekundární hash <code>h₂</code> <strong>nesmí být 0</strong>. Používá <strong>Trove</strong>:
+      <div class="diag">
+        <div class="diag-flow">
+          <div class="diag-node c-blue"><span class="dn-title">h₁(k)</span><span class="dn-sub">primární hash</span></div>
+          <div class="diag-arrow"></div>
+          <div class="diag-node c-purple"><span class="dn-title">+ i × h₂(k)</span><span class="dn-sub">sekundární hash, h₂ ≠ 0</span></div>
+          <div class="diag-arrow"></div>
+          <div class="diag-node c-green"><span class="dn-title">mod |T|</span><span class="dn-sub">= h(i, k)</span></div>
+        </div>
+        <div class="diag-cap">h(i, k) = ( h₁(k) + i × h₂(k) ) mod |T|</div>
+      </div>
+    </li>
+  </ul>
+
+  <h3>Mazání a velikost tabulky</h3>
+  <p><strong>Složité mazání</strong> je nutné, aby zůstalo hledání po kolizích konzistentní:</p>
+  <ul>
+    <li><strong>přesun</strong> posledního kolizního prvku do uvolněného slotu (<strong>FastUtil</strong>);</li>
+    <li><strong>ponechání</strong> smazaných prvků (označených <code>REMOVED</code>) – znovu využity
+      pozdějšími <code>put</code> (<strong>Trove</strong>).</li>
+  </ul>
+  <p><strong>Velikost tabulky:</strong></p>
+  <ul>
+    <li><strong>prvočíslo</strong> jako velikost tabulky snižuje kolize (<strong>Trove</strong>);</li>
+    <li><strong>mocnina dvojky</strong> umožňuje efektivní <strong>bitové operace</strong> (<strong>FastUtil</strong>).</li>
+  </ul>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Trove vs. FastUtil – přehled</p>
+    <dl class="pojmy-list">
+      <dt>Trove (LGPL)</dt><dd>double hashing, prvočíselné velikosti tabulky, load factor 0,5, stavové pole
+      <code>FREE/FULL/REMOVED</code> (3 pole), ponechává smazané sloty, podporuje vlastní hashování.</dd>
+      <dt>FastUtil (Apache 2.0)</dt><dd>lineární probing, velikosti = mocniny dvojky (bitové operace), load
+      factor 0,75, 2 pole se sledováním 0/null klíče, při mazání přesouvá kolizní prvky, &gt; 2³¹ prvků.</dd>
+    </dl>
+  </div>
+
+  <h2 id="resize">Strategie zvětšování kolekcí</h2>
+  <p>Běhové neefektivity způsobuje <strong>zvětšování kolekcí (resizing)</strong> → pokud znáte očekávanou
+  kapacitu, <strong>explicitně ji zadejte</strong>.</p>
+
+  <h3>Seznamy</h3>
+  <table>
+    <thead><tr><th></th><th>Výchozí kapacita</th><th>Růst</th><th>Zmenšování</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>ArrayList</code></td>
+        <td>10 (sdílené statické prázdné pole, alokace při <strong>prvním <code>add</code></strong>)</td>
+        <td><strong>+~50 %</strong>, kopíruje všechny prvky</td>
+        <td>žádné automatické, ručně <code>trimToSize</code></td>
+      </tr>
+      <tr>
+        <td><code>TIntArrayList</code> (Trove)</td>
+        <td>10 (<strong>alokováno ihned</strong>)</td>
+        <td><strong>×2</strong>, kopíruje všechny prvky</td>
+        <td>žádné automatické, ručně <code>trimToSize</code></td>
+      </tr>
+      <tr>
+        <td><code>IntArrayList</code> (FastUtil)</td>
+        <td>16 (<strong>alokováno ihned</strong>)</td>
+        <td><strong>×2</strong>, kopíruje všechny prvky</td>
+        <td>žádné automatické, ručně <code>trim</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Mapy</h3>
+  <ul>
+    <li><strong><code>HashMap</code></strong>
+      <ul>
+        <li>hashovací tabulka <strong>inicializována s prvním prvkem</strong>;</li>
+        <li><strong>výchozí velikost 16</strong> (výchozí <strong>load factor 0,75</strong>); vlastní kapacita
+          se <strong>zaokrouhlí nahoru na mocninu dvojky</strong>;</li>
+        <li>zvětšení vyžaduje <strong>rehashing</strong> (iterace + put) všech předchozích prvků – strategie
+          <strong>×2</strong>;</li>
+        <li>zmenšování hashovací tabulky <strong>není vůbec podporováno</strong>.</li>
+      </ul>
+    </li>
+    <li><strong><code>TIntDoubleHashMap</code> (Trove)</strong>
+      <ul>
+        <li><strong>výchozí velikost 23</strong> (výchozí <strong>load factor 0,5</strong>); vlastní kapacita
+          se <strong>upraví na nejbližší vyšší prvočíslo</strong>;</li>
+        <li>růst znamená <strong>rehashing</strong> všech předchozích prvků – strategie <strong>nejbližší
+          vyšší prvočíslo pro velikost × 2</strong>;</li>
+        <li><strong>automatická kompakce</strong> po určitém počtu mazání – na nejbližší vyšší prvočíslo pro
+          aktuálně uložené prvky; lze <strong>dočasně vypnout</strong>, pokud plánujete hodně mazání.</li>
+      </ul>
+    </li>
+    <li><strong><code>Int2DoubleOpenHashMap</code> (FastUtil)</strong>
+      <ul>
+        <li>zálohovací pole <strong>alokována ihned</strong>;</li>
+        <li><strong>výchozí velikost 16</strong> (výchozí <strong>load factor 0,75</strong>); vlastní kapacita
+          se <strong>zaokrouhlí na mocninu dvojky</strong>;</li>
+        <li>růst znamená <strong>rehashing</strong> – strategie <strong>×2</strong>;</li>
+        <li><strong>automatické zmenšení</strong> po <code>remove</code>, pokud vytížení klesne <strong>pod
+          25 %</strong> → struktura se zmenší faktorem 2; <strong>ne</strong> pod minimální velikost 16.</li>
+      </ul>
+    </li>
+  </ul>
+  <p><strong>Další možné optimalizace:</strong> používat <strong>zástupné (stub) implementace pro prázdné/jednoprvkové kolekce</strong>,
+  pokud aplikace obsahuje mnoho kolekcí (vyhnout se alokaci plných zálohovacích polí u prázdných nebo
+  drobných kolekcí).</p>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Proč jsou kontejnery v Javě neefektivní? Jak to řeší nestandardní kontejnery? V čem je efektivní open hashing? Uveď 2 příklady řešení kolizí v open hashingu.</summary>
+    <div class="odpoved">
+      <p><strong>Proč jsou neefektivní:</strong> sčítají se tři režie – <strong>boxing</strong> (každý prvek
+      je samostatný obalový objekt <code>Integer</code>/<code>Double</code> s hlavičkou, ~16–24 B na 4–8 B
+      dat), <strong>reference</strong> (kolekce drží pole referencí, ne hodnoty) a <strong>režie uzlů</strong>
+      (<code>LinkedList.Node</code> má dva odkazy, <code>HashMap.Node</code> má klíč, hodnotu, cachovaný hash
+      a odkaz na další při kolizích – separate chaining). Měřeno na 1 M prvků: <code>LinkedList&lt;Integer&gt;</code>
+      jen 11,65 %, <code>ArrayList</code> 22,56 %, <code>HashMap&lt;Integer,Double&gt;</code> 17,10 % efektivity.</p>
+      <p><strong>Jak to řeší nestandardní kontejnery</strong> (Trove – LGPL, FastUtil – Apache 2.0): jsou
+      <strong>typově specifické</strong> (<code>TIntArrayList</code>, <code>Int2DoubleOpenHashMap</code>),
+      takže <strong>nepotřebují boxing</strong> a ukládají primitiva přímo do <code>int[]</code>/<code>double[]</code>.
+      Tím dosahují malé paměťové stopy a výborného cachování. <code>TIntArrayList</code>/<code>IntArrayList</code>
+      mají ~100 % efektivitu; primitivní mapy 43–48 %.</p>
+      <p><strong>V čem je efektivní open hashing (open addressing):</strong> eliminuje obalové uzly
+      <code>Map.Entry</code> – data jsou v souvislých <strong>typovaných polích klíčů a hodnot</strong>, kolize
+      se ukládají do jiných slotů téže tabulky. Žádné reference na uzly, lepší datová lokalita a cache.</p>
+      <p><strong>2 příklady řešení kolizí:</strong> <strong>lineární probing</strong> (FastUtil – zkouší
+      následující slot, dobrá lokalita cache) a <strong>dvojí hashování / double hashing</strong> (Trove –
+      krok dán druhou hash funkcí, <code>h(i,k) = (h₁(k) + i·h₂(k)) mod |T|</code>, <code>h₂ ≠ 0</code>;
+      nejméně konfliktů). Případně lze uvést i <strong>kvadratické sondování (quadratic probing)</strong>.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Profiling: 2 režimy + rozdíl static/dynamic analýza + shallow vs. retained size.</summary>
+    <div class="odpoved">
+      <p><strong>Dva režimy allocation trackingu:</strong> (1) <strong>memory profiler s bytecode
+      instrumentací</strong> – sleduje každou n-tou alokaci, vkládá bytecode <code>traceObjAlloc</code>,
+      zhoršuje výkon a snižuje JIT optimalizace; (2) <strong>flight recording přes JMC bez instrumentace</strong>
+      – identifikuje velké alokace mimo TLAB, dává statistiky TLAB i alokací mimo TLAB a alokační tlak po
+      třídách.</p>
+      <p><strong>Static vs. dynamic analýza:</strong> <strong>statická</strong> analyzuje paměť
+      <strong>v daném okamžiku</strong> (histogram <code>jmap -histo:live</code>, heap dump) – vhodná pro
+      rozbor efektivity datových struktur. <strong>Dynamická</strong> analyzuje chování paměti
+      <strong>v čase</strong> (GC telemetrie, porovnání heap dumpů, allocation tracking) – vhodná pro analýzu
+      alokací a hledání memory leaků. Každý histogram/heap dump vyžaduje globální safepoint (stop the world).</p>
+      <p><strong>Shallow vs. retained size:</strong> <strong>shallow</strong> = paměť samotného objektu (jen
+      jeho hlavička a pole). <strong>Retained</strong> = shallow + shallow size všech objektů dosažitelných
+      <strong>pouze</strong> přes tento objekt; tedy paměť, kterou by GC uvolnil, kdyby objekt zemřel. Pokud
+      ke sdílenému podgrafu vede druhá cesta od jiného GC rootu, do retained setu se nepočítá.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P10</span> Vysvětli autoboxing/unboxing a proč je v horké smyčce drahý.</summary>
+    <div class="odpoved">
+      <p><strong>Autoboxing</strong> = automatické zabalení primitiva do obalového objektu přes
+      <code>valueOf({primitive})</code>; <strong>unboxing</strong> = rozbalení zpět přes
+      <code>{primitive}Value()</code>. Dějí se při přiřazení a předávání parametrů. Obalové objekty jsou
+      neměnné.</p>
+      <p>Drahé proto, že každá operace nad obalenou hodnotou skrytě rozbalí a znovu zabalí. Např.
+      <code>integer++</code> nad polem <code>Integer</code> se v bytecode rozvine na <code>intValue()</code>
+      (virtuální volání) + <code>iadd</code> + <code>Integer.valueOf()</code> (alokace nového objektu). V horké
+      smyčce to znamená rychlé vytváření a zahazování objektů (alokační churn) a tlak na GC. Cache ve <code>valueOf</code> pomáhá jen pro malé hodnoty
+      v rozsahu &lt;-128;+127&gt;.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P10</span> Co je retained size a jak se liší od shallow size?</summary>
+    <div class="odpoved">
+      <p><strong>Retained size</strong> objektu je paměť, kterou by garbage collector uvolnil, kdyby tento
+      objekt zemřel – tedy jeho vlastní shallow size <strong>plus</strong> shallow size všech objektů, které
+      jsou dosažitelné <strong>výhradně přes něj</strong> (každá cesta od GC roots k nim vede skrz tento
+      objekt). <strong>Shallow size</strong> je naopak jen velikost samotného objektu (hlavička + jeho pole),
+      bez čehokoli, na co odkazuje. Příklad ze slidu: vlákno "main" má shallow 176 B, ale retained
+      309 803 648 B, protože drží celý dosažitelný graf.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li><strong>Statická vs. dynamická analýza:</strong> statická = snímek v okamžiku (histogram
+        <code>jmap -histo:live</code>, heap dump <code>jmap -dump:live,format=b</code>,
+        <code>-XX:+HeapDumpOnOutOfMemoryError</code>); dynamická = chování v čase (GC telemetrie, porovnání
+        heap dumpů, allocation tracking) a hledání leaků. Vše vyžaduje globální safepoint (stop the world).</li>
+      <li><strong>Shallow vs. retained:</strong> shallow = jen objekt; retained = shallow + vše dosažitelné
+        <strong>jen</strong> přes něj. Sdílený podgraf s druhou cestou od kořene se nepočítá.</li>
+      <li><strong>Rozložení objektu (64 bit):</strong> hlavička 12/16 B (8 B mark word + 4/8 B Klass ref),
+        pole po skupinách 8→4→2→1 B → reference, s paddingem. Komprimované OOP (&lt; 32 GB) = 4B reference,
+        nad 32 GB standardní OOP (8B) → příklad 80 B → 96 B (+20 %). Pole přidávají 4 B délku (16/20 B).</li>
+      <li><strong>Autoboxing je drahý:</strong> efektivita obalů je nízká (<code>Long</code>/<code>Double</code>
+        ~33 %, <code>Boolean</code> ~0,78 %); <code>integer++</code> = <code>intValue()</code> +
+        <code>valueOf()</code>. Cache <code>valueOf</code> dělá <code>==</code> pravdivé jen pro malé hodnoty
+        (&lt;-128;+127&gt;) a po serializaci vždy false – používej <code>.equals()</code>.</li>
+      <li><strong>Primitivní kolekce vyhrávají:</strong> Trove (LGPL) a FastUtil (Apache 2.0) ruší boxing,
+        používají open addressing místo chainingu. <code>TIntArrayList</code>/<code>IntArrayList</code> ~100 %,
+        primitivní mapy ~43–48 % (vs. 13–17 % u <code>HashMap</code>), nezávislé na prahu 32 GB.</li>
+      <li><strong>Open addressing:</strong> Trove = double hashing, prvočíselné velikosti, LF 0,5, pole
+        <code>FREE/FULL/REMOVED</code> (3 pole), ponechává smazané. FastUtil = lineární probing, mocniny
+        dvojky (bitové ops), LF 0,75, 2 pole, přesun kolizí při mazání.</li>
+      <li><strong>Resizing:</strong> znej velikosti a předalokuj. <code>ArrayList</code> +~50 % (cap 10, líně),
+        Trove/FastUtil seznamy ×2 (cap 10/16, ihned). <code>HashMap</code> ×2 (16, LF 0,75, bez zmenšení),
+        Trove mapa prvočísla (23, LF 0,5, autokompakce), FastUtil mapa ×2 (16, LF 0,75) + autozmenšení ×2 při
+        vytížení &lt; 25 % (dno 16). Seznamy se zmenšují jen ručně.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="09-efektivni-servery-c10k.html">← Efektivní servery</a></span>
+    <span><a href="11-jvm-alokace-objektu.html">Další: Alokace objektů →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P9 – Efektivní servery, C10k · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="08-konkurence-dat-jvm.html">← předchozí: Konkurence dat</a>
+    <a class="nav-link" href="10-jvm-analyza-pameti.html">další: Analýza paměti →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 9 · <span class="badge badge-java">Java/JVM část</span></div>
+    <h1>Efektivní servery, problém C10k a neblokující I/O</h1>
+    <p class="perex">Jak postavit server, který zvládne desítky tisíc souběžných spojení. Klasický
+    <strong>problém C10k</strong>: model „vlákno na spojení“ (styl Apache, blokující I/O) proti
+    <strong>událostmi řízenému</strong> modelu (styl Nginx, neblokující I/O). Projdeme systémové
+    primitivy pro hlášení připravenosti (<code>select</code>, <code>poll</code>, <code>epoll</code>),
+    blokující sítě v Javě (<code>Socket</code>, <code>ServerSocket</code>), neblokující
+    <strong>Java NIO</strong> (kanály, buffery, selektory) i moderní <strong>virtuální vlákna</strong>
+    (Project Loom, Java 21), která vracejí jednoduchý návrh „vlákno na spojení“ s téměř optimální
+    škálovatelností pro I/O zátěž.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#sit">Síťová komunikace</a></li>
+      <li><a href="#c10k">Problém C10k (a C10M)</a></li>
+      <li><a href="#procesy">Procesy vs. vlákna</a></li>
+      <li><a href="#modely">Vlákno na spojení vs. události</a></li>
+      <li><a href="#neblok">Blokující vs. neblokující I/O</a></li>
+      <li><a href="#select">select, poll, epoll</a></li>
+      <li><a href="#java-blok">Blokující sítě v Javě</a></li>
+      <li><a href="#nio">Java NIO – kanály, buffery, selektory</a></li>
+      <li><a href="#pool">Thread pooling</a></li>
+      <li><a href="#virtual">Virtuální vlákna (Loom)</a></li>
+      <li><a href="#pojmy">Klíčové pojmy</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="sit">Síťová komunikace – rychlé základy</h2>
+  <p>Než se pustíme do škálování serverů, připomeňme si síťové základy. Komunikace prochází vrstvami
+  modelu OSI; při průchodu dolů se na každé vrstvě <strong>přidává hlavička</strong> (zapouzdření,
+  encapsulation), nahoře se zase odebírá (decapsulation).</p>
+  <table>
+    <thead><tr><th>#</th><th>Vrstva</th><th>Role / jednotka (PDU)</th><th>Příklady</th></tr></thead>
+    <tbody>
+      <tr><td>7</td><td><strong>Aplikační</strong></td><td>rozhraní k uživateli</td><td>HTTP, FTP, SMTP, DNS, TELNET, NFS</td></tr>
+      <tr><td>6</td><td><strong>Prezentační</strong></td><td>formát dat, komprese, šifrování</td><td>ASCII, JPEG, MPEG, GIF</td></tr>
+      <tr><td>5</td><td><strong>Relační</strong></td><td>správa relací (session)</td><td>SQL, RPC, NFS</td></tr>
+      <tr><td>4</td><td><strong>Transportní</strong></td><td>spolehlivost, multiplexing (PDU: <strong>segment</strong>)</td><td>TCP, UDP</td></tr>
+      <tr><td>3</td><td><strong>Síťová</strong></td><td>směrování, logické IP adresy (PDU: <strong>paket</strong>)</td><td>IP, ICMP, ARP</td></tr>
+      <tr><td>2</td><td><strong>Linková</strong></td><td>rámce, MAC adresy (PDU: <strong>rámec</strong>)</td><td>Ethernet, PPP/SLIP</td></tr>
+      <tr><td>1</td><td><strong>Fyzická</strong></td><td>přenos bitů (PDU: <strong>bity</strong>)</td><td>napětí, kabeláž, huby</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>Porty</strong> – 16bitová čísla; <strong>IPv4</strong> – 32bitová adresa;
+      <strong>IPv6</strong> – 128bitová adresa.</li>
+    <li>Příklad URL s IPv6 v hranatých závorkách a portem:
+      <code>http://[1fff:0:a88:85a3::ac1f]:8080/index.html</code></li>
+    <li>Spojení TCP/UDP je jednoznačně určeno <strong>čtveřicí (4-tuple)</strong>:
+      <em>zdrojová IP, zdrojový port, cílová IP, cílový port</em>.</li>
+    <li>Známé porty: HTTP 80, HTTPS 443, SSH 22, SMTP 25, DNS 53, FTP 20/21, IMAP4 143, POP3 110.</li>
+  </ul>
+  <div class="box poznamka">
+    <p class="box-title">💬 Klíč k zapouzdření</p>
+    <p>Síťové (IP) adresy zůstávají <strong>konstantní po celé cestě</strong> end-to-end, kdežto
+    linkové (Ethernet/MAC) adresy se <strong>přepisují na každém směrovači</strong> (hop-by-hop).
+    Každá vrstva si přidává a odebírá jen svou vlastní hlavičku.</p>
+  </div>
+
+  <h2 id="c10k">Problém C10k (a C10M)</h2>
+  <div class="box pisnicka" id="pisen-10k-socketu">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>10k Socketů (13)</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s13">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p><strong>C10k</strong> je problém z konce 90. let: jak na jediném serveru obsloužit
+  <strong>velký počet klientů (10 000+) najednou</strong>. Jde o velký počet
+  <strong>souběžných spojení</strong>, jejichž obsluhu je třeba efektivně plánovat. Pozor:
+  <strong>nejde o počet požadavků za sekundu</strong>, ale o počet současně otevřených spojení.</p>
+  <ul>
+    <li>Dnes se mluví o <strong>C1M</strong> nebo <strong>C10M</strong> (miliony spojení).</li>
+    <li>Reálný příklad: WhatsApp v roce 2014 zvládal přes 2 miliony souběžných TCP spojení na jeden
+      server (Erlang/BEAM + ladění FreeBSD).</li>
+  </ul>
+  <p>Existují dva základní přístupy ke zpracování spojení:</p>
+  <table>
+    <thead><tr><th></th><th>Vlákno na spojení (Apache)</th><th>Událostmi řízený I/O (Nginx)</th></tr></thead>
+    <tbody>
+      <tr><td>Obsluha spojení</td><td>každé spojení = vlastní vlákno/proces (pool, ale omezený)</td><td>jednu nebo více <strong>smyček událostí</strong> (event loop)</td></tr>
+      <tr><td>I/O operace</td><td>obvykle <strong>blokující</strong></td><td><strong>neblokující</strong> (asynchronní) s hlášením událostí</td></tr>
+      <tr><td>Plánování</td><td>plánování paketů řeší <strong>plánovač vláken OS</strong></td><td>plánování paketů si řídíte <strong>sami</strong></td></tr>
+      <tr><td>Škálování</td><td><strong>neškáluje</strong> – vysoká cena přepínání kontextu</td><td><strong>vícejádrová škálovatelnost</strong> s řízeným počtem worker vláken</td></tr>
+      <tr><td>Datové struktury</td><td>klasické se zámky</td><td>znovupoužití bez zámků (atomiky, lock-free)</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="procesy">Procesy vs. vlákna</h2>
+  <p>Procesy i vlákna umožňují <strong>souběžné vykonávání</strong>. Proces má jedno nebo více vláken.</p>
+  <ul>
+    <li>Vlákna jednoho procesu <strong>sdílejí stejný adresní prostor</strong> (data i kód).</li>
+    <li><strong>Přepínání kontextu</strong> mezi vlákny je obvykle <strong>levnější</strong> než mezi procesy.</li>
+    <li>Mezivláknová komunikace je relativně efektivní přes <strong>sdílenou paměť</strong>.</li>
+    <li>Každé vlákno má vlastní <strong>zásobník (stack) s rámci</strong> (<code>t.getStackTrace()</code>),
+      vlastní lokální proměnné a parametry metod.</li>
+  </ul>
+  <p>V JVM lze vlákno vytvořit jako podtřídu <strong><code>java.lang.Thread</code></strong> nebo
+  implementací rozhraní <strong><code>java.lang.Runnable</code></strong>.</p>
+
+  <h2 id="modely">Model „vlákno na spojení“ a jeho limity</h2>
+  <p>Naivní řešení obsluhy mnoha spojení: vytvořit pro každé spojení (např. TCP) jedno vlákno a uvnitř
+  používat blokující operace. Kód je jednoduchý a sekvenční, ale škálovatelnost je omezená:</p>
+  <ul>
+    <li>Vytvoření a ukončení vlákna <strong>není levná operace</strong>.</li>
+    <li>Každé vlákno potřebuje <strong>nezanedbatelně paměti</strong> (minimálně na svůj zásobník).</li>
+    <li>Plánovač OS spravuje jen platformová vlákna a <strong>přepínání kontextu má vysokou cenu</strong>.</li>
+  </ul>
+  <p>Proto obsloužit miliony spojení tímto způsobem prakticky nelze. Jádrem výkonných síťových aplikací
+  je naopak <strong>smyčka událostí (event loop)</strong> zpracovávající události z mnoha zdrojů; typicky
+  běží jedno vlákno na každém jádru CPU. Tento návrh používá Nginx, Node.js (knihovna libuv) i běhová
+  prostředí jazyků se stylem <code>async</code>/<code>await</code>.</p>
+
+  <h2 id="neblok">Blokující vs. neblokující I/O</h2>
+  <p><strong>Blokující I/O</strong>: vlákno zavolá operaci (např. <code>read</code>) a
+  <strong>uspí se</strong>, dokud nejsou data připravena. Jednoduché, ale jedno vlákno = jedno spojení.
+  <strong>Neblokující I/O</strong>: operace se vrátí <strong>ihned</strong>, případně bez přečtení dat;
+  vlákno se mezitím může věnovat jiným spojením. Jak se ale dozvíme, že je I/O připravené? Existuje
+  několik mechanismů, každý se svým háčkem:</p>
+  <table>
+    <thead><tr><th>Přístup</th><th>Princip</th><th>Nevýhoda</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Přerušení (interrupts)</strong></td><td>hardwarová přerušení v režimu jádra</td><td>—</td></tr>
+      <tr><td><strong>Polling</strong></td><td>ve smyčce pravidelně kontrolujeme stav (připravenost I/O)</td><td><strong>plýtvá takty CPU</strong></td></tr>
+      <tr><td><strong>Signály</strong></td><td>OS generuje signál při připravenosti I/O</td><td>může nechat proces v <strong>nekonzistentním stavu</strong></td></tr>
+      <tr><td><strong>Callbacky</strong></td><td>ukazatel na obslužnou funkci</td><td><strong>růst zásobníku</strong> (callbacky spouštějící vnořené I/O)</td></tr>
+      <tr><td><strong>Událostmi řízený (event-based)</strong></td><td><code>select()</code>, <code>poll()</code>, <code>epoll</code></td><td>viz dále – liší se škálovatelností</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="select">Událostmi řízený model: select, poll, epoll</h2>
+  <p>Tato systémová volání hlásí, které deskriptory jsou připravené k I/O. Postupně rostou ve
+  škálovatelnosti.</p>
+
+  <h3>select()</h3>
+  <ul>
+    <li>definováno v <strong>POSIX</strong> (Portable Operating System Interface);</li>
+    <li>původně určeno pro blokující I/O;</li>
+    <li>předané <strong>seznamy deskriptorů nelze znovu použít</strong> v dalších voláních – systémové
+      volání je totiž modifikuje;</li>
+    <li><strong>neškáluje</strong> – omezený počet deskriptorů a navíc se přes ně musí iterovat, aby se
+      našly události.</li>
+  </ul>
+  <pre><code>int
+select(int nfds, fd_set *restrict readfds, fd_set *restrict writefds, fd_set *restrict errorfds,
+       struct timeval *restrict timeout);
+
+void  FD_CLR(int fd, fd_set *fdset);
+void  FD_COPY(fd_set *fdset_orig, fd_set *fdset_copy);
+int   FD_ISSET(int fd, fd_set *fdset);
+void  FD_SET(int fd, fd_set *fdset);
+void  FD_ZERO(fd_set *fdset);</code></pre>
+
+  <h3>poll()</h3>
+  <ul>
+    <li>počet sledovaných deskriptorů <strong>není omezen</strong>;</li>
+    <li>deskriptory lze <strong>znovu použít</strong>;</li>
+    <li>lepší, ale stále se přes deskriptory <strong>musí iterovat</strong>, aby se našly události.</li>
+  </ul>
+  <pre><code>int
+poll(struct pollfd fds[], nfds_t nfds, int timeout);
+
+struct pollfd {
+    int    fd;       /* file descriptor */
+    short  events;   /* events to look for */
+    short  revents;  /* events returned */
+};</code></pre>
+
+  <h3>epoll</h3>
+  <ul>
+    <li><strong>jen Linux</strong> (např. Windows má <strong>IOCP</strong> – I/O Completion Ports;
+      BSD/macOS má <strong>kqueue</strong>);</li>
+    <li><strong>škáluje</strong>;</li>
+    <li>sledované události lze měnit i během čekání (přes systémové volání);</li>
+    <li>vrací <strong>jen ty události, které nastaly</strong> (není třeba iterovat přes vše).</li>
+  </ul>
+  <p><strong>API:</strong> <code>epoll_create</code> / <code>epoll_create1</code> (inicializace
+  instance v jádře), <code>epoll_ctl</code> (přidá/změní/odebere deskriptory), <code>epoll_wait</code>
+  (čeká na události s timeoutem).</p>
+  <p><strong>Režimy:</strong></p>
+  <ul>
+    <li><strong>level triggered</strong> – <code>wait</code> se vrátí ihned, pokud je událost dostupná;</li>
+    <li><strong>edge triggered (<code>EPOLLET</code>)</strong> – připravenost se hlásí jen při příchozí
+      události; <strong>musíte zpracovat všechny čekající události</strong> před dalším čekáním.</li>
+  </ul>
+  <p><strong>Události:</strong> <code>EPOLLIN</code>, <code>EPOLLOUT</code>, <code>EPOLLPRI</code>,
+  <code>EPOLLRDHUP</code>, <code>EPOLLHUP</code>, <code>EPOLLERR</code>.</p>
+  <pre><code>typedef union epoll_data
+{
+  void        *ptr;
+  int          fd;
+  __uint32_t   u32;
+  __uint64_t   u64;
+} epoll_data_t;
+
+struct epoll_event
+{
+    __uint32_t   events; /* Epoll events */
+    epoll_data_t data;   /* User data variable */
+};</code></pre>
+  <p>Inicializace a registrace deskriptoru:</p>
+  <pre><code>int epfd = epoll_create1(0);
+...
+struct epoll_event ev;
+int client_sock;
+...
+ev.events = EPOLLIN | EPOLLPRI | EPOLLERR | EPOLLHUP;
+ev.data.fd = client_sock;
+int res = epoll_ctl(epfd, EPOLL_CTL_ADD, client_sock, &ev);</code></pre>
+  <p>Typická smyčka událostí:</p>
+  <pre><code>while (1) {
+    // wait for something to do...
+    int nfds = epoll_wait(epfd, events,
+                          MAX_EPOLL_EVENTS_PER_RUN,
+                          EPOLL_RUN_TIMEOUT);
+    if (nfds < 0) die("Error in epoll_wait!");
+
+    // for each ready socket
+    for(int i = 0; i < nfds; i++) {
+      int fd = events[i].data.fd;
+      handle_io_on_socket(fd);
+    }
+}</code></pre>
+  <div class="box insight">
+    <p class="box-title">💡 Vývoj škálovatelnosti</p>
+    <p><code>select()</code> (POSIX, omezený počet, seznamy ničené/měněné při každém volání) →
+    <code>poll()</code> (bez limitu, znovupoužitelné, stále O(n) průchod) → <strong><code>epoll</code></strong>
+    (jen Linux, škáluje, vrací jen vzniklé události, level vs. edge <code>EPOLLET</code>). Ekvivalent na
+    Windows je <strong>IOCP</strong>, na BSD/macOS <strong>kqueue</strong>.</p>
+  </div>
+
+  <h2 id="java-blok">Blokující sítě v Javě</h2>
+
+  <h3>TCP klient – Socket</h3>
+  <ul>
+    <li><strong><code>Socket</code></strong> – klientský konec TCP/IP spojení; je svázán s konkrétní
+      cílovou IP a portem;</li>
+    <li>každé spojení je jednoznačně určeno svými dvěma konci;</li>
+    <li>poskytuje vstupní a výstupní proudy (streams).</li>
+  </ul>
+  <pre><code>try (
+    Socket echoSocket = new Socket("localhost", 7);
+    PrintWriter out = new PrintWriter(echoSocket.getOutputStream(), true); // autoFlush = true
+    BufferedReader in = new BufferedReader(new InputStreamReader(echoSocket.getInputStream()));
+    BufferedReader stdIn = new BufferedReader(new InputStreamReader(System.in))
+) {
+
+    String userInput;
+
+    while ((userInput = stdIn.readLine()) != null) {
+        out.println(userInput);
+        System.out.println("echo: " + in.readLine());
+    }
+}</code></pre>
+
+  <h3>TCP server – ServerSocket</h3>
+  <ul>
+    <li><strong><code>ServerSocket</code></strong> – serverový socket reprezentující
+      <strong>naslouchající</strong> TCP/IP koncový bod;</li>
+    <li>v konstruktoru zadáte port, volitelně i IP, na kterou se má navázat;</li>
+    <li>na navázání spojení čeká metoda <code>Socket accept()</code>.</li>
+  </ul>
+  <p>Server „vlákno na spojení“ – každý handler běží ve vlastním vlákně s <strong>blokujícím I/O</strong>:</p>
+  <pre><code>ExecutorService clientRunner = Executors.newCachedThreadPool();
+try (
+    ServerSocket serverSocket = new ServerSocket(7);
+) {
+    while (true) {
+        final Socket s = serverSocket.accept();
+        clientRunner.execute(() -> {
+            try (
+                BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()));
+                PrintWriter out = new PrintWriter(s.getOutputStream(), true); // autoFlush = true
+            ) {
+                String line;
+                while (s.isConnected()) {
+                    if ((line = in.readLine()) != null) {
+                        out.println(line);
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+    }
+} catch (Exception e) {
+    e.printStackTrace();
+} finally {
+    clientRunner.shutdownNow();
+}</code></pre>
+
+  <h3>UDP – DatagramPacket, DatagramSocket, MulticastSocket</h3>
+  <ul>
+    <li><strong><code>DatagramPacket</code></strong> – samostatná, soběstačná zpráva (jako síťový paket):
+      cílová <code>InetAddress address</code> a <code>int port</code>, data <code>byte data[]</code>,
+      <code>int length</code>, <code>int offset</code>, odesílatel <code>SocketAddress sa</code>;</li>
+    <li><strong><code>DatagramSocket</code></strong> – koncový bod pro odesílání/příjem paketů; metody
+      <code>send(DatagramPacket p)</code> a <code>receive(DatagramPacket p)</code> jsou
+      <strong>blokující</strong>; <code>connect(InetAddress, int)</code> omezí komunikaci na daného hosta;</li>
+    <li><strong><code>MulticastSocket</code></strong> – navíc připojování/odpojování od multicastových
+      skupin (IGMP, rozsah IP <code>224.0.0.0 – 239.255.255.255</code>).</li>
+  </ul>
+
+  <h2 id="nio">Java NIO – kanály, buffery, selektory</h2>
+  <p><strong>Java NIO</strong> je neblokující, <strong>blokově orientované</strong> I/O. Umožňuje
+  škálovatelné asynchronní I/O a polling, vysokorychlostní binární i znakové I/O včetně mapování souborů
+  do paměti. Základní abstrakcí je <strong>kanál (channel)</strong> pracující s <strong>buffery</strong>:
+  kanál čte data do bufferu a zapisuje data z bufferu.</p>
+
+  <h3>Buffer – vlastnosti</h3>
+  <ul>
+    <li><strong><code>java.nio.Buffer</code></strong> – lineární konečná posloupnost prvků jednoho
+      primitivního typu (<code>ByteBuffer</code>, <code>CharBuffer</code>, <code>IntBuffer</code>,
+      <code>LongBuffer</code>, <code>MappedByteBuffer</code> z <code>FileChannel.map(…)</code> …);</li>
+    <li><strong>není thread-safe</strong>; jeden buffer má více režimů (čtení i zápis);</li>
+    <li>invariant: <code>0 &lt;= mark &lt;= position &lt;= limit &lt;= capacity</code>:
+      <ul>
+        <li><strong>capacity</strong> – počet prvků, <strong>nikdy se nemění</strong>;</li>
+        <li><strong>limit</strong> – index prvního prvku, který se nemá číst/zapisovat;</li>
+        <li><strong>position</strong> – index dalšího prvku ke čtení/zápisu;</li>
+        <li><strong>mark</strong> – index, na který se <code>position</code> nastaví po <code>reset()</code>.</li>
+      </ul>
+    </li>
+  </ul>
+  <p>Klíčové operace:</p>
+  <table>
+    <thead><tr><th>Operace</th><th>Účinek</th><th>Připraví buffer na</th></tr></thead>
+    <tbody>
+      <tr><td><code>clear()</code></td><td><code>position = 0</code>, <code>limit = capacity</code></td><td><strong>ČTENÍ Z KANÁLU</strong> (put)</td></tr>
+      <tr><td><code>flip()</code></td><td><code>limit = position</code>, <code>position = 0</code></td><td><strong>ZÁPIS DO KANÁLU</strong> (get)</td></tr>
+      <tr><td><code>rewind()</code></td><td><code>limit</code> beze změny, <code>position = 0</code></td><td>opětovné čtení</td></tr>
+      <tr><td><code>mark()</code></td><td><code>mark = position</code></td><td>—</td></tr>
+      <tr><td><code>reset()</code></td><td><code>position = mark</code></td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>Typické použití bufferu: <strong>(1)</strong> zapiš data do bufferu, <strong>(2)</strong> zavolej
+  <code>buffer.flip()</code>, <strong>(3)</strong> přečti data z bufferu, <strong>(4)</strong> zavolej
+  <code>buffer.clear()</code> nebo <code>buffer.compact()</code>.</p>
+  <div class="box poznamka">
+    <p class="box-title">💬 compact()</p>
+    <p><code>compact()</code> zkopíruje bajty mezi <code>position</code> a <code>limit</code> na začátek
+    bufferu a připraví ho na další zápis (nedopsaná data se nezahodí).</p>
+  </div>
+
+  <h3>Přímé (direct) buffery a nativní paměť</h3>
+  <ul>
+    <li><code>ByteBuffer.allocateDirect(…)</code> – buffer je uložen <strong>mimo Java heap</strong>,
+      v <strong>nativní paměti</strong>;</li>
+    <li>umožňuje nativnímu i Java kódu <strong>sdílet data bez kopírování</strong> – stejná paměť se
+      předává jádru OS při voláních (užitečné pro <strong>soubory a sokety</strong>);</li>
+    <li>více bufferů může sdílet nativní paměť: <code>slice()</code> / <code>duplicate()</code> mají
+      <strong>nezávislou</strong> position/limit/mark, ale <strong>sdílený obsah</strong>;
+      <code>asReadOnlyBuffer()</code> dává pohled jen pro čtení;</li>
+    <li>ladění a sledování (JVM flagy): <code>-XX:MaxDirectMemorySize=N</code> (výchozí: bez limitu),
+      <code>-XX:NativeMemoryTracking=off|summary|detail</code>, <code>-XX:+PrintNMTStatistics</code>.</li>
+  </ul>
+  <div class="box insight">
+    <p class="box-title">💡 Proč přímé buffery</p>
+    <p>Použití <strong>heap bufferů</strong> znamená kopírování obsahu do a z Java heapu, protože GC může
+    objekty <strong>přemisťovat</strong>. Přímé buffery v nativní paměti se předají jádru přímo, bez kopie.
+    JNI a nativní NIO buffery žijí v „Other native memory“ (Non Heap), mimo zásobník i Java heap.</p>
+  </div>
+
+  <h3>Channel a Selector</h3>
+  <ul>
+    <li><strong>jedno vlákno</strong> obsluhuje <strong>více kanálů najednou</strong> – interně přes
+      <strong>epoll</strong>, pokud ho OS podporuje;</li>
+    <li>kanály pokrývají síťové i souborové I/O: <code>FileChannel</code>, <code>DatagramChannel</code>,
+      <code>MulticastChannel</code>, <code>SocketChannel</code>, <code>ServerSocketChannel</code>;</li>
+    <li><strong>Channel</strong> podporuje <strong>současné čtení i zápis</strong> (proudy jsou jen
+      jednosměrné) a vždy čte/zapisuje z/do bufferu.</li>
+  </ul>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-ico">🧵</span><span class="dn-title">Thread</span><span class="dn-sub">jedno vlákno</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-ico">🎯</span><span class="dn-title">Selector</span><span class="dn-sub">obsluhuje více kanálů najednou</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-grid">
+        <div class="diag-box accent"><span class="db-title">Channel</span></div>
+        <div class="diag-box accent"><span class="db-title">Channel</span></div>
+        <div class="diag-box accent"><span class="db-title">Channel</span></div>
+      </div>
+    </div>
+    <div class="diag-cap">Jedno vlákno se Selectorem obsluhuje více kanálů (interně přes epoll).</div>
+  </div>
+  <ul>
+    <li><strong><code>FileChannel</code></strong> – podporuje jen <strong>blokující režim</strong>, ale
+      umí přímé buffery, mapované soubory, zámky a <strong>hromadné přenosy mezi kanály bez kopírování</strong>
+      (zero-copy): <code>transferFrom(sourceChannel, int pos, int count)</code>,
+      <code>transferTo(int pos, int count, dstChannel)</code>;</li>
+    <li><strong><code>SocketChannel</code></strong> – klientský konec TCP/IP; lze nastavit jako neblokující
+      <strong>před připojením</strong>; <code>write(…)</code>/<code>read(…)</code> se u neblokujícího kanálu
+      mohou vrátit, aniž by cokoli zapsaly/přečetly;</li>
+    <li><strong><code>ServerSocketChannel</code></strong> – serverový konec TCP/IP; lze nastavit jako
+      neblokující; <code>accept()</code> vrátí <code>SocketChannel</code> <strong>ve stejném režimu</strong>.</li>
+  </ul>
+
+  <h3>Selector a SelectionKey</h3>
+  <p>Do selektoru lze registrovat jen kanály v <strong>neblokujícím režimu</strong>:</p>
+  <pre><code>Selector selector = Selector.open();
+channel.configureBlocking(false);
+SelectionKey key = channel.register(selector, SelectionKey.OP_READ);</code></pre>
+  <p><code>FileChannel</code> neblokující režim nepodporuje. Události k naslouchání (<strong>SelectionKey</strong>,
+  lze kombinovat): <code>OP_CONNECT</code>, <code>OP_ACCEPT</code>, <code>OP_READ</code>,
+  <code>OP_WRITE</code>.</p>
+  <ul>
+    <li><strong>SelectionKey</strong> (vrací <code>register</code>) nese <strong>interest set</strong>
+      (vámi nastavené operace), <strong>ready set</strong> (které operace jsou připravené –
+      <code>sk.isReadable()</code>, <code>sk.isWritable()</code> …), kanál, selektor a volitelně
+      <strong>připojený objekt</strong> (<code>sk.attach(Object)</code> / <code>sk.attachment()</code>).</li>
+    <li>Výběrové metody selektoru: <code>int select()</code> <strong>blokuje</strong>, dokud není připraven
+      alespoň jeden kanál; <code>select(long timeout)</code> s časovým limitem; <code>selectNow()</code>
+      <strong>vůbec neblokuje</strong>; vracejí počet kanálů připravených od posledního volání.</li>
+    <li><code>selector.selectedKeys()</code> vrátí množinu klíčů; <code>wakeup()</code> probudí vlákno
+      blokované v <code>select()</code>; <code>close()</code> zruší selektor (kanály se nezavřou).</li>
+  </ul>
+
+  <h3>Škálovatelný NIO server – Reactor + ThreadPool</h3>
+  <p>Škálovatelný NIO server staví na vzoru <strong>Reactor</strong> kombinovaném s
+  <strong>ThreadPoolem</strong> worker vláken pro odlehčení zpracování:</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-flow">
+        <div class="diag-node c-teal"><span class="dn-ico">👥</span><span class="dn-title">Klienti</span></div>
+        <div class="diag-arrow"></div>
+        <div class="diag-node c-blue"><span class="dn-title">NIOReactors</span></div>
+        <div class="diag-arrow"><span class="lbl">přijímá nová spojení</span></div>
+        <div class="diag-node c-purple"><span class="dn-title">NIOAcceptorHandler</span></div>
+      </div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-title">NIOClientHandlers</span><span class="dn-sub">read → process → write</span></div>
+      <div class="diag-arrow"><span class="lbl">process (CPU náročný) odloží úlohu</span></div>
+      <div class="diag-node c-green"><span class="dn-ico">📋</span><span class="dn-title">fronta úloh</span><span class="dn-sub">queued task</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-red"><span class="dn-title">ThreadPool</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-grid">
+        <div class="diag-box accent"><span class="db-title">worker</span></div>
+        <div class="diag-box accent"><span class="db-title">worker</span></div>
+      </div>
+    </div>
+    <div class="diag-cap">Vzor Reactor + ThreadPool: výpočetní krok <strong>process</strong> se odloží jako úloha do fronty a zpracuje ho worker vlákno z poolu, čímž se odděluje výpočetní práce od smyčky událostí.</div>
+  </div>
+  <p>Krok <strong>process</strong> (typicky CPU náročný) se odloží jako úloha do fronty a zpracuje ho
+  worker vlákno z poolu, čímž se odděluje výpočetní práce od smyčky událostí.</p>
+
+  <h2 id="pool">Thread pooling</h2>
+  <p><strong>Thread pooling</strong> je princip, kdy se místo vytváření nového vlákna pro každou úlohu
+  udržuje <strong>fond (pool) předvytvořených vláken</strong>, který úlohy zpracovává. Hodí se pro
+  vykonání <strong>velkého počtu asynchronních úloh</strong> (např. obsluhu požadavků na serveru) a
+  <strong>snižuje režii vytváření vláken</strong> a přepínání kontextu.</p>
+  <ul>
+    <li>Rozhraní <strong><code>java.util.concurrent.ExecutorService</code></strong>:
+      <code>execute(Runnable r)</code>, <code>Future&lt;?&gt; submit(Runnable r)</code>,
+      <code>Future&lt;T&gt; submit(Callable&lt;T&gt; c)</code>, <code>shutdown()</code>,
+      <code>shutdownNow()</code>, <code>awaitTermination</code>.</li>
+    <li><strong><code>Future&lt;T&gt;</code></strong>: <code>cancel(boolean)</code>,
+      <code>isCancelled()</code>, <code>isDone()</code>, <code>V get()</code>,
+      <code>V get(long timeout, TimeUnit unit)</code>.</li>
+    <li>Tovární metody <strong><code>Executors</code></strong>:
+      <code>newSingleThreadExecutor()</code>, <code>newFixedThreadPool(nThreads)</code>,
+      <code>newCachedThreadPool()</code> (výchozí keep-alive <strong>60 sekund</strong>).</li>
+  </ul>
+
+  <h2 id="virtual">Virtuální vlákna (Project Loom)</h2>
+  <p><strong>Virtuální vlákno</strong> je odlehčená implementace Java vlákna, dostupná
+  <strong>od Javy 21</strong> (preview od Javy 19 s <code>--enable-preview</code>). Vrací jednoduchý
+  návrh „vlákno na spojení“ s téměř optimálním využitím hardwaru pro I/O zátěž.</p>
+  <p>Klasické (platformové) vlákno je tenký obal kolem <strong>vlákna spravovaného OS</strong> – základní
+  jednotky plánování OS. Jeho vytvoření a zrušení jsou <strong>drahé a náročné na zdroje</strong>, má
+  <strong>pevnou velikost zásobníku</strong> (hrozí <code>StackOverflowError</code>) a
+  <strong>neškáluje</strong>. Alternativou býval styl <code>async</code>/<code>await</code> (reaktivní,
+  callbacky), ten ale trpí špatně čitelnými stack trace, obtížným laděním a složitou sekvenční kompozicí.</p>
+
+  <h3>Jak fungují (mounting)</h3>
+  <ul>
+    <li>umožňují <strong>thread-per-request</strong> s téměř optimálním využitím HW;</li>
+    <li>jsou <strong>kompatibilní s Thread API</strong> a podporují ladění/profilování stávajícími nástroji;</li>
+    <li><strong>rámce zásobníku jsou v heapu</strong> a velikost zásobníku se <strong>dynamicky mění</strong>
+      (roste i klesá);</li>
+    <li>OS spravuje stále jen <strong>platformová vlákna</strong>; virtuální vlákno se pro běh
+      <strong>namountuje (mount) na nosné (carrier) vlákno</strong> – jeho rámce se zkopírují z heapu na
+      zásobník nosného vlákna;</li>
+    <li>při blokování (I/O, zámek, jiný zdroj) se vlákno <strong>odmountuje (unmount)</strong>;
+      mountování/odmountování je z Java kódu <strong>neviditelné</strong>, thread dump neobsahuje rámce
+      nosného vlákna;</li>
+    <li>nosná vlákna pocházejí z <strong><code>ForkJoinPool</code></strong> v režimu <strong>FIFO</strong>,
+      o velikosti počtu logických jader CPU.</li>
+  </ul>
+  <table>
+    <thead><tr><th>Stav virtuálního vlákna</th><th>Popis</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Mounted</strong></td><td>právě běží na nosném (platformovém) vlákně, které běží v OS vlákně</td></tr>
+      <tr><td><strong>Unmounted – ready</strong></td><td>spustitelné, ale momentálně nenamountované (čeká na nosné vlákno)</td></tr>
+      <tr><td><strong>Unmounted – blocked</strong></td><td>zaparkované kvůli blokování na I/O, zámku nebo zdroji; rámce v heapu</td></tr>
+    </tbody>
+  </table>
+
+  <h3>API a škálovatelnost</h3>
+  <ul>
+    <li><code>Thread::ofVirtual()</code>; <code>Executors.newVirtualThreadPerTaskExecutor()</code>
+      (každá úloha běží ve vlastním virtuálním vlákně);</li>
+    <li><code>Thread::currentThread()</code> vrací virtuální vlákno (ne nosné);
+      <code>ThreadLocal</code>, přerušení i procházení zásobníku fungují stejně;</li>
+    <li>virtuální vlákno je <strong>vždy daemon</strong> (<code>setDaemon</code> nemá efekt) a
+      <strong>nelze měnit prioritu</strong>;</li>
+    <li><strong>rychlé vytvoření, malá paměťová stopa</strong>; efektivita běhu je stejná jako u
+      platformových vláken;</li>
+    <li><strong>výborně škáluje pro I/O zátěž</strong> (i krátkodobé úlohy), hodí se pro serverové
+      aplikace; pro <strong>CPU zátěž nepřináší žádnou výhodu</strong>.</li>
+  </ul>
+  <p>Příklad spuštění 100 000 virtuálních vláken:</p>
+  <pre><code>try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    IntStream.range(0, 100_000).forEach(i -> {
+        executor.submit(() -> {
+            Thread.sleep(Duration.ofSeconds(1));
+            return i;
+        });
+    });
+}</code></pre>
+  <p>Po zahřátí to trvá asi <strong>1,1 sekundy</strong>; s <code>Executors.newFixedThreadPool(1000)</code>
+  by to trvalo asi <strong>1000 sekund</strong>.</p>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Nevýhody virtuálních vláken</p>
+    <ul>
+      <li><code>synchronized</code> <strong>připne (pin)</strong> virtuální vlákno k nosnému → používejte
+        <strong><code>ReentrantLock</code></strong>;</li>
+      <li>vykonání <strong>JNI</strong> také připíná;</li>
+      <li>nosné vlákno se uvolní <strong>jen při blokujících operacích</strong> – <strong>není preempce!</strong></li>
+    </ul>
+  </div>
+  <div class="box insight">
+    <p class="box-title">💡 Výhoda vs. nevýhoda (zkoušková dvojice)</p>
+    <p><strong>Výhoda</strong> oproti systémovým vláknům: levné vytvoření a malá paměťová stopa →
+    škálují na statisíce souběžných I/O úloh při zachování jednoduchého kódu „vlákno na spojení“.
+    <strong>Nevýhoda</strong>: žádný přínos pro CPU zátěž a riziko <strong>pinningu</strong>
+    (<code>synchronized</code>, JNI) a chybějící preempce.</p>
+  </div>
+
+  <div class="box pojmy" id="pojmy">
+    <p class="box-title">🔑 Klíčové pojmy</p>
+    <dl class="pojmy-list">
+      <dt>C10k / C10M</dt><dd>Obsloužit 10 000+ (dnes miliony) <strong>souběžných spojení</strong> na jednom serveru; jde o plánování a počet spojení, ne o požadavky/s.</dd>
+      <dt>Vlákno na spojení (Apache)</dt><dd>Jedno vlákno na spojení + blokující I/O; neškáluje kvůli ceně přepínání kontextu.</dd>
+      <dt>Událostmi řízený model (Nginx)</dt><dd>Malý pool worker vláken se smyčkou událostí a neblokujícím I/O; škáluje na mnoho spojení.</dd>
+      <dt>Blokující vs. neblokující I/O</dt><dd>Operace uspí vlákno do připravenosti dat × vrátí se ihned (i bez dat).</dd>
+      <dt>select / poll / epoll</dt><dd>POSIX, limit + ničí seznamy × bez limitu, znovupoužitelné, stále O(n) × Linux, škáluje, vrací jen vzniklé události.</dd>
+      <dt>4-tuple</dt><dd>Identita spojení: zdrojová IP, zdrojový port, cílová IP, cílový port.</dd>
+      <dt>Java NIO</dt><dd>Neblokující blokové I/O přes Buffer + Channel + Selector, interně epoll.</dd>
+      <dt>Buffer</dt><dd><code>0 ≤ mark ≤ position ≤ limit ≤ capacity</code>; <code>clear()</code> (číst z kanálu), <code>flip()</code> (psát do kanálu), <code>rewind()</code>, <code>compact()</code>.</dd>
+      <dt>Direct buffer</dt><dd><code>allocateDirect</code> v nativní paměti off-heap, sdílí se s jádrem bez kopie; heap buffery se kopírují (GC přemisťuje).</dd>
+      <dt>Thread pool</dt><dd><code>ExecutorService</code> / <code>Executors</code>; amortizuje cenu vytváření vláken, <code>submit</code> vrací <code>Future</code>.</dd>
+      <dt>Virtuální vlákno</dt><dd>Java 21; rámce v heapu, mount/unmount na nosná vlákna z FIFO <code>ForkJoinPool</code>; škáluje pro I/O, ne pro CPU; pozor na pinning a chybějící preempci.</dd>
+    </dl>
+  </div>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Co je thread-pooling? Popiš virtuální vlákna. Jmenuj jednu výhodu a jednu nevýhodu oproti systémovým vláknům.</summary>
+    <div class="odpoved">
+      <p><strong>Thread-pooling</strong> = místo vytváření vlákna pro každou úlohu se udržuje fond
+      předvytvořených vláken (<code>ExecutorService</code>, <code>Executors.newFixedThreadPool</code> /
+      <code>newCachedThreadPool</code> / <code>newSingleThreadExecutor</code>), který zpracovává velký
+      počet asynchronních úloh; snižuje režii vytváření vláken a přepínání kontextu.</p>
+      <p><strong>Virtuální vlákna</strong> (Java 21) jsou odlehčená Java vlákna s rámci v heapu, jejichž
+      zásobník se dynamicky mění. OS spravuje jen platformová (nosná) vlákna; virtuální vlákno se
+      <strong>mountuje</strong> na nosné vlákno z FIFO <code>ForkJoinPool</code> a při blokování se
+      <strong>odmountuje</strong>. Umožňují jednoduchý návrh „vlákno na spojení“.</p>
+      <p><strong>Výhoda:</strong> levné vytvoření a malá paměťová stopa → škálují na statisíce souběžných
+      I/O úloh (100k vláken ≈ 1,1 s vs. ≈ 1000 s u poolu 1000 vláken).
+      <strong>Nevýhoda:</strong> žádný přínos pro CPU zátěž a riziko <strong>pinningu</strong> nosného
+      vlákna (<code>synchronized</code>, JNI) plus chybějící preempce (carrier se uvolní jen při blokování).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> C10k: popis problému, dva přístupy ke zpracování spojení, neblokující I/O v Javě a v C.</summary>
+    <div class="odpoved">
+      <p><strong>C10k</strong> = obsloužit na jednom serveru 10 000+ <strong>souběžných spojení</strong>
+      najednou (dnes C1M/C10M); jde o efektivní plánování a počet spojení, <strong>ne o požadavky/s</strong>.</p>
+      <p><strong>Dva přístupy:</strong> (1) <strong>vlákno na spojení (Apache)</strong> – každé spojení =
+      vlastní vlákno s blokujícím I/O, plánování řeší OS, neškáluje kvůli ceně přepínání kontextu;
+      (2) <strong>událostmi řízený I/O (Nginx)</strong> – malý počet worker vláken se smyčkou událostí a
+      neblokujícím I/O, vícejádrová škálovatelnost.</p>
+      <p><strong>Neblokující I/O v C:</strong> systémová volání <code>select()</code> (POSIX, limit,
+      ničí seznamy), <code>poll()</code> (bez limitu, O(n)) a <strong><code>epoll</code></strong> (Linux,
+      škáluje, vrací jen vzniklé události; <code>epoll_create1</code>, <code>epoll_ctl</code>,
+      <code>epoll_wait</code>; level/edge <code>EPOLLET</code>). Na Windows IOCP, na BSD/macOS kqueue.</p>
+      <p><strong>Neblokující I/O v Javě:</strong> <strong>Java NIO</strong> – kanály (<code>SocketChannel</code>,
+      <code>ServerSocketChannel</code>) v neblokujícím režimu (<code>configureBlocking(false)</code>),
+      registrované u <strong>Selectoru</strong> (<code>select()</code> hlásí připravené kanály přes
+      <code>SelectionKey</code>), data se přenášejí přes <strong>buffery</strong>. Interně NIO používá epoll.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P9</span> Jaký je rozdíl mezi select, poll a epoll?</summary>
+    <div class="odpoved">
+      <p><strong>select()</strong> – POSIX, omezený počet deskriptorů, předané seznamy systémové volání
+      modifikuje (nelze znovu použít), přes deskriptory se musí iterovat → <strong>neškáluje</strong>.
+      <strong>poll()</strong> – počet deskriptorů bez limitu, deskriptory znovupoužitelné, ale stále se přes
+      ně musí <strong>iterovat O(n)</strong>. <strong>epoll</strong> – jen Linux, <strong>škáluje</strong>,
+      sledované události lze měnit za běhu a vrací <strong>jen ty události, které nastaly</strong> (level
+      vs. edge triggered <code>EPOLLET</code>). Ekvivalenty: Windows IOCP, BSD/macOS kqueue.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P9</span> Vysvětli rozdíl mezi blokujícím a neblokujícím I/O. Jak se v Javě realizuje neblokující čtení?</summary>
+    <div class="odpoved">
+      <p><strong>Blokující I/O:</strong> operace (např. <code>read</code>) uspí vlákno, dokud nejsou data
+      připravena → jedno vlákno obsluhuje jedno spojení (model Apache, <code>Socket</code>/<code>ServerSocket</code>).
+      <strong>Neblokující I/O:</strong> operace se vrátí ihned, případně bez přečtení dat; jedno vlákno tak
+      obslouží mnoho spojení (model Nginx).</p>
+      <p>V Javě to zajišťuje <strong>NIO</strong>: kanál se přepne <code>configureBlocking(false)</code>,
+      zaregistruje u <code>Selectoru</code> na operaci (<code>OP_READ</code> …), <code>selector.select()</code>
+      vrátí připravené kanály a podle <code>SelectionKey</code> (<code>isReadable()</code>) se z kanálu čte do
+      <strong>bufferu</strong>. <code>read(…)</code> se může vrátit, aniž by cokoli přečetl.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li><strong>C10k</strong> = 10 000+ <strong>souběžných spojení</strong> na jednom serveru (dnes C1M/C10M); jde o plánování a počet spojení, ne o požadavky/s.</li>
+      <li>Dva přístupy: <strong>vlákno na spojení (Apache)</strong> – blokující I/O, neškáluje; <strong>událostmi řízený (Nginx)</strong> – malý pool worker vláken, neblokující event loop, škáluje.</li>
+      <li>Připravenost I/O: <code>select()</code> (limit, ničí seznamy) → <code>poll()</code> (bez limitu, O(n)) → <strong><code>epoll</code></strong> (Linux, škáluje, jen vzniklé události); Windows IOCP, BSD kqueue.</li>
+      <li><strong>Java NIO</strong> = neblokující blokové I/O přes <strong>Buffer + Channel + Selector</strong>; buffer: <code>0 ≤ mark ≤ position ≤ limit ≤ capacity</code>, <code>clear()</code>/<code>flip()</code>.</li>
+      <li><strong>Direct buffery</strong> v nativní paměti se sdílí s jádrem bez kopie (sokety/soubory); heap buffery se kopírují, protože GC přemisťuje.</li>
+      <li><strong>Thread pooling</strong> amortizuje cenu vytváření vláken; <strong>virtuální vlákna</strong> (Java 21) vrací jednoduchý thread-per-request a škálují pro I/O (ne CPU), pozor na pinning (<code>synchronized</code>, JNI) a chybějící preempci.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="08-konkurence-dat-jvm.html">← Konkurence dat</a></span>
+    <span><a href="10-jvm-analyza-pameti.html">Další: Analýza paměti →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

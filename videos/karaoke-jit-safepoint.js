@@ -1,0 +1,1244 @@
+/* AUTO-GENERATED from JIT Safepoint.json — do not edit by hand. */
+window.KARAOKE = {
+ "song": "JIT Safepoint",
+ "title": "Horká cesta kódu (JIT, safepoint, TTSP)",
+ "source": "09-jit-safepoint.md",
+ "language": "cs",
+ "duration_ms": 169440,
+ "lines": [
+  {
+   "start_ms": 0,
+   "end_ms": 18120,
+   "text": "Bytecode běží v interpretu, krok za krokem, pomalu",
+   "words": [
+    {
+     "w": "Bytecode",
+     "start_ms": 0,
+     "end_ms": 2000
+    },
+    {
+     "w": "Bytecode",
+     "start_ms": 2000,
+     "end_ms": 4000
+    },
+    {
+     "w": "běží",
+     "start_ms": 4000,
+     "end_ms": 14520
+    },
+    {
+     "w": "v",
+     "start_ms": 14520,
+     "end_ms": 14630
+    },
+    {
+     "w": "interpretu,",
+     "start_ms": 14630,
+     "end_ms": 16030
+    },
+    {
+     "w": "krok",
+     "start_ms": 16030,
+     "end_ms": 16480
+    },
+    {
+     "w": "za",
+     "start_ms": 16480,
+     "end_ms": 16710
+    },
+    {
+     "w": "krokem",
+     "start_ms": 16710,
+     "end_ms": 17390
+    },
+    {
+     "w": "pomalu",
+     "start_ms": 17390,
+     "end_ms": 18120
+    }
+   ]
+  },
+  {
+   "start_ms": 18120,
+   "end_ms": 24060,
+   "text": "Každý příkaz znova čteme, žádný zázrak nahoře",
+   "words": [
+    {
+     "w": "Každý",
+     "start_ms": 18120,
+     "end_ms": 18920
+    },
+    {
+     "w": "příkaz",
+     "start_ms": 18920,
+     "end_ms": 19860
+    },
+    {
+     "w": "znova",
+     "start_ms": 19860,
+     "end_ms": 20420
+    },
+    {
+     "w": "čteme,",
+     "start_ms": 20420,
+     "end_ms": 21340
+    },
+    {
+     "w": "žádný",
+     "start_ms": 21340,
+     "end_ms": 22260
+    },
+    {
+     "w": "zázrak",
+     "start_ms": 22260,
+     "end_ms": 23070
+    },
+    {
+     "w": "nahoře",
+     "start_ms": 23070,
+     "end_ms": 24060
+    }
+   ]
+  },
+  {
+   "start_ms": 24060,
+   "end_ms": 29000,
+   "text": "Měříme, co se volá často, kde je kódu horko",
+   "words": [
+    {
+     "w": "Měříme,",
+     "start_ms": 24060,
+     "end_ms": 25270
+    },
+    {
+     "w": "co",
+     "start_ms": 25270,
+     "end_ms": 25500
+    },
+    {
+     "w": "se",
+     "start_ms": 25500,
+     "end_ms": 25730
+    },
+    {
+     "w": "volá",
+     "start_ms": 25730,
+     "end_ms": 26290
+    },
+    {
+     "w": "často,",
+     "start_ms": 26290,
+     "end_ms": 27190
+    },
+    {
+     "w": "kde",
+     "start_ms": 27190,
+     "end_ms": 27520
+    },
+    {
+     "w": "je",
+     "start_ms": 27520,
+     "end_ms": 27750
+    },
+    {
+     "w": "kódu",
+     "start_ms": 27750,
+     "end_ms": 28300
+    },
+    {
+     "w": "horko",
+     "start_ms": 28300,
+     "end_ms": 29000
+    }
+   ]
+  },
+  {
+   "start_ms": 29000,
+   "end_ms": 34780,
+   "text": "To horké místo si JIT vezme, přeloží to do nativu",
+   "words": [
+    {
+     "w": "To",
+     "start_ms": 29000,
+     "end_ms": 29220
+    },
+    {
+     "w": "horké",
+     "start_ms": 29220,
+     "end_ms": 29890
+    },
+    {
+     "w": "místo",
+     "start_ms": 29890,
+     "end_ms": 30570
+    },
+    {
+     "w": "si",
+     "start_ms": 30570,
+     "end_ms": 30790
+    },
+    {
+     "w": "JIT",
+     "start_ms": 30790,
+     "end_ms": 31340
+    },
+    {
+     "w": "vezme,",
+     "start_ms": 31340,
+     "end_ms": 32210
+    },
+    {
+     "w": "přeloží",
+     "start_ms": 32210,
+     "end_ms": 33470
+    },
+    {
+     "w": "to",
+     "start_ms": 33470,
+     "end_ms": 33720
+    },
+    {
+     "w": "do",
+     "start_ms": 33720,
+     "end_ms": 33970
+    },
+    {
+     "w": "nativu.",
+     "start_ms": 33970,
+     "end_ms": 34780
+    }
+   ]
+  },
+  {
+   "start_ms": 34780,
+   "end_ms": 40720,
+   "text": "Interpret je start a jistota, ale táhne se jak smola",
+   "words": [
+    {
+     "w": "Interpret",
+     "start_ms": 34780,
+     "end_ms": 35880
+    },
+    {
+     "w": "je",
+     "start_ms": 35880,
+     "end_ms": 36120
+    },
+    {
+     "w": "start",
+     "start_ms": 36120,
+     "end_ms": 36730
+    },
+    {
+     "w": "a",
+     "start_ms": 36730,
+     "end_ms": 36850
+    },
+    {
+     "w": "jistota,",
+     "start_ms": 36850,
+     "end_ms": 37950
+    },
+    {
+     "w": "ale",
+     "start_ms": 37950,
+     "end_ms": 38320
+    },
+    {
+     "w": "táhne",
+     "start_ms": 38320,
+     "end_ms": 39050
+    },
+    {
+     "w": "se",
+     "start_ms": 39050,
+     "end_ms": 39290
+    },
+    {
+     "w": "jak",
+     "start_ms": 39290,
+     "end_ms": 39660
+    },
+    {
+     "w": "smola.",
+     "start_ms": 39660,
+     "end_ms": 40720
+    }
+   ]
+  },
+  {
+   "start_ms": 40720,
+   "end_ms": 46180,
+   "text": "Horká cesta se vyplatí přeložit, ať to konečně lítá",
+   "words": [
+    {
+     "w": "Horká",
+     "start_ms": 40720,
+     "end_ms": 41290
+    },
+    {
+     "w": "cesta",
+     "start_ms": 41290,
+     "end_ms": 41760
+    },
+    {
+     "w": "se",
+     "start_ms": 41760,
+     "end_ms": 41950
+    },
+    {
+     "w": "vyplatí",
+     "start_ms": 41950,
+     "end_ms": 42710
+    },
+    {
+     "w": "přeložit,",
+     "start_ms": 42710,
+     "end_ms": 43860
+    },
+    {
+     "w": "ať",
+     "start_ms": 43860,
+     "end_ms": 44140
+    },
+    {
+     "w": "to",
+     "start_ms": 44140,
+     "end_ms": 44330
+    },
+    {
+     "w": "konečně",
+     "start_ms": 44330,
+     "end_ms": 45190
+    },
+    {
+     "w": "lítá.",
+     "start_ms": 45190,
+     "end_ms": 46180
+    }
+   ]
+  },
+  {
+   "start_ms": 46180,
+   "end_ms": 52180,
+   "text": "C1 kompiluje rychle, optimalizací málo",
+   "words": [
+    {
+     "w": "C1",
+     "start_ms": 46180,
+     "end_ms": 46740
+    },
+    {
+     "w": "kompiluje",
+     "start_ms": 46740,
+     "end_ms": 48000
+    },
+    {
+     "w": "rychle,",
+     "start_ms": 48000,
+     "end_ms": 49120
+    },
+    {
+     "w": "optimalizací",
+     "start_ms": 49120,
+     "end_ms": 50960
+    },
+    {
+     "w": "málo.",
+     "start_ms": 50960,
+     "end_ms": 52180
+    }
+   ]
+  },
+  {
+   "start_ms": 52180,
+   "end_ms": 57580,
+   "text": "Dobrý start a krátké čekání, hned je kód na nohách",
+   "words": [
+    {
+     "w": "Dobrý",
+     "start_ms": 52180,
+     "end_ms": 52780
+    },
+    {
+     "w": "start",
+     "start_ms": 52780,
+     "end_ms": 53280
+    },
+    {
+     "w": "a",
+     "start_ms": 53280,
+     "end_ms": 53380
+    },
+    {
+     "w": "krátké",
+     "start_ms": 53380,
+     "end_ms": 54180
+    },
+    {
+     "w": "čekání,",
+     "start_ms": 54180,
+     "end_ms": 55280
+    },
+    {
+     "w": "hned",
+     "start_ms": 55280,
+     "end_ms": 55680
+    },
+    {
+     "w": "je",
+     "start_ms": 55680,
+     "end_ms": 55880
+    },
+    {
+     "w": "kód",
+     "start_ms": 55880,
+     "end_ms": 56280
+    },
+    {
+     "w": "na",
+     "start_ms": 56280,
+     "end_ms": 56480
+    },
+    {
+     "w": "nohách.",
+     "start_ms": 56480,
+     "end_ms": 57580
+    }
+   ]
+  },
+  {
+   "start_ms": 57580,
+   "end_ms": 63180,
+   "text": "Interpret, pak C1, pak C2, podle tepla",
+   "words": [
+    {
+     "w": "Interpret,",
+     "start_ms": 57580,
+     "end_ms": 59280
+    },
+    {
+     "w": "pak",
+     "start_ms": 59280,
+     "end_ms": 59850
+    },
+    {
+     "w": "C1,",
+     "start_ms": 59850,
+     "end_ms": 60850
+    },
+    {
+     "w": "pak",
+     "start_ms": 60850,
+     "end_ms": 61190
+    },
+    {
+     "w": "C2,",
+     "start_ms": 61190,
+     "end_ms": 61910
+    },
+    {
+     "w": "podle",
+     "start_ms": 61910,
+     "end_ms": 62540
+    },
+    {
+     "w": "tepla",
+     "start_ms": 62540,
+     "end_ms": 63180
+    }
+   ]
+  },
+  {
+   "start_ms": 63180,
+   "end_ms": 68480,
+   "text": "Čím je kód horčejší, tím líp ho přeložíme",
+   "words": [
+    {
+     "w": "Čím",
+     "start_ms": 63180,
+     "end_ms": 63740
+    },
+    {
+     "w": "je",
+     "start_ms": 63740,
+     "end_ms": 63970
+    },
+    {
+     "w": "kód",
+     "start_ms": 63970,
+     "end_ms": 64420
+    },
+    {
+     "w": "horčejší,",
+     "start_ms": 64420,
+     "end_ms": 65910
+    },
+    {
+     "w": "tím",
+     "start_ms": 65910,
+     "end_ms": 66360
+    },
+    {
+     "w": "líp",
+     "start_ms": 66360,
+     "end_ms": 66810
+    },
+    {
+     "w": "ho",
+     "start_ms": 66810,
+     "end_ms": 67040
+    },
+    {
+     "w": "přeložíme",
+     "start_ms": 67040,
+     "end_ms": 68480
+    }
+   ]
+  },
+  {
+   "start_ms": 68480,
+   "end_ms": 74300,
+   "text": "C2 pomalu maká, ale inlining a víc triků",
+   "words": [
+    {
+     "w": "C2",
+     "start_ms": 68480,
+     "end_ms": 69070
+    },
+    {
+     "w": "pomalu",
+     "start_ms": 69070,
+     "end_ms": 69950
+    },
+    {
+     "w": "maká,",
+     "start_ms": 69950,
+     "end_ms": 70970
+    },
+    {
+     "w": "ale",
+     "start_ms": 70970,
+     "end_ms": 71410
+    },
+    {
+     "w": "inlining",
+     "start_ms": 71410,
+     "end_ms": 72590
+    },
+    {
+     "w": "a",
+     "start_ms": 72590,
+     "end_ms": 72740
+    },
+    {
+     "w": "víc",
+     "start_ms": 72740,
+     "end_ms": 73320
+    },
+    {
+     "w": "triků",
+     "start_ms": 73320,
+     "end_ms": 74300
+    }
+   ]
+  },
+  {
+   "start_ms": 74300,
+   "end_ms": 79400,
+   "text": "Nejrychlejší nativ kód na konci dostaneme",
+   "words": [
+    {
+     "w": "Nejrychlejší",
+     "start_ms": 74300,
+     "end_ms": 76120
+    },
+    {
+     "w": "nativ",
+     "start_ms": 76120,
+     "end_ms": 76770
+    },
+    {
+     "w": "kód",
+     "start_ms": 76770,
+     "end_ms": 77290
+    },
+    {
+     "w": "na",
+     "start_ms": 77290,
+     "end_ms": 77550
+    },
+    {
+     "w": "konci",
+     "start_ms": 77550,
+     "end_ms": 78200
+    },
+    {
+     "w": "dostaneme",
+     "start_ms": 78200,
+     "end_ms": 79400
+    }
+   ]
+  },
+  {
+   "start_ms": 79400,
+   "end_ms": 83240,
+   "text": "Víceúrovňová kompilace spojí oboje do jednoho toku",
+   "words": [
+    {
+     "w": "Víceúrovňová",
+     "start_ms": 79400,
+     "end_ms": 79770
+    },
+    {
+     "w": "kompilace",
+     "start_ms": 79770,
+     "end_ms": 80820
+    },
+    {
+     "w": "spojí",
+     "start_ms": 80820,
+     "end_ms": 81380
+    },
+    {
+     "w": "oboje",
+     "start_ms": 81380,
+     "end_ms": 81950
+    },
+    {
+     "w": "do",
+     "start_ms": 81950,
+     "end_ms": 82140
+    },
+    {
+     "w": "jednoho",
+     "start_ms": 82140,
+     "end_ms": 82800
+    },
+    {
+     "w": "toku",
+     "start_ms": 82800,
+     "end_ms": 83240
+    }
+   ]
+  },
+  {
+   "start_ms": 83240,
+   "end_ms": 87520,
+   "text": "Level 0 interpret, level 3 je C1 s čítači, když metoda zhorkne dost",
+   "words": [
+    {
+     "w": "0,",
+     "start_ms": 83240,
+     "end_ms": 83600
+    },
+    {
+     "w": "Interpret,",
+     "start_ms": 83600,
+     "end_ms": 84400
+    },
+    {
+     "w": "3",
+     "start_ms": 84400,
+     "end_ms": 84620
+    },
+    {
+     "w": "je",
+     "start_ms": 84620,
+     "end_ms": 84760
+    },
+    {
+     "w": "C1,",
+     "start_ms": 84760,
+     "end_ms": 85190
+    },
+    {
+     "w": "čítači,",
+     "start_ms": 85190,
+     "end_ms": 86120
+    },
+    {
+     "w": "když",
+     "start_ms": 86120,
+     "end_ms": 86420
+    },
+    {
+     "w": "metoda",
+     "start_ms": 86420,
+     "end_ms": 86790
+    },
+    {
+     "w": "zhorkne",
+     "start_ms": 86790,
+     "end_ms": 87210
+    },
+    {
+     "w": "dost",
+     "start_ms": 87210,
+     "end_ms": 87520
+    }
+   ]
+  },
+  {
+   "start_ms": 87520,
+   "end_ms": 92440,
+   "text": "Povýšíme na C2, profilování za běhu rozhoduje, koho pustíme dál",
+   "words": [
+    {
+     "w": "Povýšíme",
+     "start_ms": 87520,
+     "end_ms": 88050
+    },
+    {
+     "w": "na",
+     "start_ms": 88050,
+     "end_ms": 88440
+    },
+    {
+     "w": "C2,",
+     "start_ms": 88440,
+     "end_ms": 88910
+    },
+    {
+     "w": "profilování",
+     "start_ms": 88910,
+     "end_ms": 89820
+    },
+    {
+     "w": "za",
+     "start_ms": 89820,
+     "end_ms": 90070
+    },
+    {
+     "w": "běhu",
+     "start_ms": 90070,
+     "end_ms": 90320
+    },
+    {
+     "w": "rozhoduje,",
+     "start_ms": 90320,
+     "end_ms": 90980
+    },
+    {
+     "w": "koho",
+     "start_ms": 90980,
+     "end_ms": 91340
+    },
+    {
+     "w": "pustíme",
+     "start_ms": 91340,
+     "end_ms": 92060
+    },
+    {
+     "w": "dál",
+     "start_ms": 92060,
+     "end_ms": 92440
+    }
+   ]
+  },
+  {
+   "start_ms": 92440,
+   "end_ms": 98600,
+   "text": "A když optimalizovaný kód poruší svůj předpoklad",
+   "words": [
+    {
+     "w": "A",
+     "start_ms": 92440,
+     "end_ms": 92560
+    },
+    {
+     "w": "když",
+     "start_ms": 92560,
+     "end_ms": 93180
+    },
+    {
+     "w": "optimalizovaný",
+     "start_ms": 93180,
+     "end_ms": 95060
+    },
+    {
+     "w": "kód",
+     "start_ms": 95060,
+     "end_ms": 95550
+    },
+    {
+     "w": "poruší",
+     "start_ms": 95550,
+     "end_ms": 96540
+    },
+    {
+     "w": "svůj",
+     "start_ms": 96540,
+     "end_ms": 97160
+    },
+    {
+     "w": "předpoklad",
+     "start_ms": 97160,
+     "end_ms": 98600
+    }
+   ]
+  },
+  {
+   "start_ms": 98600,
+   "end_ms": 104100,
+   "text": "Přijde nečekaný typ a předpověď se zhroutí",
+   "words": [
+    {
+     "w": "Přijde",
+     "start_ms": 98600,
+     "end_ms": 99440
+    },
+    {
+     "w": "nečekaný",
+     "start_ms": 99440,
+     "end_ms": 100650
+    },
+    {
+     "w": "typ",
+     "start_ms": 100650,
+     "end_ms": 101020
+    },
+    {
+     "w": "a",
+     "start_ms": 101020,
+     "end_ms": 101140
+    },
+    {
+     "w": "předpověď",
+     "start_ms": 101140,
+     "end_ms": 102590
+    },
+    {
+     "w": "se",
+     "start_ms": 102590,
+     "end_ms": 102840
+    },
+    {
+     "w": "zhroutí",
+     "start_ms": 102840,
+     "end_ms": 104100
+    }
+   ]
+  },
+  {
+   "start_ms": 104100,
+   "end_ms": 110340,
+   "text": "Deoptimalizace nás vrátí zpátky do interpretu",
+   "words": [
+    {
+     "w": "Deoptimalizace",
+     "start_ms": 104100,
+     "end_ms": 106060
+    },
+    {
+     "w": "nás",
+     "start_ms": 106060,
+     "end_ms": 106610
+    },
+    {
+     "w": "vrátí",
+     "start_ms": 106610,
+     "end_ms": 107600
+    },
+    {
+     "w": "zpátky",
+     "start_ms": 107600,
+     "end_ms": 108580
+    },
+    {
+     "w": "do",
+     "start_ms": 108580,
+     "end_ms": 108860
+    },
+    {
+     "w": "interpretu",
+     "start_ms": 108860,
+     "end_ms": 110340
+    }
+   ]
+  },
+  {
+   "start_ms": 110340,
+   "end_ms": 115900,
+   "text": "Bezpečně couvneme a běžíme dál bez paniky",
+   "words": [
+    {
+     "w": "Bezpečně",
+     "start_ms": 110340,
+     "end_ms": 111550
+    },
+    {
+     "w": "couvneme",
+     "start_ms": 111550,
+     "end_ms": 112530
+    },
+    {
+     "w": "a",
+     "start_ms": 112530,
+     "end_ms": 112650
+    },
+    {
+     "w": "běžíme",
+     "start_ms": 112650,
+     "end_ms": 113730
+    },
+    {
+     "w": "dál",
+     "start_ms": 113730,
+     "end_ms": 114320
+    },
+    {
+     "w": "bez",
+     "start_ms": 114320,
+     "end_ms": 114840
+    },
+    {
+     "w": "paniky",
+     "start_ms": 114840,
+     "end_ms": 115900
+    }
+   ]
+  },
+  {
+   "start_ms": 115900,
+   "end_ms": 119400,
+   "text": "Safepoint je bod, kde všechna vlákna mají známý stav",
+   "words": [
+    {
+     "w": "Safepoint",
+     "start_ms": 115900,
+     "end_ms": 116750
+    },
+    {
+     "w": "je",
+     "start_ms": 116750,
+     "end_ms": 116940
+    },
+    {
+     "w": "bod,",
+     "start_ms": 116940,
+     "end_ms": 117420
+    },
+    {
+     "w": "kde",
+     "start_ms": 117420,
+     "end_ms": 117580
+    },
+    {
+     "w": "všechna",
+     "start_ms": 117580,
+     "end_ms": 118020
+    },
+    {
+     "w": "vlákna",
+     "start_ms": 118020,
+     "end_ms": 118400
+    },
+    {
+     "w": "mají",
+     "start_ms": 118400,
+     "end_ms": 118680
+    },
+    {
+     "w": "známý",
+     "start_ms": 118680,
+     "end_ms": 119070
+    },
+    {
+     "w": "stav",
+     "start_ms": 119070,
+     "end_ms": 119400
+    }
+   ]
+  },
+  {
+   "start_ms": 119400,
+   "end_ms": 122940,
+   "text": "Zásobníky, reference sedí bezpečně, zastavíme potřebu",
+   "words": [
+    {
+     "w": "Zásobníky,",
+     "start_ms": 119400,
+     "end_ms": 120180
+    },
+    {
+     "w": "reference",
+     "start_ms": 120180,
+     "end_ms": 120660
+    },
+    {
+     "w": "sedí",
+     "start_ms": 120660,
+     "end_ms": 120960
+    },
+    {
+     "w": "bezpečně,",
+     "start_ms": 120960,
+     "end_ms": 121710
+    },
+    {
+     "w": "zastavíme",
+     "start_ms": 121710,
+     "end_ms": 122400
+    },
+    {
+     "w": "potřebu",
+     "start_ms": 122400,
+     "end_ms": 122940
+    }
+   ]
+  },
+  {
+   "start_ms": 122940,
+   "end_ms": 125760,
+   "text": "Je to garbage kolektory, deoptimalizace",
+   "words": [
+    {
+     "w": "Je",
+     "start_ms": 122940,
+     "end_ms": 123080
+    },
+    {
+     "w": "to",
+     "start_ms": 123080,
+     "end_ms": 123220
+    },
+    {
+     "w": "garbage",
+     "start_ms": 123220,
+     "end_ms": 123870
+    },
+    {
+     "w": "kolektory,",
+     "start_ms": 123870,
+     "end_ms": 124660
+    },
+    {
+     "w": "deoptimalizace",
+     "start_ms": 124660,
+     "end_ms": 125760
+    }
+   ]
+  },
+  {
+   "start_ms": 125760,
+   "end_ms": 130560,
+   "text": "Vlákno dojede do nejbližšího safepointu a tam počká",
+   "words": [
+    {
+     "w": "Vlákno",
+     "start_ms": 125760,
+     "end_ms": 126270
+    },
+    {
+     "w": "dojede",
+     "start_ms": 126270,
+     "end_ms": 126710
+    },
+    {
+     "w": "do",
+     "start_ms": 126710,
+     "end_ms": 126860
+    },
+    {
+     "w": "nejbližšího",
+     "start_ms": 126860,
+     "end_ms": 127900
+    },
+    {
+     "w": "safepointu",
+     "start_ms": 127900,
+     "end_ms": 128740
+    },
+    {
+     "w": "a",
+     "start_ms": 128740,
+     "end_ms": 128900
+    },
+    {
+     "w": "tam",
+     "start_ms": 128900,
+     "end_ms": 129390
+    },
+    {
+     "w": "počká",
+     "start_ms": 129390,
+     "end_ms": 130560
+    }
+   ]
+  },
+  {
+   "start_ms": 130560,
+   "end_ms": 136560,
+   "text": "TTSP je čas, než dorazí všichni do safepointu",
+   "words": [
+    {
+     "w": "TTSP",
+     "start_ms": 130560,
+     "end_ms": 131280
+    },
+    {
+     "w": "je",
+     "start_ms": 131280,
+     "end_ms": 131640
+    },
+    {
+     "w": "čas,",
+     "start_ms": 131640,
+     "end_ms": 132720
+    },
+    {
+     "w": "než",
+     "start_ms": 132720,
+     "end_ms": 133440
+    },
+    {
+     "w": "dorazí",
+     "start_ms": 133440,
+     "end_ms": 134780
+    },
+    {
+     "w": "všichni",
+     "start_ms": 134780,
+     "end_ms": 135460
+    },
+    {
+     "w": "do",
+     "start_ms": 135460,
+     "end_ms": 135630
+    },
+    {
+     "w": "safepointu",
+     "start_ms": 135630,
+     "end_ms": 136560
+    }
+   ]
+  },
+  {
+   "start_ms": 136560,
+   "end_ms": 141340,
+   "text": "Dlouhá smyčka bez kontroly to natáhne všem",
+   "words": [
+    {
+     "w": "Dlouhá",
+     "start_ms": 136560,
+     "end_ms": 137360
+    },
+    {
+     "w": "smyčka",
+     "start_ms": 137360,
+     "end_ms": 138160
+    },
+    {
+     "w": "bez",
+     "start_ms": 138160,
+     "end_ms": 138510
+    },
+    {
+     "w": "kontroly",
+     "start_ms": 138510,
+     "end_ms": 139440
+    },
+    {
+     "w": "to",
+     "start_ms": 139440,
+     "end_ms": 139670
+    },
+    {
+     "w": "natáhne",
+     "start_ms": 139670,
+     "end_ms": 140590
+    },
+    {
+     "w": "všem",
+     "start_ms": 140590,
+     "end_ms": 141340
+    }
+   ]
+  },
+  {
+   "start_ms": 141340,
+   "end_ms": 147100,
+   "text": "I krátká pauza čeká, než se vůbec rozjede",
+   "words": [
+    {
+     "w": "I",
+     "start_ms": 141340,
+     "end_ms": 141490
+    },
+    {
+     "w": "krátká",
+     "start_ms": 141490,
+     "end_ms": 142660
+    },
+    {
+     "w": "pauza",
+     "start_ms": 142660,
+     "end_ms": 143400
+    },
+    {
+     "w": "čeká,",
+     "start_ms": 143400,
+     "end_ms": 144600
+    },
+    {
+     "w": "než",
+     "start_ms": 144600,
+     "end_ms": 145120
+    },
+    {
+     "w": "se",
+     "start_ms": 145120,
+     "end_ms": 145380
+    },
+    {
+     "w": "vůbec",
+     "start_ms": 145380,
+     "end_ms": 146160
+    },
+    {
+     "w": "rozjede",
+     "start_ms": 146160,
+     "end_ms": 147100
+    }
+   ]
+  },
+  {
+   "start_ms": 147100,
+   "end_ms": 169440,
+   "text": "Jedno líné vlákno drží celý svět",
+   "words": [
+    {
+     "w": "Jedno",
+     "start_ms": 147100,
+     "end_ms": 148550
+    },
+    {
+     "w": "líné",
+     "start_ms": 148550,
+     "end_ms": 149730
+    },
+    {
+     "w": "vlákno",
+     "start_ms": 149730,
+     "end_ms": 150510
+    },
+    {
+     "w": "drží",
+     "start_ms": 150510,
+     "end_ms": 151170
+    },
+    {
+     "w": "celý",
+     "start_ms": 151170,
+     "end_ms": 151940
+    },
+    {
+     "w": "svět",
+     "start_ms": 151940,
+     "end_ms": 169440
+    }
+   ]
+  }
+ ]
+};

@@ -1,0 +1,418 @@
+/* AUTO-GENERATED from pisnicky-manualni-prepis/Běh na 95%.json — do not edit by hand. */
+window.KARAOKE =
+{
+  "song": "Běh na 95%",
+  "title": "Změř to správně",
+  "source": "15-benchmarking.md",
+  "language": "cs",
+  "duration_ms": 147640,
+  "lines": [
+    {
+      "start_ms": 440,
+      "end_ms": 7660,
+      "text": "Benchmarking, zahřej a opakuj",
+      "words": [
+        { "w": "Benchmarking", "start_ms": 440, "end_ms": 4320 },
+        { "w": "zahřej", "start_ms": 4320, "end_ms": 5870 },
+        { "w": "a", "start_ms": 5870, "end_ms": 6090 },
+        { "w": "opakuj", "start_ms": 6090, "end_ms": 7660 }
+      ]
+    },
+    {
+      "start_ms": 7660,
+      "end_ms": 11380,
+      "text": "ne jedno číslo",
+      "words": [
+        { "w": "ne", "start_ms": 7660, "end_ms": 9510 },
+        { "w": "jedno", "start_ms": 9510, "end_ms": 11380 }
+      ]
+    },
+    {
+      "start_ms": 11380,
+      "end_ms": 20580,
+      "text": "jeden běh ti nic neřekne",
+      "words": [
+        { "w": "jeden", "start_ms": 11380, "end_ms": 13460 },
+        { "w": "běh", "start_ms": 13460, "end_ms": 15210 },
+        { "w": "ti", "start_ms": 15210, "end_ms": 15950 },
+        { "w": "nic", "start_ms": 15950, "end_ms": 17200 },
+        { "w": "neřekne", "start_ms": 17200, "end_ms": 20580 }
+      ]
+    },
+    {
+      "start_ms": 20580,
+      "end_ms": 24440,
+      "text": "to číslo je jen náhoda",
+      "words": [
+        { "w": "to", "start_ms": 20580, "end_ms": 20940 },
+        { "w": "číslo", "start_ms": 20940, "end_ms": 22210 },
+        { "w": "je", "start_ms": 22210, "end_ms": 22570 },
+        { "w": "jen", "start_ms": 22570, "end_ms": 23110 },
+        { "w": "náhoda", "start_ms": 23110, "end_ms": 24440 }
+      ]
+    },
+    {
+      "start_ms": 24440,
+      "end_ms": 27640,
+      "text": "zahřátí, plánovač, cache",
+      "words": [
+        { "w": "zahřátí", "start_ms": 24440, "end_ms": 25740 },
+        { "w": "plánovač", "start_ms": 25740, "end_ms": 27250 },
+        { "w": "cache", "start_ms": 27250, "end_ms": 27640 }
+      ]
+    },
+    {
+      "start_ms": 27670,
+      "end_ms": 31040,
+      "text": "turbo skáče sem a tam",
+      "words": [
+        { "w": "turbo", "start_ms": 27670, "end_ms": 28530 },
+        { "w": "skáče", "start_ms": 28530, "end_ms": 29800 },
+        { "w": "sem", "start_ms": 29800, "end_ms": 30280 },
+        { "w": "a", "start_ms": 30280, "end_ms": 30460 },
+        { "w": "tam", "start_ms": 30460, "end_ms": 31040 }
+      ]
+    },
+    {
+      "start_ms": 31040,
+      "end_ms": 35620,
+      "text": "nejdřív warmup, ať doběhne JIT",
+      "words": [
+        { "w": "nejdřív", "start_ms": 31040, "end_ms": 32970 },
+        { "w": "warmup", "start_ms": 32970, "end_ms": 34420 },
+        { "w": "ať", "start_ms": 34420, "end_ms": 34660 },
+        { "w": "doběhne", "start_ms": 34660, "end_ms": 35300 },
+        { "w": "JIT", "start_ms": 35300, "end_ms": 35620 }
+      ]
+    },
+    {
+      "start_ms": 35620,
+      "end_ms": 39360,
+      "text": "pak to opakuj zas a zas",
+      "words": [
+        { "w": "pak", "start_ms": 35620, "end_ms": 36240 },
+        { "w": "to", "start_ms": 36240, "end_ms": 36680 },
+        { "w": "opakuj", "start_ms": 36680, "end_ms": 37880 },
+        { "w": "zas", "start_ms": 37880, "end_ms": 38520 },
+        { "w": "a", "start_ms": 38520, "end_ms": 38700 },
+        { "w": "zas", "start_ms": 38700, "end_ms": 39360 }
+      ]
+    },
+    {
+      "start_ms": 39360,
+      "end_ms": 42420,
+      "text": "GC ti to rozhází",
+      "words": [
+        { "w": "GC", "start_ms": 39360, "end_ms": 39930 },
+        { "w": "ti", "start_ms": 39930, "end_ms": 40370 },
+        { "w": "to", "start_ms": 40370, "end_ms": 40690 },
+        { "w": "rozhází", "start_ms": 40690, "end_ms": 42420 }
+      ]
+    },
+    {
+      "start_ms": 42420,
+      "end_ms": 45860,
+      "text": "tak měř a počítej průměr",
+      "words": [
+        { "w": "tak", "start_ms": 42420, "end_ms": 42810 },
+        { "w": "měř", "start_ms": 42810, "end_ms": 43460 },
+        { "w": "a", "start_ms": 43460, "end_ms": 43590 },
+        { "w": "počítej", "start_ms": 43590, "end_ms": 44760 },
+        { "w": "průměr", "start_ms": 44760, "end_ms": 45860 }
+      ]
+    },
+    {
+      "start_ms": 45860,
+      "end_ms": 51820,
+      "text": "zahřej a opakuj, neber jedno číslo",
+      "words": [
+        { "w": "zahřej", "start_ms": 45860, "end_ms": 47540 },
+        { "w": "a", "start_ms": 47540, "end_ms": 47780 },
+        { "w": "opakuj", "start_ms": 47780, "end_ms": 49240 },
+        { "w": "neber", "start_ms": 49240, "end_ms": 49990 },
+        { "w": "jedno", "start_ms": 49990, "end_ms": 50740 },
+        { "w": "číslo", "start_ms": 50740, "end_ms": 51820 }
+      ]
+    },
+    {
+      "start_ms": 51820,
+      "end_ms": 57500,
+      "text": "reportuj průměr a k němu interval 95%",
+      "words": [
+        { "w": "reportuj", "start_ms": 51820, "end_ms": 52850 },
+        { "w": "průměr", "start_ms": 52850, "end_ms": 53900 },
+        { "w": "a", "start_ms": 53900, "end_ms": 54010 },
+        { "w": "k", "start_ms": 54010, "end_ms": 54120 },
+        { "w": "němu", "start_ms": 54120, "end_ms": 54680 },
+        { "w": "interval", "start_ms": 54680, "end_ms": 55720 },
+        { "w": "95%", "start_ms": 55720, "end_ms": 57500 }
+      ]
+    },
+    {
+      "start_ms": 57500,
+      "end_ms": 59710,
+      "text": "kde je ten pravý průměr,",
+      "words": [
+        { "w": "kde", "start_ms": 57500, "end_ms": 57770 },
+        { "w": "je", "start_ms": 57770, "end_ms": 57950 },
+        { "w": "ten", "start_ms": 57950, "end_ms": 58220 },
+        { "w": "pravý", "start_ms": 58220, "end_ms": 58760 },
+        { "w": "průměr", "start_ms": 58760, "end_ms": 59710 }
+      ]
+    },
+    {
+      "start_ms": 59710,
+      "end_ms": 63660,
+      "text": "užší interval, spolehlivější měření",
+      "words": [
+        { "w": "užší", "start_ms": 59710, "end_ms": 60440 },
+        { "w": "interval", "start_ms": 60440, "end_ms": 61460 },
+        { "w": "spolehlivější", "start_ms": 61460, "end_ms": 62740 },
+        { "w": "měření", "start_ms": 62740, "end_ms": 63660 }
+      ]
+    },
+    {
+      "start_ms": 63660,
+      "end_ms": 70140,
+      "text": "speedup je starý čas, děleno nový,",
+      "words": [
+        { "w": "speedup", "start_ms": 63660, "end_ms": 64940 },
+        { "w": "je", "start_ms": 64940, "end_ms": 65310 },
+        { "w": "starý", "start_ms": 65310, "end_ms": 66410 },
+        { "w": "čas", "start_ms": 66410, "end_ms": 67500 },
+        { "w": "děleno", "start_ms": 67500, "end_ms": 68770 },
+        { "w": "nový", "start_ms": 68770, "end_ms": 70140 }
+      ]
+    },
+    {
+      "start_ms": 70140,
+      "end_ms": 73500,
+      "text": "je to poměr, nejsou to procenta,",
+      "words": [
+        { "w": "je", "start_ms": 70140, "end_ms": 70360 },
+        { "w": "to", "start_ms": 70360, "end_ms": 70580 },
+        { "w": "poměr", "start_ms": 70580, "end_ms": 71460 },
+        { "w": "nejsou", "start_ms": 71460, "end_ms": 72120 },
+        { "w": "to", "start_ms": 72120, "end_ms": 72340 },
+        { "w": "procenta", "start_ms": 72340, "end_ms": 73500 }
+      ]
+    },
+    {
+      "start_ms": 73500,
+      "end_ms": 77460,
+      "text": "nad jedna znamená zrychlení,",
+      "words": [
+        { "w": "nad", "start_ms": 73500, "end_ms": 73930 },
+        { "w": "jedna", "start_ms": 73930, "end_ms": 74640 },
+        { "w": "znamená", "start_ms": 74640, "end_ms": 75770 },
+        { "w": "zrychlení", "start_ms": 75770, "end_ms": 77460 }
+      ]
+    },
+    {
+      "start_ms": 77460,
+      "end_ms": 80860,
+      "text": "pod jedna sis to zpomalil.",
+      "words": [
+        { "w": "pod", "start_ms": 77460, "end_ms": 77890 },
+        { "w": "jedna", "start_ms": 77890, "end_ms": 78600 },
+        { "w": "sis", "start_ms": 78600, "end_ms": 79160 },
+        { "w": "to", "start_ms": 79160, "end_ms": 79160 },
+        { "w": "zpomalil", "start_ms": 79160, "end_ms": 80860 }
+      ]
+    },
+    {
+      "start_ms": 80860,
+      "end_ms": 83900,
+      "text": "ať ti vyjde zase to stejné číslo,",
+      "words": [
+        { "w": "ať", "start_ms": 80860, "end_ms": 81140 },
+        { "w": "ti", "start_ms": 81140, "end_ms": 81330 },
+        { "w": "vyjde", "start_ms": 81330, "end_ms": 81800 },
+        { "w": "zase", "start_ms": 81800, "end_ms": 82180 },
+        { "w": "to", "start_ms": 82180, "end_ms": 82370 },
+        { "w": "stejné", "start_ms": 82370, "end_ms": 83040 },
+        { "w": "číslo", "start_ms": 83040, "end_ms": 83900 }
+      ]
+    },
+    {
+      "start_ms": 83900,
+      "end_ms": 86860,
+      "text": "stejný stroj, turbo vypnuté,",
+      "words": [
+        { "w": "stejný", "start_ms": 83900, "end_ms": 84560 },
+        { "w": "stroj", "start_ms": 84560, "end_ms": 85230 },
+        { "w": "turbo", "start_ms": 85230, "end_ms": 85710 },
+        { "w": "vypnuté", "start_ms": 85710, "end_ms": 86860 }
+      ]
+    },
+    {
+      "start_ms": 86860,
+      "end_ms": 90840,
+      "text": "žádné škálování frekvence",
+      "words": [
+        { "w": "žádné", "start_ms": 86860, "end_ms": 87900 },
+        { "w": "škálování", "start_ms": 87900, "end_ms": 89590 },
+        { "w": "frekvence", "start_ms": 89590, "end_ms": 90840 }
+      ]
+    },
+    {
+      "start_ms": 90840,
+      "end_ms": 94560,
+      "text": "opakovatelnost je základ",
+      "words": [
+        { "w": "opakovatelnost", "start_ms": 90840, "end_ms": 93080 },
+        { "w": "je", "start_ms": 93080, "end_ms": 93400 },
+        { "w": "základ", "start_ms": 93400, "end_ms": 94560 }
+      ]
+    },
+    {
+      "start_ms": 94560,
+      "end_ms": 98600,
+      "text": "Amdahlův zákon ti dá strop",
+      "words": [
+        { "w": "Amdahlův", "start_ms": 94560, "end_ms": 95880 },
+        { "w": "zákon", "start_ms": 95880, "end_ms": 96870 },
+        { "w": "ti", "start_ms": 96870, "end_ms": 97200 },
+        { "w": "dá", "start_ms": 97200, "end_ms": 97700 },
+        { "w": "strop", "start_ms": 97700, "end_ms": 98600 }
+      ]
+    },
+    {
+      "start_ms": 98600,
+      "end_ms": 102600,
+      "text": "sériová část drží zpátky",
+      "words": [
+        { "w": "sériová", "start_ms": 98600, "end_ms": 99940 },
+        { "w": "část", "start_ms": 99940, "end_ms": 100780 },
+        { "w": "drží", "start_ms": 100780, "end_ms": 101550 },
+        { "w": "zpátky", "start_ms": 101550, "end_ms": 102600 }
+      ]
+    },
+    {
+      "start_ms": 102600,
+      "end_ms": 107620,
+      "text": "podíl kódu, co se dá paralelizovat",
+      "words": [
+        { "w": "podíl", "start_ms": 102600, "end_ms": 103590 },
+        { "w": "kódu", "start_ms": 103590, "end_ms": 104720 },
+        { "w": "co", "start_ms": 104720, "end_ms": 105010 },
+        { "w": "se", "start_ms": 105010, "end_ms": 105300 },
+        { "w": "dá", "start_ms": 105300, "end_ms": 105730 },
+        { "w": "paralelizovat", "start_ms": 105730, "end_ms": 107620 }
+      ]
+    },
+    {
+      "start_ms": 107620,
+      "end_ms": 112240,
+      "text": "zbytek běží jen sériově",
+      "words": [
+        { "w": "zbytek", "start_ms": 107620, "end_ms": 108760 },
+        { "w": "běží", "start_ms": 108760, "end_ms": 110090 },
+        { "w": "jen", "start_ms": 110090, "end_ms": 110660 },
+        { "w": "sériově", "start_ms": 110660, "end_ms": 112240 }
+      ]
+    },
+    {
+      "start_ms": 112240,
+      "end_ms": 116760,
+      "text": "čím víc sériového, tím nižší strop",
+      "words": [
+        { "w": "čím", "start_ms": 112240, "end_ms": 112900 },
+        { "w": "víc", "start_ms": 112900, "end_ms": 113440 },
+        { "w": "sériového", "start_ms": 113440, "end_ms": 115040 },
+        { "w": "tím", "start_ms": 115040, "end_ms": 115440 },
+        { "w": "nižší", "start_ms": 115440, "end_ms": 116240 },
+        { "w": "strop", "start_ms": 116240, "end_ms": 116760 }
+      ]
+    },
+    {
+      "start_ms": 116760,
+      "end_ms": 122000,
+      "text": "na nekonečnu jader je limit pevný",
+      "words": [
+        { "w": "na", "start_ms": 116760, "end_ms": 117490 },
+        { "w": "nekonečnu", "start_ms": 117490, "end_ms": 119330 },
+        { "w": "jader", "start_ms": 119330, "end_ms": 120400 },
+        { "w": "je", "start_ms": 120400, "end_ms": 120620 },
+        { "w": "limit", "start_ms": 120620, "end_ms": 121300 },
+        { "w": "pevný", "start_ms": 121300, "end_ms": 122000 }
+      ]
+    },
+    {
+      "start_ms": 122000,
+      "end_ms": 125640,
+      "text": "zahřej a opakuj, neber jedno číslo",
+      "words": [
+        { "w": "zahřej", "start_ms": 122000, "end_ms": 122770 },
+        { "w": "a", "start_ms": 122770, "end_ms": 122880 },
+        { "w": "opakuj", "start_ms": 122880, "end_ms": 123760 },
+        { "w": "neber", "start_ms": 123760, "end_ms": 124310 },
+        { "w": "jedno", "start_ms": 124310, "end_ms": 124860 },
+        { "w": "číslo", "start_ms": 124860, "end_ms": 125640 }
+      ]
+    },
+    {
+      "start_ms": 125640,
+      "end_ms": 130510,
+      "text": "reportuj průměr a k němu interval 95%",
+      "words": [
+        { "w": "reportuj", "start_ms": 125640, "end_ms": 126680 },
+        { "w": "průměr", "start_ms": 126680, "end_ms": 127740 },
+        { "w": "a", "start_ms": 127740, "end_ms": 127850 },
+        { "w": "k", "start_ms": 127850, "end_ms": 127960 },
+        { "w": "němu", "start_ms": 127960, "end_ms": 128510 },
+        { "w": "interval", "start_ms": 128510, "end_ms": 129520 },
+        { "w": "95%", "start_ms": 129520, "end_ms": 130510 }
+      ]
+    },
+    {
+      "start_ms": 130510,
+      "end_ms": 133640,
+      "text": "kde je ten pravý průměr",
+      "words": [
+        { "w": "kde", "start_ms": 130510, "end_ms": 130930 },
+        { "w": "je", "start_ms": 130930, "end_ms": 131210 },
+        { "w": "ten", "start_ms": 131210, "end_ms": 131630 },
+        { "w": "pravý", "start_ms": 131630, "end_ms": 132470 },
+        { "w": "průměr", "start_ms": 132470, "end_ms": 133640 }
+      ]
+    },
+    {
+      "start_ms": 133640,
+      "end_ms": 137680,
+      "text": "užší interval, spolehlivější měření",
+      "words": [
+        { "w": "užší", "start_ms": 133640, "end_ms": 134280 },
+        { "w": "interval", "start_ms": 134280, "end_ms": 135300 },
+        { "w": "spolehlivější", "start_ms": 135300, "end_ms": 136760 },
+        { "w": "měření", "start_ms": 136760, "end_ms": 137680 }
+      ]
+    },
+    {
+      "start_ms": 137680,
+      "end_ms": 144260,
+      "text": "speedup je starý čas, děleno nový",
+      "words": [
+        { "w": "speedup", "start_ms": 137680, "end_ms": 139060 },
+        { "w": "je", "start_ms": 139060, "end_ms": 139450 },
+        { "w": "starý", "start_ms": 139450, "end_ms": 140630 },
+        { "w": "čas", "start_ms": 140630, "end_ms": 141790 },
+        { "w": "děleno", "start_ms": 141790, "end_ms": 143170 },
+        { "w": "nový", "start_ms": 143170, "end_ms": 144260 }
+      ]
+    },
+    {
+      "start_ms": 144260,
+      "end_ms": 147640,
+      "text": "sériová část je tvůj strop",
+      "words": [
+        { "w": "sériová", "start_ms": 144260, "end_ms": 145090 },
+        { "w": "část", "start_ms": 145090, "end_ms": 146610 },
+        { "w": "je", "start_ms": 146610, "end_ms": 146770 },
+        { "w": "tvůj", "start_ms": 146770, "end_ms": 147180 },
+        { "w": "strop", "start_ms": 147180, "end_ms": 147640 }
+      ]
+    }
+  ]
+}
+;

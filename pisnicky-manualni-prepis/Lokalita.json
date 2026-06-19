@@ -1,0 +1,1558 @@
+{
+  "song": "Lokalita",
+  "title": "Proč paměť brzdí",
+  "source": "05-pamet-cache-tlb.md",
+  "language": "cs",
+  "duration_ms": 135980,
+  "lines": [
+    {
+      "start_ms": 80,
+      "end_ms": 3280,
+      "text": "CPU zvládne instrukci klidně v jednom cyklu,",
+      "words": [
+        {
+          "w": "CPU",
+          "start_ms": 80,
+          "end_ms": 280
+        },
+        {
+          "w": "zvládne",
+          "start_ms": 280,
+          "end_ms": 900
+        },
+        {
+          "w": "instrukci",
+          "start_ms": 900,
+          "end_ms": 1640
+        },
+        {
+          "w": "klidně",
+          "start_ms": 1640,
+          "end_ms": 2210
+        },
+        {
+          "w": "v",
+          "start_ms": 2210,
+          "end_ms": 2290
+        },
+        {
+          "w": "jednom",
+          "start_ms": 2290,
+          "end_ms": 2790
+        },
+        {
+          "w": "cyklu,",
+          "start_ms": 2790,
+          "end_ms": 3280
+        }
+      ]
+    },
+    {
+      "start_ms": 3280,
+      "end_ms": 9770,
+      "text": "ale hlavní paměť je líná, sto až tři sta cyklů",
+      "words": [
+        {
+          "w": "ale",
+          "start_ms": 3280,
+          "end_ms": 3710
+        },
+        {
+          "w": "hlavní",
+          "start_ms": 3710,
+          "end_ms": 4710
+        },
+        {
+          "w": "paměť",
+          "start_ms": 4710,
+          "end_ms": 5700
+        },
+        {
+          "w": "je",
+          "start_ms": 5700,
+          "end_ms": 5990
+        },
+        {
+          "w": "líná,",
+          "start_ms": 5990,
+          "end_ms": 6900
+        },
+        {
+          "w": "sto",
+          "start_ms": 6900,
+          "end_ms": 7860
+        },
+        {
+          "w": "až",
+          "start_ms": 7860,
+          "end_ms": 8160
+        },
+        {
+          "w": "tři",
+          "start_ms": 8160,
+          "end_ms": 8645
+        },
+        {
+          "w": "sta",
+          "start_ms": 8645,
+          "end_ms": 9130
+        },
+        {
+          "w": "cyklů",
+          "start_ms": 9130,
+          "end_ms": 9770
+        }
+      ]
+    },
+    {
+      "start_ms": 9770,
+      "end_ms": 23500,
+      "text": "čeká Procesor není pomalý, on jenom pořád čeká,",
+      "words": [
+        {
+          "w": "čeká",
+          "start_ms": 9770,
+          "end_ms": 10440
+        },
+        {
+          "w": "Procesor",
+          "start_ms": 10440,
+          "end_ms": 15700
+        },
+        {
+          "w": "není",
+          "start_ms": 15700,
+          "end_ms": 18330
+        },
+        {
+          "w": "pomalý,",
+          "start_ms": 18330,
+          "end_ms": 22190
+        },
+        {
+          "w": "on",
+          "start_ms": 22190,
+          "end_ms": 22320
+        },
+        {
+          "w": "jenom",
+          "start_ms": 22320,
+          "end_ms": 22640
+        },
+        {
+          "w": "pořád",
+          "start_ms": 22640,
+          "end_ms": 23090
+        },
+        {
+          "w": "čeká,",
+          "start_ms": 23090,
+          "end_ms": 23500
+        }
+      ]
+    },
+    {
+      "start_ms": 23500,
+      "end_ms": 26680,
+      "text": "data jsou daleko v paměti a cesta je moc dlouhá.",
+      "words": [
+        {
+          "w": "data",
+          "start_ms": 23500,
+          "end_ms": 23800
+        },
+        {
+          "w": "jsou",
+          "start_ms": 23800,
+          "end_ms": 24100
+        },
+        {
+          "w": "daleko",
+          "start_ms": 24100,
+          "end_ms": 24690
+        },
+        {
+          "w": "v",
+          "start_ms": 24690,
+          "end_ms": 24750
+        },
+        {
+          "w": "paměti",
+          "start_ms": 24750,
+          "end_ms": 25280
+        },
+        {
+          "w": "a",
+          "start_ms": 25280,
+          "end_ms": 25340
+        },
+        {
+          "w": "cesta",
+          "start_ms": 25340,
+          "end_ms": 25720
+        },
+        {
+          "w": "je",
+          "start_ms": 25720,
+          "end_ms": 25870
+        },
+        {
+          "w": "moc",
+          "start_ms": 25870,
+          "end_ms": 26090
+        },
+        {
+          "w": "dlouhá.",
+          "start_ms": 26090,
+          "end_ms": 26680
+        }
+      ]
+    },
+    {
+      "start_ms": 26680,
+      "end_ms": 30410,
+      "text": "Proto vznikla cache, malá rychlá kopie u jádra,",
+      "words": [
+        {
+          "w": "Proto",
+          "start_ms": 26680,
+          "end_ms": 27010
+        },
+        {
+          "w": "vznikla",
+          "start_ms": 27010,
+          "end_ms": 27460
+        },
+        {
+          "w": "cache,",
+          "start_ms": 27460,
+          "end_ms": 27930
+        },
+        {
+          "w": "malá",
+          "start_ms": 27930,
+          "end_ms": 28260
+        },
+        {
+          "w": "rychlá",
+          "start_ms": 28260,
+          "end_ms": 28720
+        },
+        {
+          "w": "kopie",
+          "start_ms": 28720,
+          "end_ms": 29140
+        },
+        {
+          "w": "u",
+          "start_ms": 29140,
+          "end_ms": 29260
+        },
+        {
+          "w": "jádra,",
+          "start_ms": 29260,
+          "end_ms": 30410
+        }
+      ]
+    },
+    {
+      "start_ms": 30410,
+      "end_ms": 34680,
+      "text": "ať se míň čeká na paměť, ať procesor nestojí a počítá dál.",
+      "words": [
+        {
+          "w": "ať",
+          "start_ms": 30410,
+          "end_ms": 30700
+        },
+        {
+          "w": "se",
+          "start_ms": 30700,
+          "end_ms": 30860
+        },
+        {
+          "w": "míň",
+          "start_ms": 30860,
+          "end_ms": 31010
+        },
+        {
+          "w": "čeká",
+          "start_ms": 31010,
+          "end_ms": 31300
+        },
+        {
+          "w": "na",
+          "start_ms": 31300,
+          "end_ms": 31450
+        },
+        {
+          "w": "paměť,",
+          "start_ms": 31450,
+          "end_ms": 31580
+        },
+        {
+          "w": "ať",
+          "start_ms": 31580,
+          "end_ms": 31820
+        },
+        {
+          "w": "procesor",
+          "start_ms": 31820,
+          "end_ms": 32300
+        },
+        {
+          "w": "nestojí",
+          "start_ms": 32300,
+          "end_ms": 32940
+        },
+        {
+          "w": "a",
+          "start_ms": 32940,
+          "end_ms": 33060
+        },
+        {
+          "w": "počítá",
+          "start_ms": 33060,
+          "end_ms": 34150
+        },
+        {
+          "w": "dál.",
+          "start_ms": 34150,
+          "end_ms": 34680
+        }
+      ]
+    },
+    {
+      "start_ms": 34680,
+      "end_ms": 38000,
+      "text": "Registry skoro hned, L1 jenom čtyři,",
+      "words": [
+        {
+          "w": "Registry",
+          "start_ms": 34680,
+          "end_ms": 35590
+        },
+        {
+          "w": "skoro",
+          "start_ms": 35590,
+          "end_ms": 36100
+        },
+        {
+          "w": "hned,",
+          "start_ms": 36100,
+          "end_ms": 36890
+        },
+        {
+          "w": "L1",
+          "start_ms": 36890,
+          "end_ms": 37210
+        },
+        {
+          "w": "jenom",
+          "start_ms": 37210,
+          "end_ms": 37530
+        },
+        {
+          "w": "čtyři,",
+          "start_ms": 37530,
+          "end_ms": 38000
+        }
+      ]
+    },
+    {
+      "start_ms": 38000,
+      "end_ms": 39840,
+      "text": "L2 dvanáct, L3 čtyřicet, paměť",
+      "words": [
+        {
+          "w": "L2",
+          "start_ms": 38000,
+          "end_ms": 38240
+        },
+        {
+          "w": "dvanáct,",
+          "start_ms": 38240,
+          "end_ms": 38570
+        },
+        {
+          "w": "L3",
+          "start_ms": 38570,
+          "end_ms": 39020
+        },
+        {
+          "w": "čtyřicet,",
+          "start_ms": 39020,
+          "end_ms": 39420
+        },
+        {
+          "w": "paměť",
+          "start_ms": 39420,
+          "end_ms": 39840
+        }
+      ]
+    },
+    {
+      "start_ms": 39840,
+      "end_ms": 43180,
+      "text": "celé stovky, každé patro, řádově pomalejší,",
+      "words": [
+        {
+          "w": "celé",
+          "start_ms": 39840,
+          "end_ms": 40300
+        },
+        {
+          "w": "stovky,",
+          "start_ms": 40300,
+          "end_ms": 40630
+        },
+        {
+          "w": "každé",
+          "start_ms": 40630,
+          "end_ms": 41150
+        },
+        {
+          "w": "patro,",
+          "start_ms": 41150,
+          "end_ms": 41600
+        },
+        {
+          "w": "řádově",
+          "start_ms": 41600,
+          "end_ms": 42080
+        },
+        {
+          "w": "pomalejší,",
+          "start_ms": 42080,
+          "end_ms": 43180
+        }
+      ]
+    },
+    {
+      "start_ms": 43180,
+      "end_ms": 47520,
+      "text": "zato pojme víc, čím dál sahám, tím víc čekám, o to tady jde.",
+      "words": [
+        {
+          "w": "zato",
+          "start_ms": 43180,
+          "end_ms": 43420
+        },
+        {
+          "w": "pojme",
+          "start_ms": 43420,
+          "end_ms": 43720
+        },
+        {
+          "w": "víc,",
+          "start_ms": 43720,
+          "end_ms": 44080
+        },
+        {
+          "w": "čím",
+          "start_ms": 44080,
+          "end_ms": 44380
+        },
+        {
+          "w": "dál",
+          "start_ms": 44380,
+          "end_ms": 44620
+        },
+        {
+          "w": "sahám,",
+          "start_ms": 44620,
+          "end_ms": 45160
+        },
+        {
+          "w": "tím",
+          "start_ms": 45160,
+          "end_ms": 45460
+        },
+        {
+          "w": "víc",
+          "start_ms": 45460,
+          "end_ms": 45700
+        },
+        {
+          "w": "čekám,",
+          "start_ms": 45700,
+          "end_ms": 46180
+        },
+        {
+          "w": "o",
+          "start_ms": 46180,
+          "end_ms": 46310
+        },
+        {
+          "w": "to",
+          "start_ms": 46310,
+          "end_ms": 46580
+        },
+        {
+          "w": "tady",
+          "start_ms": 46580,
+          "end_ms": 47100
+        },
+        {
+          "w": "jde.",
+          "start_ms": 47100,
+          "end_ms": 47520
+        }
+      ]
+    },
+    {
+      "start_ms": 47520,
+      "end_ms": 51280,
+      "text": "O výkonu rozhoduje, jak moc čekáš na paměť,",
+      "words": [
+        {
+          "w": "O",
+          "start_ms": 47520,
+          "end_ms": 47610
+        },
+        {
+          "w": "výkonu",
+          "start_ms": 47610,
+          "end_ms": 48210
+        },
+        {
+          "w": "rozhoduje,",
+          "start_ms": 48210,
+          "end_ms": 49160
+        },
+        {
+          "w": "jak",
+          "start_ms": 49160,
+          "end_ms": 49420
+        },
+        {
+          "w": "moc",
+          "start_ms": 49420,
+          "end_ms": 49680
+        },
+        {
+          "w": "čekáš",
+          "start_ms": 49680,
+          "end_ms": 50360
+        },
+        {
+          "w": "na",
+          "start_ms": 50360,
+          "end_ms": 50530
+        },
+        {
+          "w": "paměť,",
+          "start_ms": 50530,
+          "end_ms": 51280
+        }
+      ]
+    },
+    {
+      "start_ms": 51280,
+      "end_ms": 53900,
+      "text": "ne počet instrukcí, ale počet cache misů.",
+      "words": [
+        {
+          "w": "ne",
+          "start_ms": 51280,
+          "end_ms": 51800
+        },
+        {
+          "w": "počet",
+          "start_ms": 51800,
+          "end_ms": 52280
+        },
+        {
+          "w": "instrukcí,",
+          "start_ms": 52280,
+          "end_ms": 52590
+        },
+        {
+          "w": "ale",
+          "start_ms": 52590,
+          "end_ms": 52790
+        },
+        {
+          "w": "počet",
+          "start_ms": 52790,
+          "end_ms": 53180
+        },
+        {
+          "w": "cache",
+          "start_ms": 53180,
+          "end_ms": 53550
+        },
+        {
+          "w": "misů.",
+          "start_ms": 53550,
+          "end_ms": 53900
+        }
+      ]
+    },
+    {
+      "start_ms": 53900,
+      "end_ms": 57720,
+      "text": "Lokalita je král, drž data blízko a po sobě,",
+      "words": [
+        {
+          "w": "Lokalita",
+          "start_ms": 53900,
+          "end_ms": 54650
+        },
+        {
+          "w": "je",
+          "start_ms": 54650,
+          "end_ms": 54840
+        },
+        {
+          "w": "král,",
+          "start_ms": 54840,
+          "end_ms": 55500
+        },
+        {
+          "w": "drž",
+          "start_ms": 55500,
+          "end_ms": 55880
+        },
+        {
+          "w": "data",
+          "start_ms": 55880,
+          "end_ms": 56260
+        },
+        {
+          "w": "blízko",
+          "start_ms": 56260,
+          "end_ms": 56920
+        },
+        {
+          "w": "a",
+          "start_ms": 56920,
+          "end_ms": 57010
+        },
+        {
+          "w": "po",
+          "start_ms": 57010,
+          "end_ms": 57200
+        },
+        {
+          "w": "sobě,",
+          "start_ms": 57200,
+          "end_ms": 57720
+        }
+      ]
+    },
+    {
+      "start_ms": 57720,
+      "end_ms": 61180,
+      "text": "jeď polem sekvenčně, ne skákat náhodně po paměti.",
+      "words": [
+        {
+          "w": "jeď",
+          "start_ms": 57720,
+          "end_ms": 57960
+        },
+        {
+          "w": "polem",
+          "start_ms": 57960,
+          "end_ms": 58260
+        },
+        {
+          "w": "sekvenčně,",
+          "start_ms": 58260,
+          "end_ms": 59040
+        },
+        {
+          "w": "ne",
+          "start_ms": 59040,
+          "end_ms": 59300
+        },
+        {
+          "w": "skákat",
+          "start_ms": 59300,
+          "end_ms": 59570
+        },
+        {
+          "w": "náhodně",
+          "start_ms": 59570,
+          "end_ms": 60220
+        },
+        {
+          "w": "po",
+          "start_ms": 60220,
+          "end_ms": 60430
+        },
+        {
+          "w": "paměti.",
+          "start_ms": 60430,
+          "end_ms": 61180
+        }
+      ]
+    },
+    {
+      "start_ms": 67580,
+      "end_ms": 71300,
+      "text": "Keš tahá celé linky, cache line šedesát čtyři bajtů,",
+      "words": [
+        {
+          "w": "Keš",
+          "start_ms": 67580,
+          "end_ms": 68000
+        },
+        {
+          "w": "tahá",
+          "start_ms": 68000,
+          "end_ms": 68420
+        },
+        {
+          "w": "celé",
+          "start_ms": 68420,
+          "end_ms": 68850
+        },
+        {
+          "w": "linky,",
+          "start_ms": 68850,
+          "end_ms": 69440
+        },
+        {
+          "w": "cache",
+          "start_ms": 69440,
+          "end_ms": 69700
+        },
+        {
+          "w": "line",
+          "start_ms": 69700,
+          "end_ms": 69920
+        },
+        {
+          "w": "šedesát",
+          "start_ms": 69920,
+          "end_ms": 70460
+        },
+        {
+          "w": "čtyři",
+          "start_ms": 70460,
+          "end_ms": 70880
+        },
+        {
+          "w": "bajtů,",
+          "start_ms": 70880,
+          "end_ms": 71300
+        }
+      ]
+    },
+    {
+      "start_ms": 71300,
+      "end_ms": 74560,
+      "text": "sáhneš na jeden bajt a přitáhne se celý řádek.",
+      "words": [
+        {
+          "w": "sáhneš",
+          "start_ms": 71300,
+          "end_ms": 72130
+        },
+        {
+          "w": "na",
+          "start_ms": 72130,
+          "end_ms": 72260
+        },
+        {
+          "w": "jeden",
+          "start_ms": 72260,
+          "end_ms": 72590
+        },
+        {
+          "w": "bajt",
+          "start_ms": 72590,
+          "end_ms": 72840
+        },
+        {
+          "w": "a",
+          "start_ms": 72840,
+          "end_ms": 72900
+        },
+        {
+          "w": "přitáhne",
+          "start_ms": 72900,
+          "end_ms": 73540
+        },
+        {
+          "w": "se",
+          "start_ms": 73540,
+          "end_ms": 73670
+        },
+        {
+          "w": "celý",
+          "start_ms": 73670,
+          "end_ms": 73990
+        },
+        {
+          "w": "řádek.",
+          "start_ms": 73990,
+          "end_ms": 74560
+        }
+      ]
+    },
+    {
+      "start_ms": 74560,
+      "end_ms": 77680,
+      "text": "Časová lokalita, co jsem použil, použiju zas,",
+      "words": [
+        {
+          "w": "Časová",
+          "start_ms": 74560,
+          "end_ms": 75120
+        },
+        {
+          "w": "lokalita,",
+          "start_ms": 75120,
+          "end_ms": 75820
+        },
+        {
+          "w": "co",
+          "start_ms": 75820,
+          "end_ms": 75960
+        },
+        {
+          "w": "jsem",
+          "start_ms": 75960,
+          "end_ms": 76240
+        },
+        {
+          "w": "použil,",
+          "start_ms": 76240,
+          "end_ms": 76870
+        },
+        {
+          "w": "použiju",
+          "start_ms": 76870,
+          "end_ms": 77480
+        },
+        {
+          "w": "zas,",
+          "start_ms": 77480,
+          "end_ms": 77680
+        }
+      ]
+    },
+    {
+      "start_ms": 77680,
+      "end_ms": 81080,
+      "text": "prostorová lokalita, sousední adresy taky.",
+      "words": [
+        {
+          "w": "prostorová",
+          "start_ms": 77680,
+          "end_ms": 78580
+        },
+        {
+          "w": "lokalita,",
+          "start_ms": 78580,
+          "end_ms": 79410
+        },
+        {
+          "w": "sousední",
+          "start_ms": 79410,
+          "end_ms": 80160
+        },
+        {
+          "w": "adresy",
+          "start_ms": 80160,
+          "end_ms": 80660
+        },
+        {
+          "w": "taky.",
+          "start_ms": 80660,
+          "end_ms": 81080
+        }
+      ]
+    },
+    {
+      "start_ms": 81080,
+      "end_ms": 84240,
+      "text": "Jdeš polem po řádcích, prefetch ti je natáhne dopředu,",
+      "words": [
+        {
+          "w": "Jdeš",
+          "start_ms": 81080,
+          "end_ms": 81380
+        },
+        {
+          "w": "polem",
+          "start_ms": 81380,
+          "end_ms": 81680
+        },
+        {
+          "w": "po",
+          "start_ms": 81680,
+          "end_ms": 81900
+        },
+        {
+          "w": "řádcích,",
+          "start_ms": 81900,
+          "end_ms": 82400
+        },
+        {
+          "w": "prefetch",
+          "start_ms": 82400,
+          "end_ms": 83060
+        },
+        {
+          "w": "ti",
+          "start_ms": 83060,
+          "end_ms": 83240
+        },
+        {
+          "w": "je",
+          "start_ms": 83240,
+          "end_ms": 83400
+        },
+        {
+          "w": "natáhne",
+          "start_ms": 83400,
+          "end_ms": 83840
+        },
+        {
+          "w": "dopředu,",
+          "start_ms": 83840,
+          "end_ms": 84240
+        }
+      ]
+    },
+    {
+      "start_ms": 84240,
+      "end_ms": 87680,
+      "text": "to je sekvenční přístup, keši to sedí, to je výhra.",
+      "words": [
+        {
+          "w": "to",
+          "start_ms": 84240,
+          "end_ms": 84370
+        },
+        {
+          "w": "je",
+          "start_ms": 84370,
+          "end_ms": 84500
+        },
+        {
+          "w": "sekvenční",
+          "start_ms": 84500,
+          "end_ms": 85210
+        },
+        {
+          "w": "přístup,",
+          "start_ms": 85210,
+          "end_ms": 85980
+        },
+        {
+          "w": "keši",
+          "start_ms": 85980,
+          "end_ms": 86330
+        },
+        {
+          "w": "to",
+          "start_ms": 86330,
+          "end_ms": 86470
+        },
+        {
+          "w": "sedí,",
+          "start_ms": 86470,
+          "end_ms": 86960
+        },
+        {
+          "w": "to",
+          "start_ms": 86960,
+          "end_ms": 87080
+        },
+        {
+          "w": "je",
+          "start_ms": 87080,
+          "end_ms": 87200
+        },
+        {
+          "w": "výhra.",
+          "start_ms": 87200,
+          "end_ms": 87680
+        }
+      ]
+    },
+    {
+      "start_ms": 87680,
+      "end_ms": 90800,
+      "text": "Pointer chasing, skoky, pole, po sloupcích místo řádků,",
+      "words": [
+        {
+          "w": "Pointer",
+          "start_ms": 87680,
+          "end_ms": 88050
+        },
+        {
+          "w": "chasing,",
+          "start_ms": 88050,
+          "end_ms": 88470
+        },
+        {
+          "w": "skoky,",
+          "start_ms": 88470,
+          "end_ms": 88850
+        },
+        {
+          "w": "pole,",
+          "start_ms": 88850,
+          "end_ms": 89180
+        },
+        {
+          "w": "po",
+          "start_ms": 89180,
+          "end_ms": 89400
+        },
+        {
+          "w": "sloupcích",
+          "start_ms": 89400,
+          "end_ms": 89930
+        },
+        {
+          "w": "místo",
+          "start_ms": 89930,
+          "end_ms": 90360
+        },
+        {
+          "w": "řádků,",
+          "start_ms": 90360,
+          "end_ms": 90800
+        }
+      ]
+    },
+    {
+      "start_ms": 90800,
+      "end_ms": 94100,
+      "text": "to jsou samé cache misy, čteš z pomalého patra.",
+      "words": [
+        {
+          "w": "to",
+          "start_ms": 90800,
+          "end_ms": 90950
+        },
+        {
+          "w": "jsou",
+          "start_ms": 90950,
+          "end_ms": 91250
+        },
+        {
+          "w": "samé",
+          "start_ms": 91250,
+          "end_ms": 91630
+        },
+        {
+          "w": "cache",
+          "start_ms": 91630,
+          "end_ms": 92005
+        },
+        {
+          "w": "misy,",
+          "start_ms": 92005,
+          "end_ms": 92380
+        },
+        {
+          "w": "čteš",
+          "start_ms": 92380,
+          "end_ms": 92830
+        },
+        {
+          "w": "z",
+          "start_ms": 92830,
+          "end_ms": 92900
+        },
+        {
+          "w": "pomalého",
+          "start_ms": 92900,
+          "end_ms": 93580
+        },
+        {
+          "w": "patra.",
+          "start_ms": 93580,
+          "end_ms": 94100
+        }
+      ]
+    },
+    {
+      "start_ms": 94100,
+      "end_ms": 97460,
+      "text": "A je tu ještě TLB, malá cache překladu adres,",
+      "words": [
+        {
+          "w": "A",
+          "start_ms": 94100,
+          "end_ms": 94180
+        },
+        {
+          "w": "je",
+          "start_ms": 94180,
+          "end_ms": 94340
+        },
+        {
+          "w": "tu",
+          "start_ms": 94340,
+          "end_ms": 94500
+        },
+        {
+          "w": "ještě",
+          "start_ms": 94500,
+          "end_ms": 95060
+        },
+        {
+          "w": "TLB,",
+          "start_ms": 95060,
+          "end_ms": 95460
+        },
+        {
+          "w": "malá",
+          "start_ms": 95460,
+          "end_ms": 95860
+        },
+        {
+          "w": "cache",
+          "start_ms": 95860,
+          "end_ms": 96180
+        },
+        {
+          "w": "překladu",
+          "start_ms": 96180,
+          "end_ms": 97060
+        },
+        {
+          "w": "adres,",
+          "start_ms": 97060,
+          "end_ms": 97460
+        }
+      ]
+    },
+    {
+      "start_ms": 97460,
+      "end_ms": 101060,
+      "text": "virtuální na fyzickou, ať nemusíš číst tabulku.",
+      "words": [
+        {
+          "w": "virtuální",
+          "start_ms": 97460,
+          "end_ms": 98340
+        },
+        {
+          "w": "na",
+          "start_ms": 98340,
+          "end_ms": 98500
+        },
+        {
+          "w": "fyzickou,",
+          "start_ms": 98500,
+          "end_ms": 99370
+        },
+        {
+          "w": "ať",
+          "start_ms": 99370,
+          "end_ms": 99560
+        },
+        {
+          "w": "nemusíš",
+          "start_ms": 99560,
+          "end_ms": 100150
+        },
+        {
+          "w": "číst",
+          "start_ms": 100150,
+          "end_ms": 100540
+        },
+        {
+          "w": "tabulku.",
+          "start_ms": 100540,
+          "end_ms": 101060
+        }
+      ]
+    },
+    {
+      "start_ms": 101060,
+      "end_ms": 105090,
+      "text": "Velká data, náhodný přístup a přijde TLB mis,",
+      "words": [
+        {
+          "w": "Velká",
+          "start_ms": 101060,
+          "end_ms": 101540
+        },
+        {
+          "w": "data,",
+          "start_ms": 101540,
+          "end_ms": 102030
+        },
+        {
+          "w": "náhodný",
+          "start_ms": 102030,
+          "end_ms": 102750
+        },
+        {
+          "w": "přístup",
+          "start_ms": 102750,
+          "end_ms": 103470
+        },
+        {
+          "w": "a",
+          "start_ms": 103470,
+          "end_ms": 103550
+        },
+        {
+          "w": "přijde",
+          "start_ms": 103550,
+          "end_ms": 104110
+        },
+        {
+          "w": "TLB",
+          "start_ms": 104110,
+          "end_ms": 104640
+        },
+        {
+          "w": "mis,",
+          "start_ms": 104640,
+          "end_ms": 105090
+        }
+      ]
+    },
+    {
+      "start_ms": 105090,
+      "end_ms": 108900,
+      "text": "pak přijde page walk, drahá chůze po tabulce stránek.",
+      "words": [
+        {
+          "w": "pak",
+          "start_ms": 105090,
+          "end_ms": 105290
+        },
+        {
+          "w": "přijde",
+          "start_ms": 105290,
+          "end_ms": 105750
+        },
+        {
+          "w": "page",
+          "start_ms": 105750,
+          "end_ms": 106100
+        },
+        {
+          "w": "walk,",
+          "start_ms": 106100,
+          "end_ms": 106460
+        },
+        {
+          "w": "drahá",
+          "start_ms": 106460,
+          "end_ms": 107020
+        },
+        {
+          "w": "chůze",
+          "start_ms": 107020,
+          "end_ms": 107500
+        },
+        {
+          "w": "po",
+          "start_ms": 107500,
+          "end_ms": 107660
+        },
+        {
+          "w": "tabulce",
+          "start_ms": 107660,
+          "end_ms": 108230
+        },
+        {
+          "w": "stránek.",
+          "start_ms": 108230,
+          "end_ms": 108900
+        }
+      ]
+    },
+    {
+      "start_ms": 108900,
+      "end_ms": 113560,
+      "text": "O výkonu rozhoduje, jak moc čekáš na paměť,",
+      "words": [
+        {
+          "w": "O",
+          "start_ms": 108900,
+          "end_ms": 109360
+        },
+        {
+          "w": "výkonu",
+          "start_ms": 109360,
+          "end_ms": 110440
+        },
+        {
+          "w": "rozhoduje,",
+          "start_ms": 110440,
+          "end_ms": 112030
+        },
+        {
+          "w": "jak",
+          "start_ms": 112030,
+          "end_ms": 112220
+        },
+        {
+          "w": "moc",
+          "start_ms": 112220,
+          "end_ms": 112410
+        },
+        {
+          "w": "čekáš",
+          "start_ms": 112410,
+          "end_ms": 112930
+        },
+        {
+          "w": "na",
+          "start_ms": 112930,
+          "end_ms": 113060
+        },
+        {
+          "w": "paměť,",
+          "start_ms": 113060,
+          "end_ms": 113560
+        }
+      ]
+    },
+    {
+      "start_ms": 113560,
+      "end_ms": 116780,
+      "text": "ne počet instrukcí, ale počet cache misů.",
+      "words": [
+        {
+          "w": "ne",
+          "start_ms": 113560,
+          "end_ms": 114200
+        },
+        {
+          "w": "počet",
+          "start_ms": 114200,
+          "end_ms": 115170
+        },
+        {
+          "w": "instrukcí,",
+          "start_ms": 115170,
+          "end_ms": 115410
+        },
+        {
+          "w": "ale",
+          "start_ms": 115410,
+          "end_ms": 115890
+        },
+        {
+          "w": "počet",
+          "start_ms": 115890,
+          "end_ms": 116300
+        },
+        {
+          "w": "cache",
+          "start_ms": 116300,
+          "end_ms": 116550
+        },
+        {
+          "w": "misů.",
+          "start_ms": 116550,
+          "end_ms": 116780
+        }
+      ]
+    },
+    {
+      "start_ms": 116780,
+      "end_ms": 119980,
+      "text": "Lokalita je král, drž data blízko a po sobě,",
+      "words": [
+        {
+          "w": "Lokalita",
+          "start_ms": 116780,
+          "end_ms": 117400
+        },
+        {
+          "w": "je",
+          "start_ms": 117400,
+          "end_ms": 117560
+        },
+        {
+          "w": "král,",
+          "start_ms": 117560,
+          "end_ms": 118100
+        },
+        {
+          "w": "drž",
+          "start_ms": 118100,
+          "end_ms": 118410
+        },
+        {
+          "w": "data",
+          "start_ms": 118410,
+          "end_ms": 118730
+        },
+        {
+          "w": "blízko",
+          "start_ms": 118730,
+          "end_ms": 119270
+        },
+        {
+          "w": "a",
+          "start_ms": 119270,
+          "end_ms": 119350
+        },
+        {
+          "w": "po",
+          "start_ms": 119350,
+          "end_ms": 119510
+        },
+        {
+          "w": "sobě,",
+          "start_ms": 119510,
+          "end_ms": 119980
+        }
+      ]
+    },
+    {
+      "start_ms": 119980,
+      "end_ms": 123380,
+      "text": "jeď polem sekvenčně, ne skákat náhodně po paměti.",
+      "words": [
+        {
+          "w": "jeď",
+          "start_ms": 119980,
+          "end_ms": 120120
+        },
+        {
+          "w": "polem",
+          "start_ms": 120120,
+          "end_ms": 120540
+        },
+        {
+          "w": "sekvenčně,",
+          "start_ms": 120540,
+          "end_ms": 121450
+        },
+        {
+          "w": "ne",
+          "start_ms": 121450,
+          "end_ms": 121700
+        },
+        {
+          "w": "skákat",
+          "start_ms": 121700,
+          "end_ms": 122080
+        },
+        {
+          "w": "náhodně",
+          "start_ms": 122080,
+          "end_ms": 122710
+        },
+        {
+          "w": "po",
+          "start_ms": 122710,
+          "end_ms": 122850
+        },
+        {
+          "w": "paměti.",
+          "start_ms": 122850,
+          "end_ms": 123380
+        }
+      ]
+    },
+    {
+      "start_ms": 123380,
+      "end_ms": 130040,
+      "text": "Stejný počet operací a běží řádově jinak,",
+      "words": [
+        {
+          "w": "Stejný",
+          "start_ms": 123380,
+          "end_ms": 124530
+        },
+        {
+          "w": "počet",
+          "start_ms": 124530,
+          "end_ms": 125520
+        },
+        {
+          "w": "operací",
+          "start_ms": 125520,
+          "end_ms": 126880
+        },
+        {
+          "w": "a",
+          "start_ms": 126880,
+          "end_ms": 127020
+        },
+        {
+          "w": "běží",
+          "start_ms": 127020,
+          "end_ms": 128000
+        },
+        {
+          "w": "řádově",
+          "start_ms": 128000,
+          "end_ms": 129260
+        },
+        {
+          "w": "jinak,",
+          "start_ms": 129260,
+          "end_ms": 130040
+        }
+      ]
+    },
+    {
+      "start_ms": 130040,
+      "end_ms": 135980,
+      "text": "podle toho, jak saháš do paměti, tak rychle to jede.",
+      "words": [
+        {
+          "w": "podle",
+          "start_ms": 130040,
+          "end_ms": 130550
+        },
+        {
+          "w": "toho,",
+          "start_ms": 130550,
+          "end_ms": 131150
+        },
+        {
+          "w": "jak",
+          "start_ms": 131150,
+          "end_ms": 131460
+        },
+        {
+          "w": "saháš",
+          "start_ms": 131460,
+          "end_ms": 132170
+        },
+        {
+          "w": "do",
+          "start_ms": 132170,
+          "end_ms": 132370
+        },
+        {
+          "w": "paměti,",
+          "start_ms": 132370,
+          "end_ms": 133180
+        },
+        {
+          "w": "tak",
+          "start_ms": 133180,
+          "end_ms": 133740
+        },
+        {
+          "w": "rychle",
+          "start_ms": 133740,
+          "end_ms": 134840
+        },
+        {
+          "w": "to",
+          "start_ms": 134840,
+          "end_ms": 135210
+        },
+        {
+          "w": "jede.",
+          "start_ms": 135210,
+          "end_ms": 135980
+        }
+      ]
+    }
+  ]
+}

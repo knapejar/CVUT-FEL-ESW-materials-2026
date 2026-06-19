@@ -1,0 +1,1520 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Cesta zdrojáku — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#16243a; --bg-bot:#0a0f14; --panel:#13202b; --text:#f2efe6; --muted:#9bae9a;
+    --accent:#FFC24B; --accent2:#E8743B; --rail:#9fb3c8; --token:#7fe3c0; --ast:#8fc9ff;
+    --ir:#c9a6ff; --ok:#5be08a; --hot:#ff5a5a; --code:#ffe08a; --ink:#0c1510; --border:#22303a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(255,194,75,.16);border:1px solid rgba(255,194,75,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#06090d;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.78),rgba(0,0,0,.34) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(255,194,75,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 16px rgba(255,194,75,.98)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#d9e7c9;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(28,38,52,.85),rgba(6,9,13,.93));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#FFC24B,#E8743B);color:#0a0f14;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(232,116,59,.5)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#e7e1d2} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#243140 var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">Cesta zdrojáku</span>
+    <span class="badge">IMMERSIVE VIDEO 🚂</span>
+    <span class="hints">space = play/pauza · ←/→ = ±5s · R = restart</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">Cesta zdrojáku — výuková lyric-video k B4M36ESW. Zdroják jede vlakem přes lexer (tokeny) → parser (AST) → sémantiku → IR (kde se optimalizuje) → backend (strojový kód). PGO = změř reálný běh a zkompiluj podruhé chytřeji.<small>~2 min 44 s · zpívaná videolekce · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="163.632" step="0.01" value="0">
+    <span class="time" id="tDur">2:44</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-lekser.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){ showErr('pixi-filters not loaded after pixi'); }
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/Lekser.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:151780,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=163.632;            // MP3 / stage length (fallback when audio.duration unavailable)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (§2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};            // quadratic out
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // Beat (bluegrass, brisk 132 BPM)
+  const BPM=132;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  const rollPhase=t=>t*BPM/60;
+  // GLOBAL beat gates (default 1.0; S22 ramps both to 0 over 151.78->155.0)
+  function beatAmp(t){ return 1-easeInOut(ph(t,151.78,155.0)); }
+  function signSwingAmp(t){ return lerp(0.06,0.0,easeInOut(ph(t,151.78,162.5))); }
+
+  // ============================================================
+  //  2) PALETTE + CANONICAL WORLD COORDS
+  // ============================================================
+  const C={
+    bgTop:0x16243a, bgBot:0x0a0f14, bgTopCold:0x102433, bgBotCold:0x06101a,
+    panel:0x13202b, accent:0xFFC24B, accent2:0xE8743B, rail:0x9fb3c8,
+    token:0x7fe3c0, ast:0x8fc9ff, ir:0xc9a6ff, ok:0x5be08a, hot:0xff5a5a,
+    code:0xffe08a, text:0xf2efe6, muted:0x9bae9a, ink:0x0c1510, white:0xffffff,
+    rust:0xE8743B
+  };
+  const W=1280,H=720;
+  const RAIL_Y=260, LOOP_Y=470;
+  const STATION_X=[180,380,560,700,860,1060];
+  const STATION_LABEL=['LEXER','PARSER','SÉMANTIKA','IR','OPTIMALIZACE','BACKEND'];
+  const STATION_SUB=['tokeny','AST','typy & pravidla','mezikód','×1, neutrálně','strojový kód'];
+  const SIGN_Y=120, POST_TOP=96;
+  const IR_HUB=[700,150];
+  const LANG_FLAGS=['C','Rust','Go','Swift'];
+  const CPU_CHIPS=['x86','ARM','RISC-V','PPC'];
+  // PGO loop oval (§2 explicit geometry)
+  const LOOP_X0=200, LOOP_X1=1080, LOOP_R=105, LOOP_CY=(RAIL_Y+LOOP_Y)/2;
+  const LOOP_W=LOOP_X1-LOOP_X0;
+  const topLen=LOOP_W, rightArc=Math.PI*LOOP_R, botLen=LOOP_W, leftArc=Math.PI*LOOP_R;
+  const PERIM=2*LOOP_W+2*Math.PI*LOOP_R;
+  // loopPos(p) — closed-form parametrization p in [0,1] -> world (x,y)
+  function loopPos(p){
+    let d=((p%1)+1)%1*PERIM;
+    if(d<rightArc){ const th=(d/LOOP_R)-Math.PI/2; return [LOOP_X1+LOOP_R*Math.cos(th), LOOP_CY+LOOP_R*Math.sin(th)]; }
+    d-=rightArc;
+    if(d<botLen){ return [LOOP_X1-d, LOOP_Y]; }
+    d-=botLen;
+    if(d<leftArc){ const th=(d/LOOP_R)+Math.PI/2; return [LOOP_X0+LOOP_R*Math.cos(th), LOOP_CY+LOOP_R*Math.sin(th)]; }
+    d-=leftArc;
+    return [LOOP_X0+d, RAIL_Y];
+  }
+  const segX=s=>200+s*120; // 8 PGO hot-segment markers s=0..7, at y=LOOP_Y
+  const HEAT=[.3,.4,.5,1,.6,.5,1,.4];
+
+  // ---- crate form model (§1) ----
+  const STATION_FORM=['tokens','ast','checked','ir','optir','code']; // form AFTER crossing each station X
+  // crateX(t): monotone non-decreasing on the main line; pinned for dwell/chorus per §1.
+  function crateX(t){
+    if(t<1.82) return -40;
+    if(t<29.98) return lerp(-40,120,easeInOut(ph(t,1.82,29.98)));      // roll out of depot
+    if(t<30.30) return lerp(120,180,easeOutBack(ph(t,29.98,30.30)));   // snap to LEXER
+    if(t<31.09) return 180;
+    if(t<31.95) return lerp(180,380,easeInOut(ph(t,31.09,31.95)));     // to PARSER
+    if(t<40.26) return 380;
+    if(t<41.21) return lerp(380,560,easeInOut(ph(t,40.26,41.21)));     // to SÉMANTIKA
+    if(t<44.03) return 560;
+    if(t<45.41) return lerp(560,700,easeInOut(ph(t,44.03,45.41)));     // cross to IR hub
+    if(t<59.94) return 700;                                            // chorus#1 lead-in at IR
+    if(t<60.88) return lerp(700,1060,easeInOut(ph(t,59.94,61.40)));    // to BACKEND (chorus L4 pour)
+    if(t<63.26) return 1060;
+    if(t<63.50) return lerp(1060,860,easeInOut(ph(t,63.26,63.50)));    // back to OPTIMALIZACE car (S12)
+    if(t<73.50) return 860;                                            // S12 dwell at OPTIMALIZACE
+    if(t<77.58) return lerp(860,700,easeInOut(ph(t,73.50,74.50)));     // S13 -> IR
+    if(t<85.06) return 700;                                            // S14 M+N at IR hub
+    if(t<114.60) return 1060;                                          // S15 parked at BACKEND approach
+    if(t<129.72) return 1060;                                          // chorus#2 held at head
+    if(t<144.16) return 1060;                                          // outro recap; train at line end
+    return 1060;                                                       // S21/S22
+  }
+  function cratePos(t){ return [crateX(t),200]; }
+  // form(t): step function of crateX(t) crossing stations (+ pinned dwell forms)
+  function formAt(t){
+    if(t>=63.26 && t<73.50) return 'optir';
+    if(t>=73.50 && t<77.58) return 'ir';
+    if(t>=77.58 && t<85.06) return 'ir';
+    if(t>=85.06 && t<114.60) return 'optir';
+    const x=crateX(t);
+    let f='text';
+    for(let i=0;i<STATION_X.length;i++){ if(x>=STATION_X[i]-1) f=STATION_FORM[i]; }
+    if(t>=126.36) f='code';
+    return f;
+  }
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const railLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,railLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list
+  const _ofx=[]; // {name, filter}
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §7 / §6.24)
+  //  Optional keyed PNGs in window.ASSETS layer ADDITIVELY / low-alpha ON TOP of the
+  //  always-drawn vector actors. With NO images (window.ASSETS undefined, which is the
+  //  shipped case — no assets-lekser.js tag) the video is a COMPLETE pure-vector
+  //  masterpiece. Loader is fire-and-forget; every use guards with if(IMG[slug]).
+  // ============================================================
+  const IMG={};
+  const IMG_SPRITES={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,contain){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1;
+    let sc=targetW/tw;
+    if(contain){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc);
+    s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s);
+    return s;
+  }
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    if(!window.ASSETS) return; // shipped case: no assets-lekser.js -> pure vector, no work
+    const SLUGS=['locomotive','cargo-crate','station-sign','ir-roundhouse','rail-bg','cpu-die'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{
+      if(!tex) return; IMG[slug]=tex;
+      try{
+        if(slug==='rail-bg'){
+          const s=heroSprite(bgLayer,'rail-bg',W/2,H*0.42,W,0.22,true);
+          if(s){ bgLayer.setChildIndex(s,1); IMG_SPRITES['rail-bg']=s; }
+        } else if(slug==='locomotive'){
+          const s=heroSprite(train,'locomotive',150,0,160,0.95,false);
+          if(s) IMG_SPRITES['locomotive']=s;
+        } else if(slug==='cargo-crate'){
+          const s=heroSprite(crateCont,'cargo-crate',0,0,120,0.92,false);
+          if(s){ IMG_SPRITES['cargo-crate']=s; }
+        } else if(slug==='ir-roundhouse'){
+          const s=heroSprite(irHub,'ir-roundhouse',0,0,150,0.9,false);
+          if(s){ s.alpha=0.55; IMG_SPRITES['ir-roundhouse']=s; }
+        } else if(slug==='station-sign'){
+          for(const SG of STATION_SIGNS){ const s=heroSprite(SG.board,'station-sign',0,0,140,0.9,false); if(s){ SG._img=s; } }
+        }
+        // 'cpu-die' attached by the foundry scene builders that draw it.
+      }catch(e){ showErr('img '+slug+': '+e.message); }
+    }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={gold:radialTex(0xFFC24B),amber:radialTex(0xE8743B),rail:radialTex(0x9fb3c8),token:radialTex(0x7fe3c0),
+    ast:radialTex(0x8fc9ff),ir:radialTex(0xc9a6ff),ok:radialTex(0x5be08a),hot:radialTex(0xff5a5a),code:radialTex(0xffe08a),white:radialTex(0xffffff)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={rail:lineTex(0x9fb3c8),ir:lineTex(0xc9a6ff),ast:lineTex(0x8fc9ff),token:lineTex(0x7fe3c0),code:lineTex(0xffe08a),ok:lineTex(0x5be08a),hot:lineTex(0xff5a5a),accent:lineTex(0xFFC24B)};
+  // baked rail-tie texture (one tie + gap) for the TilingSprite
+  function tieTex(){const c=document.createElement('canvas');c.width=44;c.height=24;const g=c.getContext('2d');
+    g.clearRect(0,0,44,24); g.fillStyle='#5a4632'; g.fillRect(6,4,16,16); g.fillStyle='#6b5640'; g.fillRect(7,5,14,3); return PIXI.Texture.from(c);}
+  const TIE_TEX=tieTex();
+  // baked dust mote
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  // baked token tile, ingot, punctuation chip
+  const _tileG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,30,22,5).endFill();
+  const TILE_TEX=app.renderer.generateTexture(_tileG,{resolution:2}); _tileG.destroy();
+  const _ingotG=new PIXI.Graphics().beginFill(0xffffff,1).moveTo(0,0).lineTo(22,0).lineTo(18,12).lineTo(-4,12).closePath().endFill();
+  const INGOT_TEX=app.renderer.generateTexture(_ingotG,{resolution:2}); _ingotG.destroy();
+  // baked radial-noise sprite for DisplacementFilter fallback
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const img=g.createImageData(256,256);for(let i=0;i<img.data.length;i+=4){img.data[i]=Math.random()*255;img.data[i+1]=Math.random()*255;img.data[i+2]=128;img.data[i+3]=255;}
+    g.putImageData(img,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (dusk gradient + hills + rail ties + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:false,kawase:false};
+
+  // static distant hills + telegraph poles (cacheAsBitmap)
+  const hills=new PIXI.Graphics();
+  hills.beginFill(0x13202b,0.55);
+  hills.moveTo(0,320);
+  for(let x=0;x<=1280;x+=80){ const y=300-Math.sin(x*0.013)*26-Math.cos(x*0.007)*14; hills.lineTo(x,y); }
+  hills.lineTo(1280,360).lineTo(0,360).closePath(); hills.endFill();
+  hills.beginFill(0x0f1a24,0.5);
+  hills.moveTo(0,340);
+  for(let x=0;x<=1280;x+=60){ const y=322-Math.sin(x*0.02+1.3)*18; hills.lineTo(x,y); }
+  hills.lineTo(1280,380).lineTo(0,380).closePath(); hills.endFill();
+  // telegraph poles
+  for(let x=70;x<=1230;x+=210){ hills.lineStyle(3,0x13202b,0.6).moveTo(x,168).lineTo(x,300);
+    hills.lineStyle(2,0x13202b,0.6).moveTo(x-14,182).lineTo(x+14,182); hills.moveTo(x-12,196).lineTo(x+12,196); }
+  bgLayer.addChild(hills); hills.cacheAsBitmap=true;
+
+  // ============================================================
+  //  6) RAIL LINE + STATIONS (railLayer, persistent)
+  // ============================================================
+  // main rails (two steel lines) at RAIL_Y
+  const railsG=new PIXI.Graphics(); railLayer.addChild(railsG);
+  function drawRails(){
+    railsG.clear();
+    railsG.lineStyle(4,C.rail,0.85).moveTo(0,RAIL_Y+6).lineTo(W,RAIL_Y+6);
+    railsG.lineStyle(4,C.rail,0.85).moveTo(0,RAIL_Y+20).lineTo(W,RAIL_Y+20);
+    railsG.lineStyle(2,0x6c7e90,0.5).moveTo(0,RAIL_Y+13).lineTo(W,RAIL_Y+13);
+  }
+  drawRails();
+  // rail-tie tiling sprite (under the rails)
+  const tieTile=new PIXI.TilingSprite(TIE_TEX,W,26);
+  tieTile.position.set(0,RAIL_Y); tieTile.alpha=0.0; railLayer.addChildAt(tieTile,0);
+  // reflection sheen band at the bottom of the line
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x16243a,0.16).drawRect(0,288,W,46).endFill();
+  railLayer.addChildAt(reflStrip,0);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,3],waveLength:[40,120],alpha:[0.28,0.28],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,288,W,46); }
+
+  // PGO loop oval rail (hidden until bridge / outro)
+  const loopRailG=new PIXI.Graphics(); railLayer.addChild(loopRailG); loopRailG.alpha=0;
+  function drawLoopRail(alpha,hotMix){
+    loopRailG.clear();
+    if(alpha<=0.001) return;
+    loopRailG.lineStyle(4,C.rail,0.8*alpha);
+    loopRailG.moveTo(LOOP_X0,RAIL_Y+13);
+    loopRailG.lineTo(LOOP_X1,RAIL_Y+13);
+    loopRailG.arc(LOOP_X1,LOOP_CY,LOOP_R,-Math.PI/2,Math.PI/2);
+    loopRailG.lineTo(LOOP_X0,LOOP_Y);
+    loopRailG.arc(LOOP_X0,LOOP_CY,LOOP_R,Math.PI/2,3*Math.PI/2);
+  }
+
+  // six station signs (post + swinging board)
+  const STATION_SIGNS=[];
+  for(let i=0;i<6;i++){
+    const sx=STATION_X[i];
+    const grp=new PIXI.Container(); grp.position.set(sx,POST_TOP); railLayer.addChild(grp);
+    // post
+    const post=new PIXI.Graphics();
+    post.lineStyle(5,0x6b5640,1).moveTo(0,0).lineTo(0,RAIL_Y-POST_TOP-6);
+    post.beginFill(0x4a3a28,1).drawRect(-4,-2,8,6).endFill();
+    grp.addChild(post);
+    // swinging board (pivots at post top)
+    const board=new PIXI.Container(); board.position.set(0,30); grp.addChild(board);
+    const bg=new PIXI.Graphics();
+    bg.beginFill(0x1a2b1f,0.96).lineStyle(2.5,C.accent,0.85).drawRoundedRect(-62,-18,124,36,6).endFill();
+    bg.lineStyle(2,0x6b5640,1).moveTo(0,-18).lineTo(0,-30); // hanger
+    board.addChild(bg);
+    const lbl=txt(STATION_LABEL[i],17,C.accent,'800'); lbl.position.set(0,-3); board.addChild(lbl);
+    const sub=txt(STATION_SUB[i],10,C.muted,'700'); sub.position.set(0,11); board.addChild(sub);
+    const lampGlow=glow('gold',0,0,0.7,0.0,0xFFC24B); board.addChild(lampGlow);
+    let sgGlow=null;
+    if(hasF('GlowFilter')){ sgGlow=new F.GlowFilter({distance:12,outerStrength:0,color:C.accent,quality:0.3}); board.filters=[sgGlow]; }
+    STATION_SIGNS.push({i,sx,grp,board,bg,lbl,sub,lampGlow,sgGlow});
+  }
+  function renderStations(t){
+    const sw=signSwingAmp(t);
+    const cx=crateX(t);
+    for(const SG of STATION_SIGNS){
+      SG.board.rotation = sw*Math.sin(t*TAU*BPM/60 + SG.sx*0.01);
+      // near = bright when crate within +-70px of station X
+      const near=1-clamp01(Math.abs(cx-SG.sx)/70);
+      const lit=clamp01(0.4 + 0.6*near);
+      SG.lbl.style.fill=near>0.2?C.accent:0xcfa860;
+      SG.lampGlow.alpha=0.25+0.6*near*(0.7+0.3*beat(t));
+      SG.lampGlow.scale.set(0.6+0.4*near);
+      if(SG.sgGlow) SG.sgGlow.outerStrength = chorusStrobe!=null ? chorusStrobe(SG.i,t) : (near*2.0);
+      SG.bg.alpha=lit;
+    }
+  }
+  // chorus six-sign sequence strobe hook (set by chorus update; cleared each frame)
+  let chorusStrobe=null;
+
+  // IR hub roundhouse (persistent in railLayer, behind scene actors)
+  const irHub=new PIXI.Container(); irHub.position.set(IR_HUB[0],IR_HUB[1]); railLayer.addChild(irHub);
+  const irDisc=new PIXI.Graphics(); irHub.addChild(irDisc);
+  function drawIrHub(swell,glowK){
+    irDisc.clear();
+    const r=44*swell;
+    irDisc.beginFill(0x1c1630,0.92).lineStyle(3,C.ir,0.9).drawCircle(0,0,r).endFill();
+    irDisc.lineStyle(2,C.ir,0.5);
+    for(let a=0;a<6;a++){ const an=a/6*TAU; irDisc.moveTo(0,0).lineTo(Math.cos(an)*r,Math.sin(an)*r); }
+    irDisc.beginFill(C.ir,0.18).drawCircle(0,0,r*0.45).endFill();
+  }
+  let irHubGlow=null;
+  if(hasF('GlowFilter')){ irHubGlow=new F.GlowFilter({distance:14,outerStrength:1.0,color:C.ir,quality:0.3}); irHub.filters=[irHubGlow]; }
+  const irHubGlowSprite=glow('ir',0,0,1.2,0.0,0xc9a6ff); irHub.addChildAt(irHubGlowSprite,0);
+
+  // ============================================================
+  //  7) AMBIENT EMBER MOTES (persistent ParticleContainer)
+  // ============================================================
+  const MOTE_COUNT=200;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:false},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const s=new PIXI.Sprite(GLOW.gold);s.anchor.set(0.5);s.tint=0xFFD79A;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.05+Math.random()*0.14);s.alpha=0;motePC.addChild(s);
+    motes.push({s,vx:6+(Math.random())*12,vy:-(5+Math.random()*15),phs:Math.random()*TAU,sp:0.5+Math.random()});}
+  let RT=0;
+  let moteEnvelope=0;
+  let moteVisibleRatio=1;
+
+  // spark/burst pool (recycled)
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size,texKey){
+    for(let i=0;i<count;i++){const s=glow(texKey||'white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:-Math.abs(Math.sin(a)*v)-v*0.4,life:0,max:0.7+Math.random()*1.0});}
+  }
+
+  // ============================================================
+  //  8) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  // cargo crate in its current form (drawn fresh each frame)
+  function drawCrate(g,form,t){
+    g.clear();
+    const sc=0.9+0.04*Math.sin(t*1.5);
+    if(form==='text'){
+      // rolled paper scroll
+      g.beginFill(0xe9dcc0,0.96).lineStyle(2.4,C.accent,1).drawRoundedRect(-34*sc,-26*sc,68*sc,52*sc,6).endFill();
+      g.lineStyle(1.6,0x9a8a64,0.7);
+      for(let i=0;i<5;i++){ const yy=-18*sc+i*9*sc; g.moveTo(-26*sc,yy).lineTo(26*sc,yy); }
+      g.beginFill(C.accent,0.9).drawCircle(-34*sc,0,5).drawCircle(34*sc,0,5).endFill();
+    } else if(form==='tokens'){
+      g.beginFill(C.ink,0.9).lineStyle(2.4,C.token,1).drawRoundedRect(-34,-26,68,52,6).endFill();
+      for(let i=0;i<3;i++){ g.beginFill(C.token,0.85).drawRoundedRect(-26+i*20,-8,16,16,3).endFill(); }
+    } else if(form==='ast'){
+      g.beginFill(C.ink,0.9).lineStyle(2.4,C.ast,1).drawRoundedRect(-34,-26,68,52,6).endFill();
+      g.lineStyle(2.2,C.ast,0.95).moveTo(0,-18).lineTo(-16,4); g.moveTo(0,-18).lineTo(16,4);
+      g.beginFill(C.ast,1).drawCircle(0,-18,4).drawCircle(-16,8,4).drawCircle(16,8,4).endFill();
+    } else if(form==='checked'){
+      g.beginFill(C.ink,0.9).lineStyle(2.4,C.ok,1).drawRoundedRect(-34,-26,68,52,6).endFill();
+      g.lineStyle(2.2,C.ast,0.9).moveTo(0,-16).lineTo(-14,6); g.moveTo(0,-16).lineTo(14,6);
+      g.beginFill(C.ast,1).drawCircle(0,-16,4).drawCircle(-14,10,4).drawCircle(14,10,4).endFill();
+      g.lineStyle(3,C.ok,1).moveTo(20,-18).lineTo(26,-10).lineTo(34,-24);
+    } else if(form==='ir'||form==='optir'){
+      // IR cargo barrel
+      const bc=form==='optir'?C.ir:C.ir;
+      g.beginFill(0x241b3a,0.95).lineStyle(2.6,bc,1).drawRoundedRect(-26,-30,52,60,10).endFill();
+      g.lineStyle(2,bc,0.7); g.moveTo(-26,-12).lineTo(26,-12); g.moveTo(-26,8).lineTo(26,8);
+      g.beginFill(bc,0.22).drawRoundedRect(-20,-24,40,48,8).endFill();
+      const lbl=form==='optir'?'IR+':'IR';
+      if(form==='optir'){ g.lineStyle(2,C.ok,0.9).moveTo(-10,0).lineTo(-2,8).lineTo(12,-10); }
+    } else if(form==='code'){
+      g.beginFill(C.ink,0.9).lineStyle(2.4,C.code,1).drawRoundedRect(-34,-26,68,52,6).endFill();
+      for(let r=0;r<2;r++) for(let cc=0;cc<3;cc++){ g.beginFill(C.code,0.9).moveTo(-26+cc*20,-12+r*18).lineTo(-8+cc*20,-12+r*18).lineTo(-12+cc*20,-2+r*18).lineTo(-30+cc*20,-2+r*18).closePath().endFill(); }
+    }
+  }
+  // wheel set (rotating)
+  function drawWheels(g,rot){
+    g.clear();
+    for(const wx of [-26,0,26]){
+      g.lineStyle(3,0x6c7e90,1).beginFill(0x2a3742,1).drawCircle(wx,42,11).endFill();
+      g.lineStyle(2,0x9fb3c8,0.9);
+      for(let a=0;a<4;a++){ const an=rot+a/4*TAU; g.moveTo(wx,42).lineTo(wx+Math.cos(an)*8,42+Math.sin(an)*8); }
+    }
+  }
+  // locomotive vector (head)
+  function drawLoco(g,t){
+    g.clear();
+    g.beginFill(0x2a2018,0.98).lineStyle(2.6,C.accent2,1).drawRoundedRect(-44,-30,88,56,8).endFill();
+    g.beginFill(0x1a1410,1).drawRoundedRect(-44,-30,30,56,8).endFill(); // cab
+    g.beginFill(C.accent2,0.9).drawCircle(28,-2,16).endFill();           // boiler face glow
+    g.beginFill(0xffcf8a,0.8).drawCircle(28,-2,8).endFill();
+    g.beginFill(0x3a2c20,1).drawRect(-18,-44,12,16).endFill();           // chimney
+  }
+
+  // ============================================================
+  //  9) PERSISTENT TRAIN (loco + crate + wheels) in railLayer-of-scene
+  // ============================================================
+  const trainRoot=new PIXI.Container(); railLayer.addChild(trainRoot);
+  const train=new PIXI.Container(); trainRoot.addChild(train);   // loco (offset +140 ahead)
+  const locoG=new PIXI.Graphics(); train.addChild(locoG);
+  const locoBoiler=glow('amber',46,-2,1.1,0.0,0xE8743B); train.addChildAt(locoBoiler,0);
+  let locoBloom=null;
+  if(hasF('AdvancedBloomFilter')){ locoBloom=new F.AdvancedBloomFilter({threshold:0.45,bloomScale:1.0,brightness:1.0,blur:6,quality:4}); train.filters=[locoBloom]; }
+  let locoGlowF=null;
+  if(hasF('GlowFilter')){ locoGlowF=new F.GlowFilter({distance:10,outerStrength:1.0,color:C.accent2,quality:0.3}); }
+
+  const crateCont=new PIXI.Container(); trainRoot.addChild(crateCont);
+  const crateG=new PIXI.Graphics(); crateCont.addChild(crateG);
+  const crateGlow=glow('gold',0,0,1.0,0.0,0xFFC24B); crateCont.addChildAt(crateGlow,0);
+  const wheelsG=new PIXI.Graphics(); crateCont.addChild(wheelsG);
+  const crateLbl=txt('ZDROJ',16,C.accent,'800'); crateLbl.position.set(0,-44); crateCont.addChild(crateLbl);
+  let crateGlowF=null;
+  if(hasF('GlowFilter')){ crateGlowF=new F.GlowFilter({distance:12,outerStrength:1.4,color:C.accent,quality:0.3}); crateCont.filters=[crateGlowF]; }
+
+  const FORM_LABEL={text:'ZDROJ',tokens:'TOKENY',ast:'AST',checked:'AST ✓',ir:'IR',optir:'IR+',code:'KÓD'};
+  const FORM_TINT={text:C.accent,tokens:C.token,ast:C.ast,checked:C.ok,ir:C.ir,optir:C.ir,code:C.code};
+
+  function renderTrain(t){
+    const cx=crateX(t);
+    const form=formAt(t);
+    crateCont.position.set(cx,200);
+    train.position.set(cx+140,200);
+    const rot=-rollPhase(t);
+    drawCrate(crateG,form,t);
+    drawWheels(wheelsG,rot);
+    drawLoco(locoG,t);
+    const tint=FORM_TINT[form]||C.accent;
+    crateGlow.tint=tint; crateGlow.alpha=0.55+0.25*beat(t); crateGlow.scale.set(1.0+0.12*beat(t));
+    if(crateGlowF){ crateGlowF.color=tint; crateGlowF.outerStrength=1.2+0.8*beat(t); }
+    crateLbl.text=FORM_LABEL[form]||'ZDROJ'; crateLbl.style.fill=tint;
+    locoBoiler.alpha=0.5+0.3*beat(t); locoBoiler.scale.set(1.0+0.1*beat(t));
+    if(locoBloom) locoBloom.bloomScale=1.0+0.25*beat(t);
+    // crate alpha ramps in S0
+    const a=easeOutCubic(ph(t,0,1.82));
+    crateCont.alpha=a; train.alpha=a;
+    // hero sprite tint
+    if(IMG_SPRITES['cargo-crate']) IMG_SPRITES['cargo-crate'].tint=tint;
+  }
+
+  // ============================================================
+  //  10) CAMERA RIG (GOLDEN RULE: all camera state f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  function shakeAmp(t){
+    let a=0;
+    a+=shakeEnv(t,29.98,3);    // S2 LEXER arrival
+    a+=shakeEnv(t,72.92,4);    // S12 ×1 stamp
+    a+=shakeEnv(t,83.21,3);    // S14 "ten společný kód" slam
+    a+=shakeEnv(t,47.74,3);    // S8 chorus#1 drop
+    a+=shakeEnv(t,114.60,3.5); // S16 chorus#2 drop
+    return a<0.05?0:a;
+  }
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function updateCamera(t,dt){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.010*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  11) SCENE MANAGER
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot);
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy)prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c); prev.inst.c.destroy({children:true}); }catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ============================================================
+  //  12) SHARED FILTER INSTANCES (built once)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:22,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flash=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashGreen=new F.ColorOverlayFilter(C.ok,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashWarm=new F.ColorOverlayFilter(C.accent,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashHot=new F.ColorOverlayFilter(C.hot,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,200],innerRadius:0});
+  if(hasF('ZoomBlurFilter')) FILT.zoomHeld=new F.ZoomBlurFilter({strength:0,center:[640,420],innerRadius:60});
+  if(hasF('BulgePinchFilter')) FILT.bulge=new F.BulgePinchFilter({center:[180/1280,150/720],radius:180,strength:0});
+  else FILT.bulgeDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('TwistFilter')) FILT.twist=new F.TwistFilter({radius:600,angle:0,offset:[640,360],padding:20});
+  else FILT.twistDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('CRTFilter')) FILT.crt=new F.CRTFilter({curvature:1.0,lineWidth:1.0,lineContrast:0.3,vignetting:0.3,noise:0.08,time:0});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('GlitchFilter')) FILT.glitch=new F.GlitchFilter({slices:6,offset:12,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('HslAdjustmentFilter')) FILT.hslLang=new F.HslAdjustmentFilter({hue:0,saturation:0,lightness:0,colorize:false,alpha:1});
+  if(hasF('HslAdjustmentFilter')) FILT.hslCpu=new F.HslAdjustmentFilter({hue:0,saturation:0,lightness:0,colorize:false,alpha:1});
+
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0)return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);}
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+
+  // ============================================================
+  //  13) GODRAY (warm dusk shafts; bgLayer intent-composed)
+  // ============================================================
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:35,gain:0.4,lacunarity:2.2,time:0,parallel:true}); }
+
+  // ============================================================
+  //  RENDER HELPER — persistent freight set (rails, stations, train, hub)
+  // ============================================================
+  function renderFreight(t,sec){
+    // rail ties scroll under the train whenever it is rolling
+    const rolling = (t<29.98) || (t>=31.09&&t<31.95)||(t>=40.26&&t<41.21)||(t>=44.03&&t<45.41)||(t>=59.94&&t<60.88)||(t>=63.26&&t<63.50)||(t>=73.50&&t<74.50);
+    tieTile.alpha=easeOut(ph(t,0,1.82))*0.55;
+    if(t<151.78) tieTile.tilePosition.x = -(rollPhase(t)*30)%44;
+    renderStations(t);
+    renderTrain(t);
+    // IR hub idle glow (full focus in S9/S14/chorus L2)
+    let swell=1.0, gk=1.0;
+    drawIrHub(swell,gk);
+    irHubGlowSprite.alpha=0.10+0.10*beat(t);
+    if(irHubGlow) irHubGlow.outerStrength=irHubFocus!=null?irHubFocus(t):1.0;
+    // reflection time + godray time
+    if(reflF) reflF.time=t;
+    if(godrayF) godrayF.time=t;
+    // ember motes brightness envelope (set per scene; base 0.28)
+  }
+  let irHubFocus=null; // set transiently when IR hub is the hero (S9/S14/chorus L2)
+
+  // ============================================================
+  //  SCENES S0 .. S22
+  // ============================================================
+
+  // ---------- S0 : COLD OPEN 0.00-1.82 ----------
+  scene(0,1.82,'DEPOT','intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      moteEnvelope=0.28*ph(t,0,1.82);
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    }};
+  });
+
+  // ---------- S1 : INTRO / board the train 1.82-29.98 ----------
+  scene(1.82,29.98,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    const title=txt('CESTA ZDROJÁKU',62,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('lexer · parser · AST · IR · PGO',24,C.muted,'700'); sub.position.set(640,382); legible(sub);
+    c.addChild(title,sub);
+    // pipeline preview ribbon (top HUD)
+    const ribbon=new PIXI.Container(); ribbon.position.set(0,70); c.addChild(ribbon);
+    const ribG=new PIXI.Graphics(); ribbon.addChild(ribG);
+    const ribLbls=[];
+    for(let i=0;i<6;i++){ const l=txt(STATION_LABEL[i],13,C.muted,'700'); l.position.set(STATION_X[i],70); l.alpha=0; legible(l); c.addChild(l); ribLbls.push(l); }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      const tin=easeOut(ph(t,2.0,3.8));
+      title.alpha=tin*(1-ph(t,9.0,11.0)); title.y=342-tin*12; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // pipeline preview ribbon lights left->right over 3..9, fades by 11
+      const lit=Math.floor(ph(t,3,9)*6);
+      ribG.clear();
+      const ribA=easeOut(ph(t,2.5,3.5))*(1-ph(t,10.0,11.0));
+      ribG.lineStyle(2,C.rail,0.3*ribA).moveTo(120,70).lineTo(1160,70);
+      for(let i=0;i<6;i++){ const on=i<lit?1:0.25; ribLbls[i].alpha=ribA*on; if(i<lit){ ribG.beginFill(C.accent,0.5*ribA).drawCircle(STATION_X[i],70,4).endFill(); } }
+      if(godrayF) godrayF.gain=0.4;
+    }};
+  });
+
+  // ---------- S2 : Station 1 LEXER arrives 29.98-30.41 ----------
+  scene(29.98,30.41,'LEXER','verse',(S)=>{
+    const c=new PIXI.Container();
+    const blade=new PIXI.Graphics(); c.addChild(blade);
+    const lbl=txt('LEXER',22,C.accent,'900'); lbl.position.set(180,90); legible(lbl);
+    if(hasF('GlowFilter')){ lbl._g=new F.GlowFilter({distance:14,outerStrength:3,color:C.accent,quality:0.4}); lbl.filters=(lbl.filters||[]).concat([lbl._g]); }
+    c.addChild(lbl);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      // chopper blade spins up over the crate
+      blade.clear();
+      const r=(t-29.98)*8;
+      blade.lineStyle(4,C.rail,0.95);
+      const bx=180,by=150;
+      for(let a=0;a<2;a++){ const an=r+a*Math.PI; blade.moveTo(bx+Math.cos(an)*22,by+Math.sin(an)*22).lineTo(bx-Math.cos(an)*22,by-Math.sin(an)*22); }
+      blade.beginFill(C.rail,0.9).drawCircle(bx,by,4).endFill();
+      // label punch
+      const pp=easeOutBack(ph(t,29.98,30.30)); lbl.scale.set(lerp(1.15,1.0,pp));
+      if(lbl._g) lbl._g.outerStrength=lerp(3,1,ph(t,29.98,30.30))+1.0*beat(t);
+      // arrival shockwave + chop bulge (one-shot)
+      if(t>=29.98 && !S.fired.has('arr')){ S.fired.add('arr');
+        if(FILT.shock){ const gp=new PIXI.Point(180,150); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s2shock',FILT.shock); }
+        if(FILT.bulge){ FILT.bulge.center=[180/1280,150/720]; FILT.bulge.strength=0.4; addOverlayFx('chopBulge',FILT.bulge); }
+        else if(FILT.bulgeDisp){ FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=24; addOverlayFx('chopBulge',FILT.bulgeDisp); }
+      }
+      if(FILT.shock && hasOverlayFx('s2shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>0.6) removeOverlayFx('s2shock'); }
+      if(hasOverlayFx('chopBulge')){ const k=0.4*(1-ph(t,29.98,30.30)); if(FILT.bulge) FILT.bulge.strength=k; else if(FILT.bulgeDisp) FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=k/0.4*24; if(t>=30.40) removeOverlayFx('chopBulge'); }
+    },destroy(){ removeOverlayFx('chopBulge'); removeOverlayFx('s2shock'); }};
+  });
+
+  // ---------- S3 : VERSE 1a 30.41-32.74 (chop->tokens, tree lifts) ----------
+  scene(30.41,32.74,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    // 7 token tiles flat stream
+    const tiles=[];
+    for(let i=0;i<7;i++){ const s=new PIXI.Sprite(TILE_TEX); s.anchor.set(0.5); s.tint=C.token; s.blendMode=PIXI.BLEND_MODES.NORMAL; s.alpha=0; c.addChild(s); tiles.push(s); }
+    const tokCap=txt('tokeny',18,C.token,'800'); tokCap.position.set(300,250); tokCap.alpha=0; legible(tokCap); c.addChild(tokCap);
+    // crane cable + AST tree
+    const cable=new PIXI.SimpleRope(TRAIL.rail,[new PIXI.Point(0,0),new PIXI.Point(0,0),new PIXI.Point(0,0)]); cable.alpha=0; cable.blendMode=PIXI.BLEND_MODES.ADD; c.addChild(cable);
+    const tree=new PIXI.Graphics(); c.addChild(tree);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      // token chop @30.49 — flat stream on rail at y=200
+      const cx=crateX(t);
+      for(let i=0;i<7;i++){ const tk=30.49+i*0.04; const p=easeOutBack(ph(t,tk,tk+0.3));
+        tiles[i].x=lerp(cx, 180+i*46, p); tiles[i].y=200; tiles[i].alpha=ph(t,tk,tk+0.2)*(1-ph(t,31.6,32.2)); tiles[i].scale.set(0.9*p+0.1); }
+      tokCap.alpha=easeOut(ph(t,30.49,30.9))*(1-ph(t,31.8,32.0));
+      if(t>=30.49 && !S.fired.has('chop')){ S.fired.add('chop'); burst(cx,200,C.token,16,2.5,0.16,'token'); }
+      // tree grows @31.60->32.74 rooted at (380,140); leaves = tokens
+      tree.clear();
+      const tp=easeOut(ph(t,31.60,32.74));
+      if(tp>0.01){
+        const rx=380,ry=140;
+        tree.lineStyle(2.5+1.5*tp,C.ast,0.95);
+        // 2 mid nodes
+        const m1=[rx-50,ry+70], m2=[rx+50,ry+70];
+        tree.moveTo(rx,ry); tree.bezierCurveTo(rx-20,ry+30,m1[0]+10,m1[1]-30,m1[0]*tp+rx*(1-tp),m1[1]*tp+ry*(1-tp));
+        tree.moveTo(rx,ry); tree.bezierCurveTo(rx+20,ry+30,m2[0]-10,m2[1]-30,m2[0]*tp+rx*(1-tp),m2[1]*tp+ry*(1-tp));
+        // leaves from mids
+        for(let i=0;i<4;i++){ const mm=i<2?m1:m2; const lx=mm[0]+(i%2?28:-28), ly=mm[1]+60;
+          tree.moveTo(mm[0],mm[1]).lineTo(lerp(mm[0],lx,tp),lerp(mm[1],ly,tp)); }
+        tree.lineStyle(0).beginFill(C.ast,tp);
+        tree.drawCircle(rx,ry,5); tree.drawCircle(m1[0],m1[1],4); tree.drawCircle(m2[0],m2[1],4);
+        tree.endFill();
+      }
+      // crane cable visible during lift
+      cable.alpha=easeOut(ph(t,31.2,31.6))*(1-ph(t,32.3,32.7));
+      const cp=cable._pts||cable.points; if(cp){ cp[0].x=380; cp[0].y=80; cp[1].x=380; cp[1].y=120; cp[2].x=380; cp[2].y=160; }
+    }};
+  });
+
+  // ---------- S4 : VERSE 1b 32.74-36.44 (AST = structure) ----------
+  scene(32.74,36.44,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const tree=new PIXI.Graphics(); c.addChild(tree);
+    const astLbl=txt('AST',40,C.ast,'900'); astLbl.position.set(380,86); astLbl.alpha=0; legible(astLbl);
+    if(hasF('GlowFilter')){ astLbl._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.ast,quality:0.4}); astLbl.filters=(astLbl.filters||[]).concat([astLbl._g]); }
+    c.addChild(astLbl);
+    const astSub=txt('abstraktní syntaktický strom',18,C.muted,'700'); astSub.position.set(380,330); astSub.alpha=0; legible(astSub); c.addChild(astSub);
+    const cap=txt('struktura programu',22,C.text,'800'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      const sc=1+0.02*Math.sin(t*1.5);
+      const rx=380,ry=140; const m1=[rx-50,ry+70], m2=[rx+50,ry+70];
+      tree.clear();
+      tree.lineStyle(3,C.ast,0.95);
+      tree.moveTo(rx,ry).lineTo(m1[0],m1[1]); tree.moveTo(rx,ry).lineTo(m2[0],m2[1]);
+      const leaves=[[m1[0]-28,m1[1]+60],[m1[0]+28,m1[1]+60],[m2[0]-28,m2[1]+60],[m2[0]+28,m2[1]+60]];
+      for(let i=0;i<4;i++){ const mm=i<2?m1:m2; tree.moveTo(mm[0],mm[1]).lineTo(leaves[i][0],leaves[i][1]); }
+      // node sweep flash @35.13
+      const nodes=[[rx,ry],m1,m2].concat(leaves);
+      tree.lineStyle(0);
+      for(let n=0;n<nodes.length;n++){ let col=C.ast;
+        if(t>=35.13){ const g=clamp01(beat(t-n*0.08)); col=lerpColor(C.ast,C.ok,g*ph(t,35.13,36.2)); }
+        const pulse=4+1.5*beat(t-n*0.1);
+        tree.beginFill(col,1).drawCircle(nodes[n][0],nodes[n][1],pulse*sc).endFill();
+      }
+      astLbl.alpha=easeOutBack(ph(t,34.44,34.8))*(1-ph(t,36.2,36.4)); if(astLbl._g) astLbl._g.outerStrength=2+1.5*beat(t);
+      astSub.alpha=easeOut(ph(t,34.44,34.9))*(1-ph(t,36.0,36.4));
+      cap.alpha=easeOut(ph(t,35.13,35.6))*(1-ph(t,36.2,36.4));
+    }};
+  });
+
+  // ---------- S5 : VERSE 1c 36.44-40.26 (brackets/semicolons flake off) ----------
+  scene(36.44,40.26,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const tree=new PIXI.Graphics(); c.addChild(tree);
+    // falling punctuation glyphs
+    const chaffPC=new PIXI.ParticleContainer(40,{position:true,rotation:true,alpha:true,scale:true},40,true);
+    c.addChild(chaffPC);
+    const chaff=[]; // spawned glyph sprites
+    const glyphTexCache={};
+    function glyphTex(ch){ if(glyphTexCache[ch]) return glyphTexCache[ch];
+      const tt=new PIXI.Text(ch,{fontFamily:'Arial',fontSize:30,fill:C.muted,fontWeight:'800'}); tt.resolution=2;
+      const tex=app.renderer.generateTexture(tt); tt.destroy(); glyphTexCache[ch]=tex; return tex; }
+    function spawnChaff(ch,x,y,spawn){ const s=new PIXI.Sprite(glyphTex(ch)); s.anchor.set(0.5); s.position.set(x,y); chaffPC.addChild(s);
+      chaff.push({s,spawn,x0:x,y0:y,vx:8+Math.random()*22,vy:-8-Math.random()*10,spin:(Math.random()-0.5)*6}); }
+    // clean-shine mask
+    const treeMaskTarget=new PIXI.Graphics(); c.addChild(treeMaskTarget);
+    let treeGlowF=null; if(hasF('GlowFilter')){ treeGlowF=new F.GlowFilter({distance:14,outerStrength:1.5,color:C.ast,quality:0.4}); tree.filters=[treeGlowF]; }
+    const stamp=txt('bez závorek · bez středníků',20,C.ok,'800'); stamp.position.set(640,330); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      const rx=380,ry=140; const m1=[rx-50,ry+70], m2=[rx+50,ry+70];
+      // tree brightens to near-white @38.28
+      const clean=ph(t,38.28,39.61);
+      const tcol=lerpColor(C.ast,0xeaf4ff,clean);
+      tree.clear();
+      tree.lineStyle(3+1*clean,tcol,0.95);
+      tree.moveTo(rx,ry).lineTo(m1[0],m1[1]); tree.moveTo(rx,ry).lineTo(m2[0],m2[1]);
+      const leaves=[[m1[0]-28,m1[1]+60],[m1[0]+28,m1[1]+60],[m2[0]-28,m2[1]+60],[m2[0]+28,m2[1]+60]];
+      for(let i=0;i<4;i++){ const mm=i<2?m1:m2; tree.moveTo(mm[0],mm[1]).lineTo(leaves[i][0],leaves[i][1]); }
+      tree.lineStyle(0); const allN=[[rx,ry],m1,m2].concat(leaves);
+      for(const n of allN){ tree.beginFill(tcol,1).drawCircle(n[0],n[1],4.5).endFill(); }
+      if(treeGlowF) treeGlowF.outerStrength=1.5+2*beat(t)*clean+0.5;
+      // spawn chaff once
+      if(t>=36.67 && !S.fired.has('paren')){ S.fired.add('paren'); spawnChaff('(',rx-30,ry+30,36.67); spawnChaff(')',rx+30,ry+40,36.72); spawnChaff('(',rx-10,ry+90,36.8); }
+      if(t>=37.38 && !S.fired.has('semi')){ S.fired.add('semi'); spawnChaff(';',rx+40,ry+80,37.38); spawnChaff(';',rx-40,ry+100,37.45); spawnChaff(';',rx+8,ry+50,37.55); }
+      // advance chaff as pure function of t
+      for(const g of chaff){ const e=t-g.spawn; if(e<0){ g.s.alpha=0; continue; }
+        g.s.x=g.x0+g.vx*e; g.s.y=g.y0+(g.vy*e+24*e*e); g.s.rotation=g.spin*e; g.s.alpha=clamp01(1-e/1.0); }
+      // clean-shine mask wipe (visual highlight band)
+      treeMaskTarget.clear();
+      if(clean>0&&clean<1){ const wx=lerp(300,470,clean); treeMaskTarget.beginFill(C.white,0.18).drawRect(300,90,wx-300,200).endFill();
+        treeMaskTarget.beginFill(C.white,0.4).drawRect(wx-4,90,6,200).endFill(); }
+      stamp.alpha=easeOut(ph(t,38.28,38.8))*0.9*(1-ph(t,39.9,40.2));
+    }};
+  });
+
+  // ---------- S6 : PRE-CHORUS SÉMANTIKA 40.26-43.77 ----------
+  scene(40.26,43.77,'SÉMANTIKA','verse',(S)=>{
+    const c=new PIXI.Container();
+    const arch=new PIXI.Graphics(); c.addChild(arch);
+    const tree=new PIXI.Graphics(); c.addChild(tree);
+    const beam=new PIXI.Graphics(); beam.blendMode=PIXI.BLEND_MODES.ADD; c.addChild(beam);
+    const checks=[]; for(let i=0;i<3;i++){ const ck=txt('✓',18,C.ok,'900'); ck.alpha=0; legible(ck); c.addChild(ck); checks.push(ck); }
+    const cap=txt('kontrola typů a pravidel',20,C.muted,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      const hx=560; // tree rides under the arch at SÉMANTIKA (560)
+      const rx=hx,ry=145; const m1=[rx-46,ry+68], m2=[rx+46,ry+68];
+      const leaves=[[m1[0]-26,m1[1]+56],[m1[0]+26,m1[1]+56],[m2[0]-26,m2[1]+56],[m2[0]+26,m2[1]+56]];
+      // arch
+      arch.clear();
+      arch.lineStyle(4,C.ok,0.8);
+      arch.moveTo(hx-90,310).lineTo(hx-90,110); arch.arc(hx,110,90,Math.PI,0); arch.lineTo(hx+90,310);
+      // tree under arch
+      tree.clear();
+      tree.lineStyle(3,C.ast,0.92);
+      tree.moveTo(rx,ry).lineTo(m1[0],m1[1]); tree.moveTo(rx,ry).lineTo(m2[0],m2[1]);
+      for(let i=0;i<4;i++){ const mm=i<2?m1:m2; tree.moveTo(mm[0],mm[1]).lineTo(leaves[i][0],leaves[i][1]); }
+      const allN=[[rx,ry],m1,m2].concat(leaves);
+      tree.lineStyle(0); for(const n of allN){ tree.beginFill(C.ast,1).drawCircle(n[0],n[1],4.5).endFill(); }
+      // scan beam x:480->640 over 41.90..42.91
+      beam.clear();
+      const bp=ph(t,41.90,42.91);
+      if(bp>0&&bp<1){ const bx=lerp(480,640,bp); beam.beginFill(C.ok,0.5).drawRect(bx-4,90,8,230).endFill(); beam.beginFill(C.ok,0.12).drawRect(480,90,bx-480,230).endFill(); }
+      // ✓ stamps on 3 nodes as the beam passes (typy @42.49)
+      const stampNodes=[m1,[rx,ry],m2];
+      for(let i=0;i<3;i++){ const at=42.49+i*0.14; checks[i].position.set(stampNodes[i][0]+14,stampNodes[i][1]-14);
+        const p=easeOutBack(ph(t,at,at+0.25)); checks[i].alpha=ph(t,at,at+0.15)*(1-ph(t,43.4,43.7)); checks[i].scale.set(0.7+0.5*p);
+        if(t>=at && !S.fired.has('ck'+i)){ S.fired.add('ck'+i); if(FILT.shock){ FILT.shock.center=[stampNodes[i][0],stampNodes[i][1]]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s6ck',FILT.shock);} } }
+      if(FILT.shock && hasOverlayFx('s6ck')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>0.4) removeOverlayFx('s6ck'); }
+      cap.alpha=easeOut(ph(t,41.90,42.4))*(1-ph(t,43.4,43.7));
+    },destroy(){ removeOverlayFx('s6ck'); }};
+  });
+
+  // ---------- S7 : PRE-CHORUS frontend boundary 43.77-47.74 ----------
+  scene(43.77,47.74,'FRONTEND→IR','verse',(S)=>{
+    const c=new PIXI.Container();
+    const seam=new PIXI.Graphics(); c.addChild(seam);
+    const feLbl=txt('FRONTEND',16,C.muted,'800'); feLbl.position.set(560,300); legible(feLbl); c.addChild(feLbl);
+    const beLbl=txt('BACKEND',16,C.muted,'800'); beLbl.position.set(760,300); legible(beLbl); c.addChild(beLbl);
+    const barrel=new PIXI.Graphics(); c.addChild(barrel);
+    const depot=new PIXI.Graphics(); c.addChild(depot);
+    const cap=txt('jazyk je za tebou',20,C.muted,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      // boundary seam at x=640
+      seam.clear();
+      seam.lineStyle(3,C.ir,0.7+0.3*beat(t)).moveTo(640,90).lineTo(640,320);
+      // tree collapses into IR barrel as crate crosses 45.07->46.0
+      barrel.clear();
+      const bp=easeInOut(ph(t,45.07,46.0));
+      if(bp>0.01){ const bx=lerp(640,700,bp),by=200;
+        barrel.beginFill(0x241b3a,0.95*bp).lineStyle(2.6,C.ir,bp).drawRoundedRect(bx-26,by-30,52,60,10).endFill();
+        barrel.lineStyle(2,C.ir,0.6*bp).moveTo(bx-26,by-12).lineTo(bx+26,by-12); barrel.moveTo(bx-26,by+8).lineTo(bx+26,by+8); }
+      // language depot recedes @45.92
+      depot.clear();
+      const da=1-ph(t,45.92,47.0);
+      if(da>0.01){ depot.beginFill(0x13202b,0.7*da).lineStyle(2,C.ast,0.6*da).drawRoundedRect(80,400,90,60,8).endFill();
+        for(let i=0;i<4;i++){ depot.beginFill([C.rust,C.ok,C.token,C.ast][i],0.8*da).drawRect(92+i*18,412,12,16).endFill(); } }
+      cap.alpha=easeOut(ph(t,45.92,46.4))*(1-ph(t,47.3,47.7));
+      // IR hub starts to glow
+      irHubFocus=(tt)=>1.0+1.0*ph(tt,45.07,47.0)*(0.6+0.4*beat(tt));
+    },destroy(){ irHubFocus=null; }};
+  });
+
+  // ============================================================
+  //  REUSABLE CHORUS (§4)
+  // ============================================================
+  function buildChorus(occ,S){
+    const c=new PIXI.Container();
+    const bloomGain={1:0.5,2:0.7}[occ];
+    const density={1:1,2:1.5}[occ];
+    let bloomF=null;
+    if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // L1 recap props: token tiles at LEXER + mini tree at PARSER
+    const tiles=[]; for(let i=0;i<7;i++){ const s=new PIXI.Sprite(TILE_TEX); s.anchor.set(0.5); s.tint=C.token; s.alpha=0; c.addChild(s); tiles.push(s); }
+    const miniTree=new PIXI.Graphics(); c.addChild(miniTree);
+    // L2: IR hub spotlight handled via irHubFocus; flags/chips:
+    const flags=new PIXI.Graphics(); c.addChild(flags);
+    // L3: opt cars
+    const optCars=new PIXI.Graphics(); c.addChild(optCars);
+    const foldLbl=txt('2+3 → 5',16,C.ok,'800'); foldLbl.alpha=0; legible(foldLbl); foldLbl.position.set(860,250); c.addChild(foldLbl);
+    const deadTag=txt('DEAD',14,C.hot,'800'); deadTag.alpha=0; legible(deadTag); c.addChild(deadTag);
+    // L4: ingot pile + pegboard
+    const ingotPC=new PIXI.ParticleContainer(80,{position:true,scale:true,alpha:true,tint:true},80,true); c.addChild(ingotPC);
+    const ingots=[]; for(let i=0;i<60;i++){ const s=new PIXI.Sprite(INGOT_TEX); s.anchor.set(0.5); s.tint=C.code; s.alpha=0; ingotPC.addChild(s); ingots.push(s); }
+    const pegboard=new PIXI.Graphics(); c.addChild(pegboard);
+    const cap=txt('',18,C.muted,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    c._ch={occ,bloomGain,density,bloomF,tiles,miniTree,flags,optCars,foldLbl,deadTag,ingotPC,ingots,pegboard,cap};
+    return c;
+  }
+  function updateChorus(c,t,LS,occ,S){
+    camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    moteEnvelope=0.32;
+    const X=c._ch; const {bloomF,tiles,miniTree,flags,optCars,foldLbl,deadTag,ingotPC,ingots,pegboard,cap}=X;
+    const L1=LS.L1,L2=LS.L2,L3=LS.L3,L4=LS.L4;
+    const strobeBright={1:1.0,2:1.5}[occ];
+    if(bloomF) bloomF.bloomScale=1.0+X.bloomGain*beat(t);
+    // six-sign sequence strobe (wave left->right)
+    chorusStrobe=(s,tt)=>strobeBright*(0.6+1.8*clamp01(beat(tt - s*0.10)));
+    // ---- L1 drop + lexer/parser recap ----
+    if(t>=L1 && t<L2 && !S.fired.has('drop'+occ)){ S.fired.add('drop'+occ);
+      if(FILT.zoom){ FILT.zoom.center=[640,200]; FILT.zoom.strength=0.28; addOverlayFx('chorusPunch',FILT.zoom); } }
+    if(FILT.zoom && hasOverlayFx('chorusPunch')){ FILT.zoom.strength=0.28*(1-ph(t,L1,L1+0.25)); if(t>L1+0.26) removeOverlayFx('chorusPunch'); }
+    // token tiles spray on "tokeny," (occ1 @48.89, occ2 @115.60)
+    const tokT={1:48.89,2:115.60}[occ];
+    for(let i=0;i<7;i++){ const tk=tokT+i*0.04; const p=easeOutBack(ph(t,tk,tk+0.3));
+      tiles[i].x=lerp(180,180+i*46,p); tiles[i].y=200; tiles[i].scale.set(0.9*clamp01(p)+0.1);
+      tiles[i].alpha=ph(t,tk,tk+0.2)*(1-ph(t,tokT+1.0,tokT+1.4)); }
+    // mini AST at PARSER on "parser staví AST"
+    const astT={1:50.37,2:116.88}[occ];
+    miniTree.clear();
+    const ap=easeOutBack(ph(t,astT,astT+0.5));
+    // occ2 held AST sustains glow swell
+    const heldAst={1:0,2:ph(t,117.53,119.75)}[occ];
+    if(ap>0.01){ const rx=380,ry=150, sw=1+0.05*heldAst*beat(t);
+      miniTree.lineStyle(2.5,C.ast,ap); const m1=[rx-30,ry+44],m2=[rx+30,ry+44];
+      miniTree.moveTo(rx,ry).lineTo(m1[0],m1[1]); miniTree.moveTo(rx,ry).lineTo(m2[0],m2[1]);
+      miniTree.lineStyle(0); for(const n of [[rx,ry],m1,m2]){ miniTree.beginFill(C.ast,ap).drawCircle(n[0],n[1],4*sw).endFill(); }
+      miniTree.alpha=(1-ph(t,L2,L2+0.4))+heldAst; }
+    // ---- L2 IR center spotlight ----
+    if(t>=L2 && t<L3){ irHubFocus=(tt)=>3.0+2.0*beat(tt); } else if(t<L2||t>=L3){ if(irHubFocus && t>=L3) irHubFocus=null; }
+    flags.clear();
+    if(t>=L2 && t<L4){
+      const fa=ph(t,L2,L2+0.4)*(1-ph(t,L4,L4+0.3));
+      for(let i=0;i<4;i++){ const fy=120+i*30;
+        flags.beginFill([C.rust,C.ok,C.token,C.ast][i],0.85*fa).drawRect(560-6,fy-7,16,14).endFill();
+        flags.beginFill([C.code,C.accent,C.rail,C.hot][i],0.85*fa).drawRect(860-6,fy-7,16,14).endFill();
+        flags.lineStyle(1.5,C.ir,0.5*fa).moveTo(560+10,fy).lineTo(680,150); flags.moveTo(720,150).lineTo(850,fy); }
+    }
+    // ---- L3 three opts ----
+    optCars.clear();
+    const inT={1:55.13,2:123.14}[occ], foldT={1:56.42,2:123.14}[occ], deadT={1:58.37,2:125.10}[occ];
+    // inlining: two cars merge into one @inT
+    const ip=easeInOut(ph(t,inT,inT+1.0));
+    if(t>=inT && t<L4){ const ax=860, bx=lerp(916,860,ip);
+      optCars.beginFill(C.ir,0.85).lineStyle(2,C.ok,1).drawRoundedRect(ax-22,250,40,28,6).endFill();
+      if(ip<0.99) optCars.beginFill(C.ir,0.7*(1-ip)).lineStyle(2,C.ok,1-ip).drawRoundedRect(bx-22,250,40,28,6).endFill();
+      if(t>=inT && t<inT+0.4 && !S.fired.has('mrg'+occ)){ S.fired.add('mrg'+occ); burst(880,264,C.ok,12,2,0.14,'ok'); } }
+    // folding 2+3->5
+    foldLbl.alpha=easeOut(ph(t,foldT,foldT+0.4))*(1-ph(t,foldT+1.2,foldT+1.6));
+    foldLbl.text = t<foldT+0.6?'2 + 3':'= 5'; foldLbl.style.fill=t<foldT+0.6?C.token:C.ok;
+    // dead-code car shoved off @deadT
+    if(t>=deadT){ const dp=easeIn(ph(t,deadT,L4)); const pos=lerp2([860,300],[1200,600],dp);
+      optCars.beginFill(0x44464a,0.8*(1-dp)).lineStyle(2,C.hot,0.8*(1-dp)).drawRoundedRect(pos[0]-22,pos[1],44,26,5).endFill();
+      deadTag.position.set(pos[0],pos[1]-12); deadTag.alpha=0.9*(1-dp); }
+    else deadTag.alpha=0;
+    // ---- L4 BACKEND foundry pour ----
+    const backT={1:60.04,2:126.36}[occ], pourT={1:61.74,2:127.38}[occ];
+    pegboard.clear();
+    if(t>=backT){
+      const pourP=ph(t,pourT,L4+1.4);
+      const nIngot=Math.round(pourP*60*X.density>60?60:pourP*60);
+      for(let i=0;i<60;i++){ if(i<nIngot){ const px=1040+(i%6)*8+hash01(i*3.1)*6, py=360-((i/6)|0)*8;
+          ingots[i].position.set(px,py); ingots[i].alpha=0.95; ingots[i].scale.set(0.8+0.2*hash01(i*7.7)); }
+        else ingots[i].alpha=0; }
+      if(t>=pourT && t<pourT+0.1 && !S.fired.has('pour'+occ)){ S.fired.add('pour'+occ); burst(1060,360,C.code,Math.round(30*X.density),3,0.16,'code'); }
+      // register pegboard R0..R15
+      pegboard.lineStyle(1.5,C.muted,0.5).beginFill(C.ink,0.6).drawRoundedRect(1120,210,110,90,6).endFill();
+      const pf=ph(t,pourT,L4+1.0);
+      for(let r=0;r<16;r++){ const px=1130+(r%4)*26, py=222+((r/4)|0)*20; const on=r<pf*16;
+        pegboard.lineStyle(0).beginFill(on?C.code:0x33373c,on?0.95:0.5).drawCircle(px,py,5).endFill(); }
+    }
+    // captions per phrase
+    let capTxt='', capA=0;
+    if(t>=L1&&t<L2){ capTxt='lexer → tokeny · parser → AST'; capA=ph(t,L1,L1+0.4)*(1-ph(t,L2-0.3,L2)); }
+    else if(t>=L2&&t<L3){ capTxt='IR = společný střed'; capA=ph(t,L2,L2+0.4)*(1-ph(t,L3-0.3,L3)); }
+    else if(t>=L3&&t<L4){ capTxt='inlining · folding · dead-code ven'; capA=ph(t,L3,L3+0.4)*(1-ph(t,L4-0.3,L4)); }
+    else if(t>=L4){ capTxt='backend → strojový kód'; capA=ph(t,L4,L4+0.4); }
+    cap.text=capTxt; cap.alpha=capA;
+    // godray a touch stronger in chorus
+    if(godrayF) godrayF.gain=0.5;
+  }
+  function chorusScene(occ,LS){
+    return (S)=>{ const c=buildChorus(occ,S); return {c,update(lt,t){ updateChorus(c,t,LS,occ,S); }, destroy(){ chorusStrobe=null; irHubFocus=null; }}; };
+  }
+
+  // ---------- S8..S11 : CHORUS 1 ----------
+  scene(47.74,51.53,'CHORUS','chorus',chorusScene(1,{L1:47.74,L2:51.53,L3:55.13,L4:59.94}));
+  scene(51.53,55.13,'CHORUS','chorus',chorusScene(1,{L1:47.74,L2:51.53,L3:55.13,L4:59.94}));
+  scene(55.13,59.54,'CHORUS','chorus',chorusScene(1,{L1:47.74,L2:51.53,L3:55.13,L4:59.94}));
+  scene(59.54,63.26,'CHORUS','chorus',chorusScene(1,{L1:47.74,L2:51.53,L3:55.13,L4:59.94}));
+
+  // ---------- S12 : VERSE 2a 63.26-73.50 (optimize over IR ×1) ----------
+  scene(63.26,73.50,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    let tiltF=null; if(hasF('TiltShiftFilter')){ tiltF=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,150),end:new PIXI.Point(W,150)}); }
+    const gears=new PIXI.Graphics(); c.addChild(gears);
+    const mechs=new PIXI.Graphics(); c.addChild(mechs);
+    let barrelGlowF=null; if(hasF('GlowFilter')){ barrelGlowF=new F.GlowFilter({distance:14,outerStrength:1.5,color:C.ir,quality:0.4}); }
+    const stamp=txt('×1  JEN JEDNOU',30,C.ok,'900'); stamp.position.set(860,90); stamp.alpha=0; legible(stamp);
+    if(hasF('GlowFilter')){ stamp._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.ok,quality:0.4}); stamp.filters=(stamp.filters||[]).concat([stamp._g]); }
+    c.addChild(stamp);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      // tilt-shift focus band slides to y~150 (OPTIMALIZACE car at 860,150)
+      if(tiltF){ const band=easeOut(ph(t,63.26,64.5)); tiltF.blur=70*band; tiltF.start.y=150; tiltF.end.y=150;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(tiltF)<0)){ sceneRoot.filters=[tiltF]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);} }
+      // gears orbit + mechanic glyphs tune the IR car at 860
+      gears.clear(); const ga=t*1.2;
+      for(let i=0;i<3;i++){ const a=ga+i/3*TAU; const gx=860+Math.cos(a)*40, gy=150+Math.sin(a)*26;
+        gears.lineStyle(2,C.ir,0.7).drawCircle(gx,gy,7); for(let s=0;s<6;s++){ const sa=a*2+s/6*TAU; gears.moveTo(gx+Math.cos(sa)*7,gy+Math.sin(sa)*7).lineTo(gx+Math.cos(sa)*11,gy+Math.sin(sa)*11);} }
+      mechs.clear();
+      for(let i=0;i<3;i++){ const mx=820+i*40; mechs.beginFill(C.accent2,0.8).drawCircle(mx,210,7).endFill();
+        mechs.beginFill(C.accent2,0.7).moveTo(mx-10,228).quadraticCurveTo(mx,216,mx+10,228).lineTo(mx+8,236).lineTo(mx-8,236).closePath().endFill(); }
+      // ×1 stamp slam @72.92
+      const sp=easeOutBack(ph(t,72.92,73.3));
+      stamp.alpha=ph(t,72.92,73.1)*(1-ph(t,73.4,73.5)); stamp.scale.set(0.8+0.4*sp);
+      if(stamp._g) stamp._g.outerStrength=2+2*beat(t);
+      if(t>=72.92 && !S.fired.has('x1')){ S.fired.add('x1');
+        if(FILT.shock){ FILT.shock.center=[860,150]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s12shock',FILT.shock); }
+        if(FILT.flashGreen){ FILT.flashGreen.alpha=0.4; sceneFlash(FILT.flashGreen,true); } }
+      if(FILT.shock && hasOverlayFx('s12shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s12shock'); }
+      if(FILT.flashGreen && S.fired.has('x1')){ FILT.flashGreen.alpha=0.4*(1-ph(t,72.92,73.12)); if(t>73.13) sceneFlash(FILT.flashGreen,false); }
+    },destroy(){ if(sceneRoot.filters && tiltF && sceneRoot.filters.indexOf(tiltF)>=0) sceneRoot.filters=null; removeOverlayFx('s12shock'); }};
+  });
+
+  // ---------- S13 : VERSE 2b 73.50-77.58 (neutral: depots grey) ----------
+  scene(73.50,77.58,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const langDepot=new PIXI.Container(); c.addChild(langDepot);
+    const lg=new PIXI.Graphics(); langDepot.addChild(lg);
+    const cpuYard=new PIXI.Container(); c.addChild(cpuYard);
+    const cg=new PIXI.Graphics(); cpuYard.addChild(cg);
+    const langBanner=txt('nezávisle na jazyku',18,C.muted,'800'); langBanner.position.set(520,408); langBanner.alpha=0; legible(langBanner); c.addChild(langBanner);
+    const cpuBanner=txt('nezávisle na procesoru',18,C.muted,'800'); cpuBanner.position.set(980,408); cpuBanner.alpha=0; legible(cpuBanner); c.addChild(cpuBanner);
+    const irCap=txt('optimalizace = nad IR, 1×, pro všechny',18,C.ir,'700'); irCap.position.set(640,640); irCap.alpha=0; legible(irCap); c.addChild(irCap);
+    if(hasF('HslAdjustmentFilter')){ langDepot.filters=[FILT.hslLang]; cpuYard.filters=[FILT.hslCpu]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      // language depot (4 flags) at (520,440)
+      lg.clear();
+      lg.beginFill(0x13202b,0.7).lineStyle(2,C.ast,0.5).drawRoundedRect(480,420,90,48,8).endFill();
+      for(let i=0;i<4;i++){ lg.beginFill([C.rust,C.ok,C.token,C.ast][i],0.9).drawRect(490+i*20,430,14,18).endFill();
+        const fl=txt; }
+      // grey out lang @73.50
+      if(FILT.hslLang) FILT.hslLang.saturation=-0.6*ph(t,73.50,75.0);
+      langBanner.alpha=easeOut(ph(t,73.50,74.0))*(1-ph(t,77.0,77.5));
+      // cpu yard at (980,440)
+      cg.clear();
+      cg.beginFill(0x13202b,0.7).lineStyle(2,C.code,0.5).drawRoundedRect(940,420,90,48,8).endFill();
+      for(let i=0;i<4;i++){ cg.beginFill([C.code,C.accent,C.rail,C.hot][i],0.9).drawRoundedRect(950+i*20,430,14,18,2).endFill(); }
+      if(FILT.hslCpu) FILT.hslCpu.saturation=-0.6*ph(t,75.56,77.0);
+      cpuBanner.alpha=easeOut(ph(t,75.56,76.0))*(1-ph(t,77.2,77.55));
+      // IR car stays fully saturated (center, bright)
+      irHubFocus=(tt)=>2.0+1.0*beat(tt);
+      irCap.alpha=easeOut(ph(t,73.5,74.0))*(1-ph(t,77.0,77.5));
+    },destroy(){ if(FILT.hslLang) FILT.hslLang.saturation=0; if(FILT.hslCpu) FILT.hslCpu.saturation=0; irHubFocus=null; }};
+  });
+
+  // ---------- S14 : VERSE 2c 77.58-85.06 (M+N hinge money-shot) ----------
+  scene(77.58,85.06,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    // funnel-in language ropes (left) + fan-out CPU ropes (right)
+    const inRopes=[], outRopes=[];
+    for(let i=0;i<4;i++){ const ri=new PIXI.SimpleRope(TRAIL.ast,[new PIXI.Point(0,0),new PIXI.Point(0,0),new PIXI.Point(0,0)]); ri.blendMode=PIXI.BLEND_MODES.ADD; ri.alpha=0; c.addChild(ri); inRopes.push(ri);
+      const ro=new PIXI.SimpleRope(TRAIL.code,[new PIXI.Point(0,0),new PIXI.Point(0,0),new PIXI.Point(0,0)]); ro.blendMode=PIXI.BLEND_MODES.ADD; ro.alpha=0; c.addChild(ro); outRopes.push(ro); }
+    const flagsG=new PIXI.Graphics(); c.addChild(flagsG);
+    const feBanner=txt('frontend zná jazyk',18,C.ast,'800'); feBanner.position.set(560,300); feBanner.alpha=0; legible(feBanner); c.addChild(feBanner);
+    const beBanner=txt('backend zná procesor',18,C.code,'800'); beBanner.position.set(860,300); beBanner.alpha=0; legible(beBanner); c.addChild(beBanner);
+    const irSlam=txt('ten společný kód',24,C.ir,'900'); irSlam.position.set(700,86); irSlam.alpha=0; legible(irSlam);
+    if(hasF('GlowFilter')){ irSlam._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.ir,quality:0.4}); irSlam.filters=(irSlam.filters||[]).concat([irSlam._g]); }
+    c.addChild(irSlam);
+    const mnLbl=txt('M+N, ne M×N',16,C.muted,'700'); mnLbl.position.set(700,330); mnLbl.alpha=0; legible(mnLbl); c.addChild(mnLbl);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      // left funnel @77.58
+      const inA=ph(t,77.58,79.0)*(1-ph(t,84.4,85.0));
+      const outA=ph(t,79.64,81.0)*(1-ph(t,84.4,85.0));
+      flagsG.clear();
+      for(let i=0;i<4;i++){
+        const fy=120+i*30;
+        flagsG.beginFill([C.rust,C.ok,C.token,C.ast][i],0.9*inA).drawRect(554,fy-7,16,14).endFill();
+        flagsG.beginFill([C.code,C.accent,C.rail,C.hot][i],0.9*outA).drawRect(854,fy-7,16,14).endFill();
+        // rope in: (560,fy) -> (700,150)
+        const rp=inRopes[i]._pts||inRopes[i].points; if(rp){ rp[0].x=566;rp[0].y=fy; rp[1].x=lerp(566,700,0.6);rp[1].y=lerp(fy,150,0.6); rp[2].x=700;rp[2].y=150; }
+        inRopes[i].alpha=0.6*inA;
+        const op=outRopes[i]._pts||outRopes[i].points; if(op){ op[0].x=700;op[0].y=150; op[1].x=lerp(700,860,0.6);op[1].y=lerp(150,fy,0.6); op[2].x=864;op[2].y=fy; }
+        outRopes[i].alpha=0.6*outA;
+      }
+      feBanner.alpha=easeOut(ph(t,77.58,78.1))*(1-ph(t,84.4,85.0));
+      beBanner.alpha=easeOut(ph(t,79.64,80.1))*(1-ph(t,84.4,85.0));
+      // IR hub swells dead-center @82.47->83.21
+      irHubFocus=(tt)=> (tt>=82.0?3.0+2.0*beat(tt):1.0+1.5*ph(tt,79.0,82.0)*beat(tt));
+      irSlam.alpha=easeOutBack(ph(t,83.21,83.55))*(1-ph(t,84.6,85.05)); if(irSlam._g) irSlam._g.outerStrength=2+2*beat(t);
+      mnLbl.alpha=easeOut(ph(t,83.21,83.7))*(1-ph(t,84.6,85.0));
+      if(bloomF) bloomF.bloomScale=1.0+(t>=82.0?0.7:0.3)*beat(t);
+      if(t>=83.21 && !S.fired.has('slam')){ S.fired.add('slam'); if(FILT.shock){ FILT.shock.center=[700,150]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s14shock',FILT.shock);} }
+      if(FILT.shock && hasOverlayFx('s14shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s14shock'); }
+    },destroy(){ irHubFocus=null; removeOverlayFx('s14shock'); }};
+  });
+
+  // ---------- S15 : BRIDGE / PGO two-lap loop 85.06-114.60 ----------
+  scene(85.06,114.60,'BRIDGE · PGO','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const loopToken=new PIXI.Container(); c.addChild(loopToken);
+    const ltG=new PIXI.Graphics(); loopToken.addChild(ltG);
+    const ltGlow=glow('ir',0,0,0.8,0.0,0xc9a6ff); loopToken.addChildAt(ltGlow,0);
+    const hotG=new PIXI.Graphics(); c.addChild(hotG);
+    const switches=new PIXI.Graphics(); c.addChild(switches);
+    const sensors=new PIXI.Graphics(); c.addChild(sensors);
+    // data packets along bottom straight
+    const dataPC=new PIXI.ParticleContainer(40,{position:true,alpha:true,scale:true},40,true); c.addChild(dataPC);
+    const packets=[]; for(let i=0;i<30;i++){ const s=new PIXI.Sprite(GLOW.token); s.anchor.set(0.5); s.blendMode=PIXI.BLEND_MODES.ADD; s.tint=0x7fe3c0; s.alpha=0; s.scale.set(0.1); dataPC.addChild(s); packets.push(s); }
+    const cap=txt('PGO · dvě kola',22,C.muted,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    const hotCap=txt('profil: horké větve',18,C.hot,'800'); hotCap.position.set(640,500); hotCap.alpha=0; legible(hotCap); c.addChild(hotCap);
+    const tipCap=txt('líp tipuje skoky',18,C.ok,'800'); tipCap.position.set(640,500); tipCap.alpha=0; legible(tipCap); c.addChild(tipCap);
+    const predLbl=txt('predikce sedí — profil napřed',20,C.ok,'800'); predLbl.position.set(640,330); predLbl.alpha=0; legible(predLbl);
+    if(hasF('GlowFilter')){ predLbl._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.ok,quality:0.4}); predLbl.filters=(predLbl.filters||[]).concat([predLbl._g]); }
+    c.addChild(predLbl);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); }
+    return {c,update(lt,t){
+      // camera dolly out to show the whole loop
+      camDollyScale=lerp(1.0,0.92,easeInOut(ph(t,85.06,87.0)))*lerp(1.0,1/0.92,easeInOut(ph(t,113.0,114.0)));
+      if(t>=113.0) camDollyScale=lerp(0.92,1.0,easeInOut(ph(t,113.0,114.0)));
+      camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.26;
+      // loop reveal
+      const la=easeOut(ph(t,85.06,87.0))*(1-ph(t,114.0,114.6));
+      // hot segment heat (lit @94.24)
+      hotG.clear();
+      for(let s=0;s<8;s++){ const heat=HEAT[s]*easeOut(ph(t,94.24,96.06))*(1-ph(t,108.0,114.0));
+        const col=heat>0.85?C.hot:lerpColor(C.accent,C.hot,clamp01(heat));
+        if(heat>0.05){ hotG.lineStyle(6,col,0.7*la*heat).moveTo(segX(s)-50,LOOP_Y).lineTo(segX(s)+50,LOOP_Y);
+          hotG.beginFill(col,0.25*heat*la).drawCircle(segX(s),LOOP_Y,14).endFill(); } }
+      drawLoopRail(la,0);
+      loopRailG.alpha=1; // drawn via drawLoopRail alpha factor
+      // PGO twist into the loop @85.06
+      if(t>=85.06 && !S.fired.has('twist')){ S.fired.add('twist'); if(FILT.twist){ FILT.twist.offset=[640,360]; FILT.twist.angle=0; addOverlayFx('pgoTwist',FILT.twist);} else if(FILT.twistDisp){ addOverlayFx('pgoTwist',FILT.twistDisp);} }
+      if(hasOverlayFx('pgoTwist')){ let ang; if(t<86.5) ang=0.5*ph(t,85.06,86.5); else ang=0.5*(1-ph(t,86.5,87.5)); if(FILT.twist) FILT.twist.angle=ang; else if(FILT.twistDisp) FILT.twistDisp.scale.x=FILT.twistDisp.scale.y=ang*40; if(t>=87.5) removeOverlayFx('pgoTwist'); }
+      // CRT measurement look @85.06->113.0
+      if(t>=85.06 && t<113.0 && !hasOverlayFx('crtPGO')){ if(FILT.crt) addOverlayFx('crtPGO',FILT.crt); }
+      if(FILT.crt && hasOverlayFx('crtPGO')){ FILT.crt.time=t; if(t>=113.0) removeOverlayFx('crtPGO'); }
+      // sensor cars bolt on @88.86
+      sensors.clear();
+      const sa=ph(t,88.86,89.6)*(1-ph(t,103.0,104.0));
+      if(sa>0.01){ for(let i=0;i<3;i++){ const gx=1010+i*36, gy=200; sensors.lineStyle(2,C.accent,0.9*sa).drawCircle(gx,gy,8);
+        const na=Math.sin(t*4+i)*0.8; sensors.moveTo(gx,gy).lineTo(gx+Math.cos(na-Math.PI/2)*6,gy+Math.sin(na-Math.PI/2)*6); } }
+      // switches pre-set toward hot rails @96.64
+      switches.clear();
+      const swp=easeOutBack(ph(t,96.64,97.4));
+      if(t>=96.64){ for(const s of [3,6]){ const rot=swp*0.5; switches.lineStyle(3,C.ok,0.9*la).moveTo(segX(s),LOOP_Y).lineTo(segX(s)+Math.cos(-rot)*22,LOOP_Y+Math.sin(-rot)*22); } }
+      // loop-token: lap1 @91.03->96.06, lap2 @98.42->103.0
+      let prog=null;
+      if(t>=91.03 && t<96.06){ prog=easeInOut(ph(t,91.03,96.06)); }
+      else if(t>=98.42 && t<103.0){ prog=easeInOut(ph(t,98.42,103.0)); }
+      if(prog!=null){ const pos=loopPos(prog); loopToken.position.set(pos[0],pos[1]); loopToken.alpha=1; drawCrate(ltG,'optir',t); ltG.scale.set(0.8); ltGlow.alpha=0.4+0.2*beat(t); }
+      else { loopToken.position.set(1060,260); loopToken.alpha=t<88.18?0:(t>=103.0?0:0.6); drawCrate(ltG,'optir',t); ltG.scale.set(0.8); ltGlow.alpha=0.3; }
+      // data packets along bottom run during lap1
+      const lapRun=(t>=91.03&&t<96.06)?ph(t,91.03,96.06):0;
+      for(let i=0;i<30;i++){ if(lapRun>0){ const pp=(lapRun+i/30)%1; const pos=loopPos(0.25+pp*0.5); packets[i].position.set(pos[0],pos[1]); packets[i].alpha=0.5*lapRun; packets[i].scale.set(0.12); } else packets[i].alpha=0; }
+      // captions
+      cap.alpha=easeOut(ph(t,85.06,85.6))*(1-ph(t,87.5,88.2));
+      hotCap.alpha=easeOut(ph(t,94.24,94.7))*(1-ph(t,96.2,96.8));
+      tipCap.alpha=easeOut(ph(t,98.42,98.9))*(1-ph(t,100.5,101.2));
+      // prediction lands @103.86->114.60, held "napřed." 112.49->114.60
+      predLbl.alpha=easeOut(ph(t,103.86,104.6))*(1-ph(t,114.2,114.6)); if(predLbl._g) predLbl._g.outerStrength=2+2*beat(t);
+      // held-word ZoomBlur pull carried into chorus#2 (zoomHeld), center (640,420)
+      if(t>=112.49 && !hasOverlayFx('zoomHeld')){ if(FILT.zoomHeld){ FILT.zoomHeld.center=[640,420]; addOverlayFx('zoomHeld',FILT.zoomHeld);} }
+      if(FILT.zoomHeld && hasOverlayFx('zoomHeld')){ let st; if(t<114.60) st=0.20*easeInOut(ph(t,112.49,114.60)); else st=0.20*(1-ph(t,114.60,115.2)); FILT.zoomHeld.strength=clamp01(st); if(t>=115.2) removeOverlayFx('zoomHeld'); }
+      if(bloomF){ if(!c.filters||c.filters.indexOf(bloomF)<0) c.filters=[bloomF]; bloomF.bloomScale=1.0+(t>=103.0?0.5:0.2)*beat(t); }
+    },destroy(){ removeOverlayFx('crtPGO'); removeOverlayFx('pgoTwist'); loopRailG.alpha=0; loopRailG.clear(); }};
+  });
+
+  // ---------- S16..S19 : CHORUS 2 ----------
+  scene(114.60,119.75,'CHORUS','chorus',chorusScene(2,{L1:114.60,L2:119.75,L3:123.14,L4:126.36}));
+  scene(119.75,123.14,'CHORUS','chorus',chorusScene(2,{L1:114.60,L2:119.75,L3:123.14,L4:126.36}));
+  scene(123.14,126.26,'CHORUS','chorus',chorusScene(2,{L1:114.60,L2:119.75,L3:123.14,L4:126.36}));
+  scene(126.26,129.72,'CHORUS','chorus',chorusScene(2,{L1:114.60,L2:119.75,L3:123.14,L4:126.36}));
+
+  // ---------- S20 : OUTRO recap 129.72-144.16 (six forms, one per word) ----------
+  scene(129.72,144.16,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // form glyphs over their stations
+    const glyphs=new PIXI.Graphics(); c.addChild(glyphs);
+    const astLbl=txt('AST',36,C.ast,'900'); astLbl.position.set(560,100); astLbl.alpha=0; legible(astLbl); c.addChild(astLbl);
+    // connecting thread
+    const thread=new PIXI.SimpleRope(TRAIL.accent,[new PIXI.Point(0,0),new PIXI.Point(0,0),new PIXI.Point(0,0),new PIXI.Point(0,0),new PIXI.Point(0,0),new PIXI.Point(0,0)]); thread.blendMode=PIXI.BLEND_MODES.ADD; thread.alpha=0; c.addChild(thread);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.05,1.0,easeInOut(ph(t,129.72,132.0))); camPivotX=640; camPivotY=360;
+      moteEnvelope=0.32;
+      glyphs.clear();
+      // "Lexer," @129.72 -> token tile over LEXER (180)
+      const a1=easeOutBack(ph(t,129.72,130.3)); if(a1>0.01){ const al=ph(t,129.72,130.3)*(1-ph(t,133.0,134.2));
+        glyphs.beginFill(C.token,0.9*al).drawRoundedRect(180-16,90,32,24,5).endFill(); glyphs.lineStyle(0); }
+      // "parser," @131.45 -> AST tree over PARSER (380)
+      const a2=easeOutBack(ph(t,131.45,132.0)); if(a2>0.01){ const al=ph(t,131.45,132.0)*(1-ph(t,134.5,135.6));
+        glyphs.lineStyle(2.5,C.ast,al); glyphs.moveTo(380,92).lineTo(360,118); glyphs.moveTo(380,92).lineTo(400,118);
+        glyphs.lineStyle(0); glyphs.beginFill(C.ast,al).drawCircle(380,92,4).drawCircle(360,122,4).drawCircle(400,122,4).endFill(); }
+      // "AST," @133.43 -> AST label swells center
+      astLbl.alpha=easeOut(ph(t,133.43,134.0))*(1-ph(t,135.5,136.4)); astLbl.scale.set(1+0.06*beat(t));
+      // "IR" @135.65 -> IR barrel over hub (700)
+      const a4=easeOutBack(ph(t,135.65,136.2)); if(a4>0.01){ const al=ph(t,135.65,136.2)*(1-ph(t,137.6,138.4));
+        glyphs.beginFill(0x241b3a,0.92*al).lineStyle(2.4,C.ir,al).drawRoundedRect(700-18,86,36,40,8).endFill(); glyphs.lineStyle(0); }
+      // "strojový" @137.64 -> ingot over BACKEND (1060)
+      const a5=easeOutBack(ph(t,137.64,138.2)); if(a5>0.01){ const al=ph(t,137.64,138.2);
+        for(let i=0;i<4;i++){ glyphs.beginFill(C.code,0.9*al).moveTo(1040+i*10,92).lineTo(1058+i*10,92).lineTo(1054+i*10,104).lineTo(1036+i*10,104).closePath().endFill(); } }
+      // "kód," @139.86 -> final ingot pile glows
+      const a6=ph(t,139.86,140.6); if(a6>0.01){ glyphs.beginFill(C.code,0.5*a6+0.3*beat(t)*a6).drawCircle(1060,360,30).endFill(); }
+      // connecting thread links the relay
+      const tp=thread._pts||thread.points; if(tp){ const pts=[[180,102],[380,102],[560,100],[700,106],[860,100],[1060,104]];
+        for(let i=0;i<6;i++){ tp[i].x=pts[i][0]; tp[i].y=pts[i][1]; } }
+      thread.alpha=easeOut(ph(t,130.5,132.0))*(1-ph(t,141.0,144.0))*0.6;
+      if(bloomF) bloomF.bloomScale=1.0+0.3*beat(t);
+      if(godrayF) godrayF.gain=lerp(0.4,0.55,ph(t,129.72,133.0));
+    }};
+  });
+
+  // ---------- S21 : OUTRO / PGO recap 144.16-151.78 ----------
+  scene(144.16,151.78,'OUTRO · PGO','outro',(S)=>{
+    const c=new PIXI.Container();
+    const loopToken=new PIXI.Container(); c.addChild(loopToken);
+    const ltG=new PIXI.Graphics(); loopToken.addChild(ltG);
+    const ltGlow=glow('code',0,0,0.8,0.0,0xffe08a); loopToken.addChildAt(ltGlow,0);
+    const sensors=new PIXI.Graphics(); c.addChild(sensors);
+    const payoff=txt('líp ten kód',24,C.code,'900'); payoff.position.set(1060,90); payoff.alpha=0; legible(payoff);
+    if(hasF('GlowFilter')){ payoff._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.code,quality:0.4}); payoff.filters=(payoff.filters||[]).concat([payoff._g]); }
+    c.addChild(payoff);
+    const pile=new PIXI.Graphics(); c.addChild(pile);
+    const cap=txt('změř reálný běh → zkompiluj podruhé chytřeji',18,C.muted,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.30;
+      // warm loop rail returns
+      const la=easeOut(ph(t,144.16,145.5))*(1-ph(t,151.0,151.78));
+      drawLoopRail(la,0); loopRailG.alpha=1;
+      // sensor glints on "změř reálný běh"
+      sensors.clear();
+      const sa=ph(t,145.27,146.0)*(1-ph(t,147.0,148.0));
+      if(sa>0.01){ for(let i=0;i<3;i++){ const gx=1010+i*36; sensors.lineStyle(2,C.accent,0.9*sa).drawCircle(gx,200,8); } }
+      // one quick polished lap on "zkompiluj líp" 147.67->151.18
+      let prog=null;
+      if(t>=147.67 && t<151.18){ prog=easeInOut(ph(t,147.67,151.18)); }
+      if(prog!=null){ const pos=loopPos(prog); loopToken.position.set(pos[0],pos[1]); loopToken.alpha=1; drawCrate(ltG,'code',t); ltG.scale.set(0.8); ltGlow.alpha=0.5+0.2*beat(t); }
+      else { loopToken.position.set(1060,260); loopToken.alpha=(t<145.0||t>=151.18)?0:0.5; drawCrate(ltG,'code',t); ltG.scale.set(0.8); }
+      // recompiled ingot pile glows brighter
+      pile.clear();
+      pile.beginFill(C.code,0.4+0.3*beat(t)).drawCircle(1060,360,28+4*beat(t)).endFill();
+      payoff.alpha=easeOut(ph(t,147.67,148.3))*(1-ph(t,151.5,151.78)); if(payoff._g) payoff._g.outerStrength=2+2*beat(t);
+      cap.alpha=easeOut(ph(t,144.16,144.7))*(1-ph(t,150.8,151.3));
+      // held final "kód." 151.18-151.78 ZoomBlur pull carried into S22
+      if(t>=151.18 && !hasOverlayFx('zoomHeld')){ if(FILT.zoomHeld){ FILT.zoomHeld.center=[1060,360]; addOverlayFx('zoomHeld',FILT.zoomHeld);} }
+      if(FILT.zoomHeld && hasOverlayFx('zoomHeld')){ let st; if(t<151.78) st=0.22*easeInOut(ph(t,151.18,151.78)); else st=0.22*(1-ph(t,151.78,152.6)); FILT.zoomHeld.strength=clamp01(st); if(t>=152.6) removeOverlayFx('zoomHeld'); }
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+    },destroy(){ loopRailG.alpha=0; loopRailG.clear(); }};
+  });
+
+  // ---------- S22 : END-CARD / banjo tail 151.78-163.632 ----------
+  scene(151.78,163.632,'END','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const title=txt('CESTA ZDROJÁKU',54,C.accent,'900'); title.position.set(640,320); title.alpha=0; legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:1.5,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('lexer → parser → AST → IR → strojový kód · PGO',22,C.muted,'700'); sub.position.set(640,372); sub.alpha=0; legible(sub);
+    const badge=txt('🚂  kompilace & PGO · ESW B4M36ESW',20,C.muted,'700'); badge.position.set(640,560); badge.alpha=0; legible(badge);
+    const pile=new PIXI.Graphics(); c.addChild(pile);
+    c.addChild(title,sub,badge);
+    return {c,update(lt,t){
+      const q=ph(t,151.78,162.5);
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      moteVisibleRatio=lerp(1.0,0.18,easeInOut(q));
+      moteEnvelope=lerp(0.30,0.12,easeInOut(q));
+      // ingot pile at BACKEND end glows then calms
+      pile.clear();
+      pile.beginFill(C.code,0.4+0.25*beat(t)*(1-q)).drawCircle(1060,360,26).endFill();
+      title.alpha=easeOut(ph(t,152.6,154.0)); if(title._g) title._g.outerStrength=lerp(1.5,0.2,easeInOut(q));
+      sub.alpha=easeOut(ph(t,153.4,154.8));
+      badge.alpha=easeOut(ph(t,154.0,155.4));
+      if(bloomF) bloomF.bloomScale=1.0+0.25*Math.exp(-Math.pow((t-160.0),2)/0.3);
+      if(godrayF) godrayF.gain=lerp(0.5,0.3,easeInOut(q));
+    },destroy(){ moteVisibleRatio=1; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='bridge'){
+      // cool the PGO measurement loop, re-warm on lap-2 success
+      const cold=ph(t,85.06,87.5)*(1-ph(t,103.0,114.0));
+      bgGrade.saturate(-0.35*cold,false);
+      bgGrade.brightness(1-0.10*cold,true);
+    } else if(sec==='chorus'){
+      bgGrade.saturate(0.18,false);
+    } else if(sec==='outro'){
+      bgGrade.saturate(0.08,false);
+    } else {
+      bgGrade.saturate(0.10,false);
+    }
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM) — EXACT FINAL PICKER (§5)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=1820, LAST_WORD_END=151780;
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;   // GLOBAL GATE first
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; }
+    return null;                                                // FALLBACK REMOVED — gaps show no line
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    const dt=app.ticker.deltaMS/1000;
+    bgIntent.kawase=false;
+    chorusStrobe=null;       // reset; only an active chorus re-enables it
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='bridge'){
+      const cold=ph(t,85.06,87.5)*(1-ph(t,103.0,114.0));
+      top=lerpColor(C.bgTop,C.bgTopCold,cold); bot=lerpColor(C.bgBot,C.bgBotCold,cold);
+    }
+    if(t>=151.78){ const q=easeInOut(ph(t,151.78,162.5)); top=lerpColor(top,0x10182a,q); bot=lerpColor(bot,0x0a0f14,q); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time=t; }
+    bgIntent.godray=(sec==='intro'||sec==='chorus'||sec==='outro');
+
+    // ----- scene manager (with backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.12);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame from intent flags -----
+    { const arr=[bgGrade];
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+    // ----- persistent freight set -----
+    renderFreight(t,sec);
+    // ----- camera -----
+    updateCamera(t,dt);
+    // ----- karaoke -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — motes + sparks (non-load-bearing) + render
+  //  PAUSE-FREEZE: motes/sparks advance ONLY while playing (paused frame is static).
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    const playing = !player.paused && !player.ended;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y<-20){ m.s.y=H+20; m.s.x=Math.random()*W; }
+        if(m.s.x>W+20){ m.s.x=-20; } }
+      const visible=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      m.s.alpha=visible? moteEnvelope*(0.6+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body></html>

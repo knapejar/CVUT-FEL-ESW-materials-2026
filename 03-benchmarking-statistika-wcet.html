@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P3 – Benchmarking, statistika, WCET · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="02-bentley-kompilator-profiling.html">← Bentleyho pravidla</a>
+    <a class="nav-link" href="04-skalovatelna-synchronizace.html">Škálovatelná synchronizace →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 3 · <span class="badge badge-c">C/C++ část</span></div>
+    <h1>Benchmarking, statistika a WCET</h1>
+    <p class="perex">Jak <strong>seriózně měřit výkon softwaru</strong>. Doba běhu není jedno pevné číslo,
+    ale náhodná veličina – proto se k ní musí přistupovat statisticky. Projdeme, proč a co měřit, odkud
+    se bere šum a variabilita, jak shrnout výsledky (průměr, medián, rozptyl, směrodatná odchylka,
+    95% interval spolehlivosti), jak korektně spočítat <em>speedup</em> i jeho interval, rozdíl mezi
+    mikro- a makrobenchmarkem, warm-up a dosažení ustáleného stavu, vícestupňové opakování podle
+    Kalibery a Jonese, různé způsoby snímání času (syscall vs. přímý přístup k HW čítači, RDTSC, vDSO)
+    a nakonec WCET – nejhorší možnou dobu běhu a proč na ní v real-time systémech záleží.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#proc">Proč a co měřit</a></li>
+      <li><a href="#typy">Mikro- vs. makrobenchmark</a></li>
+      <li><a href="#sum">Zdroje šumu a variability</a></li>
+      <li><a href="#opakovatelnost">Opakovatelnost a reprodukovatelnost</a></li>
+      <li><a href="#statistika">Statistika: shrnutí výsledků</a></li>
+      <li><a href="#ci">Interval spolehlivosti</a></li>
+      <li><a href="#urovne">Vícestupňové opakování</a></li>
+      <li><a href="#warmup">Warm-up a ustálený stav</a></li>
+      <li><a href="#speedup">Speedup a jeho interval</a></li>
+      <li><a href="#timestamp">Timestamping</a></li>
+      <li><a href="#exec">Spouštění programu</a></li>
+      <li><a href="#wcet">WCET</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="proc">Proč a co měřit</h2>
+  <p>Benchmarking je <strong>první i poslední krok optimalizační smyčky</strong>: nejdřív změřím, co je
+  pomalé, a nakonec ověřím, jestli změna pomohla. Bez měření optimalizujeme naslepo.</p>
+<div class="diag"><div class="diag-flow"><div class="diag-node c-blue"><span class="dn-num">1</span><span class="dn-title">Změř</span><span class="dn-sub">co je pomalé</span></div><div class="diag-arrow"></div><div class="diag-node c-purple"><span class="dn-num">2</span><span class="dn-title">Pochop</span><span class="dn-sub">proč</span></div><div class="diag-arrow"></div><div class="diag-node c-amber"><span class="dn-num">3</span><span class="dn-title">Změň</span><span class="dn-sub">jednu věc</span></div><div class="diag-arrow"></div><div class="diag-node c-green"><span class="dn-num">4</span><span class="dn-title">Ověř</span><span class="dn-sub">pomohlo?</span></div></div><div class="diag-cap">Tady právě jsme — u kroku 4: ověřujeme, jestli změna pomohla.</div></div>
+
+  <h3>Co je benchmark</h3>
+  <p>Slovo <strong>benchmark</strong> má dva významy:</p>
+  <ul>
+    <li><strong>Metoda</strong> – samotný postup měření výkonu.</li>
+    <li><strong>Benchmarkový program</strong> – program používaný k opakovanému testování výkonu.</li>
+  </ul>
+  <p><strong>Objekt benchmarku</strong> (co se vlastně měří) může být: <strong>hardware</strong>,
+  <strong>kompilátor</strong>, <strong>algoritmus</strong> nebo konkrétní <strong>implementace</strong>.
+  Většinou nás zajímá, jestli nějaká změna (v HW, kompilátoru, algoritmu…) vede ke
+  <strong>zrychlení (speed-up)</strong> nebo <strong>zpomalení (slow-down)</strong>.</p>
+
+  <h3>Co lze měřit</h3>
+  <div class="box pisnicka" id="pisen-performans-kauntrs">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Performans Kauntrs</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s17">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <ol>
+    <li><strong>Doba běhu (execution time)</strong> – těžiště této přednášky.</li>
+    <li><strong>Spotřeba paměti</strong> – na rozdíl od času je paměť <em>konečný</em> zdroj.</li>
+    <li><strong>Energie</strong>.</li>
+  </ol>
+  <p>Žádná z těchto veličin se neměří tak snadno, jak to vypadá.</p>
+
+  <h3>Měření energie</h3>
+  <ul>
+    <li>Připojit k počítači/desce <strong>wattmetr (power meter)</strong>.</li>
+    <li>Použít <strong>hardwarová rozhraní</strong> pro měření/řízení spotřeby (čím dál běžnější).</li>
+    <li><strong>Intel RAPL</strong> (Running Average Power Limit) – umožňuje <strong>monitorovat i omezovat</strong>
+      spotřebu jednotlivých komponent. Domény <strong>package</strong> a <strong>memory (DRAM)</strong>.
+      Přístupné přes <strong>model-specific registry (MSR)</strong>. Viz <em>Intel Software Developer's
+      Manual: System Programming Guide</em>.</li>
+  </ul>
+
+  <h3>Měření spotřeby paměti</h3>
+  <p>Pod moderním OS je překvapivě složité. Paměť se totiž spotřebovává na více místech:</p>
+  <ol>
+    <li><strong>Paměť programu</strong> – kód, statická data, halda, zásobník (zásobník se alokuje
+      <em>pro každé vlákno</em>). To je snadná část, kterou hlásí profilery.</li>
+    <li><strong>Paměť jádra OS</strong> alokovaná jménem programu – síťové buffery, cache disku a souborového
+      systému, systémové objekty (časovače, semafory…). Někdy <em>nelze</em> přiřadit konkrétnímu procesu
+      (např. síťové přijímací buffery).</li>
+    <li><strong>Sdílené knihovny</strong> – jak započítat paměť knihovny sdílené více programy?</li>
+  </ol>
+  <p>Nástroje <code>top</code> / <code>htop</code> hlásí na Linuxu několik statistik:</p>
+  <table>
+    <thead><tr><th>Statistika</th><th>Význam</th></tr></thead>
+    <tbody>
+      <tr><td><strong>VIRT</strong></td><td>Celková <strong>virtuální</strong> paměť rezervovaná procesem. Nemusí být celá podložená fyzickou pamětí. <em>Nezahrnuje</em> paměť jádra.</td></tr>
+      <tr><td><strong>RES</strong></td><td>Aktuálně <strong>rezidentní (fyzická)</strong> paměť (bez odswapované).</td></tr>
+      <tr><td><strong>SHR</strong></td><td>Paměť <strong>sdílená</strong> s jinými procesy (data, <code>.so</code>).</td></tr>
+    </tbody>
+  </table>
+  <p>Příklad: alokace 16 GiB <em>virtuální</em> paměti bez okamžité alokace fyzické paměti:</p>
+  <pre><code>mmap(NULL, 1ULL &lt;&lt; 34, PROT_READ | PROT_WRITE,
+     MAP_ANONYMOUS | MAP_SHARED, -1, 0);</code></pre>
+
+  <h2 id="typy">Mikro- vs. makrobenchmark</h2>
+  <table>
+    <thead><tr><th>Mikrobenchmark</th><th>Aplikační (makro)benchmark</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Měří <strong>malou část</strong> aplikace (jednu z mnoha funkcí).</td>
+        <td>Měří výkon <strong>celé aplikace</strong>.</td>
+      </tr>
+      <tr>
+        <td>Snadno se určí <strong>zdroj</strong> zrychlení/zpomalení.</td>
+        <td>Výkon ovlivňuje mnoho reálných faktorů.</td>
+      </tr>
+      <tr>
+        <td>Zlepšení mikrobenchmarku <strong>typicky neimplikuje</strong> zlepšení celé aplikace.</td>
+        <td>Měří skutečné chování celé aplikace od začátku do konce (end-to-end).</td>
+      </tr>
+      <tr>
+        <td>Příklad: doba parsování <em>jednoho</em> výrazu v kompilátoru.</td>
+        <td>Příklad: celá kompilace od začátku do konce.</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Pozor na past mikrobenchmarku</p>
+    <p>Čím <strong>menší granularita</strong> měření, tím <strong>silnější relativní šum</strong> – a tím větší
+    riziko, že optimalizujeme něco, co se v celku vůbec neprojeví. Mikrobenchmark je skvělý na izolaci
+    příčiny, ale závěr „je to o 30 % rychlejší“ nepřenášejte automaticky na celou aplikaci.</p>
+  </div>
+
+  <h2 id="sum">Zdroje šumu a variability</h2>
+  <p>Měřený program běží na <strong>hluboké hierarchii vrstev</strong> a <em>každá z nich</em> přidává
+  nedeterminismus:</p>
+<div class="diag"><div class="diag-stack">
+    <div class="diag-layer"><span class="dl-title">Vaše aplikace</span></div>
+    <div class="diag-layer"><span class="dl-title">Knihovny</span></div>
+    <div class="diag-layer"><span class="dl-title">Kompilátor</span></div>
+    <div class="diag-layer"><span class="dl-title">Běhové prostředí</span> <span class="dl-sub">– Runtime: Garbage Collector, JIT kompilátor</span></div>
+    <div class="diag-layer"><span class="dl-title">Operační systém</span> <span class="dl-sub">– Scheduler, virtuální paměť, I/O</span></div>
+    <div class="diag-layer"><span class="dl-title">Virtualizace</span></div>
+    <div class="diag-layer"><span class="dl-title">Hardware</span> <span class="dl-sub">– pipeline, cache, superskalár, SIMD, více jader, predikce, µ-ops</span></div>
+  </div></div>
+  <p>I jednoduché měření celého programu znatelně kolísá. Pro stejný binární soubor a stejný vstup:</p>
+  <pre><code>$ for i in $(seq 10); do \
+    ./find_ellipse ../images/table.jpg 1000 no-gui | grep processImage; \
+  done
+processImage took 880ms
+processImage took 870ms
+...
+processImage took 872ms</code></pre>
+  <table>
+    <thead><tr><th>Úroveň měření</th><th>min</th><th>max</th><th>rozptyl (spread)</th></tr></thead>
+    <tbody>
+      <tr><td>Celý program (<code>processImage</code>)</td><td>867 ms</td><td>921 ms</td><td>54 ms (6,2 %)</td></tr>
+      <tr><td>Mikroúroveň (<code>RANSAC iteration</code>)</td><td>98 µs</td><td>193 µs</td><td>95 µs (97 %)</td></tr>
+    </tbody>
+  </table>
+  <p>Tedy: i pro <strong>tentýž binární soubor a vstup</strong> není doba běhu jediná pevná hodnota.
+  Doba běhu závisí na hardwaru, vstupních datech, kompilátoru, rozložení paměti, režii samotného měření,
+  zbytku systému, síťové zátěži… Některé faktory lze <strong>řídit</strong>, jiné ne.</p>
+
+  <div class="box poznamka">
+    <p class="box-title">💬 TL;DR celé přednášky</p>
+    <p>Doba běhu je <strong>náhodná veličina</strong>, ne konstanta. Náhodné vlivy nelze odstranit, lze je
+    jen <strong>modelovat</strong>. Proto: <strong>používej a chápej statistiku.</strong></p>
+  </div>
+
+  <h3>Klasifikace faktorů</h3>
+  <dl class="pojmy-list">
+    <dt>Řízené (controlled)</dt><dd>Vědomě nastavujeme: přepínače kompilátoru, hardware, verze algoritmu.</dd>
+    <dt>Náhodné (random)</dt><dd>Mění se z běhu na běh: přerušení, plánovač, zátěž na pozadí.</dd>
+    <dt>Neřízené (uncontrolled)</dt><dd>Většinou fixní, ale potenciálně zkreslující: rozložení paměti, frekvenční škálování…</dd>
+  </dl>
+<div class="diag"><div class="diag-flow">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-title">Řízené proměnné</span></div>
+      <div class="diag-node c-amber"><span class="dn-title">Náhodné proměnné</span></div>
+      <div class="diag-node c-teal"><span class="dn-title">Neřízené proměnné</span></div>
+    </div>
+    <div class="diag-arrow"></div>
+    <div class="diag-node c-purple"><span class="dn-title">Experiment</span><span class="dn-sub">benchmark</span></div>
+    <div class="diag-arrow"></div>
+    <div class="diag-node c-green"><span class="dn-title">Výsledky</span></div>
+  </div></div>
+
+  <h2 id="opakovatelnost">Opakovatelnost a reprodukovatelnost</h2>
+  <p>Měření <strong>musí být opakované</strong> – jediné číslo nic neříká. Smysluplné měření je:</p>
+  <ol>
+    <li><strong>Opakovatelné (repeatable)</strong> – stejné nastavení dá konzistentní výsledky před změnou i po ní.</li>
+    <li><strong>Reprodukovatelné</strong> – výsledky lze zopakovat (jinde, jindy) a dojít ke stejnému závěru.</li>
+    <li><strong>Konzistentní v čase</strong> – nemění se nahodile mezi spuštěními.</li>
+  </ol>
+  <div class="box insight">
+    <p class="box-title">💡 Kdy je měření „opakovatelné“?</p>
+    <p>Z pohledu zkoušky: měření je opakovatelné, pokud má <strong>dostatečně úzký interval spolehlivosti</strong>
+    a opakovaná spuštění dávají konzistentní hodnoty. Pokud jsou intervaly před a po změně tak široké, že se
+    <strong>překrývají</strong>, výsledek je <em>neprůkazný</em> a je potřeba více měření (nebo lepší
+    kontrola prostředí). Cílem benchmarku je <strong>odhadnout interval spolehlivosti pro střední hodnotu</strong>
+    doby běhu.</p>
+  </div>
+
+  <h2 id="statistika">Statistika: shrnutí výsledků</h2>
+  <p>Kompletní výsledek benchmarku lze zobrazit <strong>histogramem</strong> dob běhu – nese hodně informace.
+  Pro rozhodování ale potřebujeme <strong>kompaktní číslo</strong>. Tři způsoby shrnutí:</p>
+  <ol>
+    <li><strong>Histogram</strong> (nejvíc informace).</li>
+    <li><strong>Testování významnosti</strong> (significance testing).</li>
+    <li><strong>Interval spolehlivosti</strong> + vizuální test překryvu.</li>
+  </ol>
+  <p>Rozdělení dob běhu bývá <strong>zešikmené doprava</strong>: ostrý vrchol u nejrychlejších běhů a dlouhý
+  tenký „ocas“ vzácných pomalých běhů (typicky kvůli rušení z OS, GC, cache miss…).</p>
+
+  <h3>Sumární čísla</h3>
+  <dl class="pojmy-list">
+    <dt>Aritmetický průměr (mean)</dt><dd>Primární metrika – vždy s <strong>intervalem spolehlivosti</strong>.</dd>
+    <dt>Medián</dt><dd>Rychlá inženýrská kontrola; odolnější vůči odlehlým hodnotám než průměr.</dd>
+    <dt>Minimum</dt><dd>Užitečný odhad „dolní meze“ – případ s nejmenším rušením.</dd>
+    <dt>Rozptyl (variance) σ²</dt><dd>Průměr čtverců odchylek od průměru – míra rozkolísanosti.</dd>
+    <dt>Směrodatná odchylka (stddev) σ</dt><dd>Odmocnina z rozptylu, ve stejných jednotkách jako data.</dd>
+  </dl>
+
+  <h3>Testování významnosti</h3>
+  <p>Odpovídá na otázku <em>„je pravděpodobné, že dva systémy mají různý výkon?“</em>. Má ovšem
+  <strong>problémy</strong>, zvlášť u počítačových benchmarků (viz Kaliberův článek) – lepší je ptát se přímo
+  na <strong>speedup</strong>. Testování významnosti implementuje nástroj <strong><code>ministat</code></strong>
+  (FreeBSD).</p>
+  <div class="box poznamka">
+    <p class="box-title">💬 Z manuálu nástroje <code>ministat</code></p>
+    <p>Nástroj napsal <strong>Poul-Henning Kamp</strong> z frustrace nad nesmyslnými benchmarkovými tvrzeními
+    lidí, kteří nechápou <strong>důležitost nejistoty a statistiky</strong>.</p>
+  </div>
+  <p>Příklad výstupu <code>ministat</code> – dvě sady (<code>x</code> a <code>+</code>), jejichž intervaly
+  se <strong>nepřekrývají</strong>, takže rozdíl je detekován:</p>
+  <pre><code>    N           Min           Max        Median           Avg        Stddev
+x  40         88.92       122.527        92.594      93.34845     5.3399441
++  40        82.313       112.625         84.52     85.447325     4.6810848
+Difference at 95.0% confidence
+        -7.90112 +/- 2.2355
+        -8.46412% +/- 2.39479%
+        (Student's t, pooled s = 5.02133)</code></pre>
+  <p>Naopak při <strong>příliš málo datech s příliš podobnými rozděleními</strong> se intervaly silně
+  překrývají a žádný rozdíl prokázat nelze: <code>No difference proven at 95.0% confidence</code>.</p>
+
+  <h3>Další nástroje</h3>
+  <p><strong>Hyperfine</strong> hlásí průměr ± σ i rozsah min…max:</p>
+  <pre><code>&gt; hyperfine "gcc -v"
+Benchmark 1: gcc -v
+  Time (mean ± σ):       1.6 ms ±   0.7 ms    [User: 0.8 ms, System: 1.8 ms]
+  Range (min … max):     0.5 ms …   9.3 ms    257 runs</code></pre>
+  <p>Julia s balíčkem <strong><code>Measurements.jl</code></strong> propaguje nejistotu automaticky skrz
+  aritmetiku, takže dělením dvou nejistých časů rovnou dostaneme speedup <em>i s jeho nejistotou</em>:</p>
+  <pre><code>julia&gt; using Measurements
+julia&gt; old = 10±1
+10.0 ± 1.0
+julia&gt; new = 9±0.9
+9.0 ± 0.9
+julia&gt; speedup = new/old
+0.9 ± 0.13</code></pre>
+
+  <h2 id="ci">Interval spolehlivosti</h2>
+  <p>Cílem benchmarku je <strong>odhadnout interval spolehlivosti pro střední hodnotu</strong> doby běhu.
+  Střední hodnota je vlastnost <em>pravděpodobnostního rozdělení</em> náhodných dob běhu – z měření ji můžeme
+  jen <strong>odhadnout</strong>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Co znamená 95% interval spolehlivosti (CI)</p>
+    <p>Pokud experiment mnohokrát zopakujeme a pokaždé spočítáme 95% CI, pak <strong>v 95 % případů</strong> bude
+    skutečná střední hodnota uvnitř intervalu. (Při 50% CI by polovina intervalů skutečnou střední hodnotu
+    minula.)</p>
+  </div>
+  <p>Zápis např. <em>„doba běhu = <strong>25,4 ± 3,2 ms</strong> (95% CI)“</em> znamená, že skutečná střední
+  hodnota leží pravděpodobně v <strong>[22,2; 28,6] ms</strong>. Vzorec intervalu spolehlivosti:</p>
+  <pre><code>Ȳ ± (S_Y / √r) · q_t(r−1)(1 − α/2)</code></pre>
+  <dl class="pojmy-list">
+    <dt>Ȳ</dt><dd>výběrový průměr (sample mean)</dd>
+    <dt>S_Y</dt><dd>výběrová směrodatná odchylka</dd>
+    <dt>r</dt><dd>počet měření</dd>
+    <dt>q<sub>t(r−1)</sub>(1 − α/2)</dt><dd>(1 − α/2)-kvantil Studentova t-rozdělení s r−1 stupni volnosti</dd>
+    <dt>α</dt><dd>hladina významnosti (např. 0,05 pro 95% CI)</dd>
+  </dl>
+  <p><strong>Vizuální test překryvu</strong> – spočítáme a vykreslíme intervaly obou systémů:</p>
+  <ul>
+    <li><strong>Nepřekrývají se</strong> → rozdíl výkonu je pravděpodobně významný.</li>
+    <li><strong>Překrývají se</strong> → výsledek je neprůkazný, potřeba více měření.</li>
+  </ul>
+  <p>Speedup a jeho interval ovšem <strong>nejde spolehlivě odhadnout pouhým okem</strong> – je potřeba ho spočítat.</p>
+
+  <h2 id="urovne">Vícestupňové opakování (Kalibera &amp; Jones)</h2>
+  <p>Metodika vychází z článku <strong>Kalibera, T. a Jones, R. E. (2013): <em>Rigorous Benchmarking in
+  Reasonable Time</em></strong>. Variabilita se objevuje na <strong>třech úrovních</strong> a správná
+  metodika musí hodnotit <em>všechny</em>:</p>
+<div class="diag"><div class="diag-flow vert">
+    <div class="diag-node c-blue"><span class="dn-title">Kompilace</span><span class="dn-sub">Build ▸ více spuštění A, B, C, …</span></div>
+    <div class="diag-arrow"><span class="lbl">zoom</span></div>
+    <div class="diag-node c-purple"><span class="dn-title">Spuštění</span><span class="dn-sub">Startup ▸ měřené spuštění</span></div>
+    <div class="diag-arrow"><span class="lbl">zoom</span></div>
+    <div class="diag-node c-green"><span class="dn-title">Iterace</span><span class="dn-sub">Warm-up ▸ Iter 1 – Iter 2 – Iter 3 – …</span></div>
+  </div></div>
+  <dl class="pojmy-list">
+    <dt>Iterace</dt><dd>uvnitř jednoho spuštění – warm-up a přechodový šum.</dd>
+    <dt>Spuštění (execution)</dt><dd>ASLR, cesta JIT, prostředí; zachytí variabilitu plánovače OS, JIT rekompilace…</dd>
+    <dt>Kompilace</dt><dd>rozložení binárky, pořadí linkování.</dd>
+  </dl>
+  <p>Který stupeň dominuje, se liší benchmark od benchmarku (z DaCapo/OpenJDK):</p>
+  <table>
+    <thead><tr><th>Benchmark</th><th>bloat6</th><th>eclipse9</th><th>lusearch9</th><th>tradebeans9</th><th>xalan6</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Iterace [%]</strong></td><td>14,1</td><td>0,8</td><td>3,3</td><td>1,5</td><td>7,0</td></tr>
+      <tr><td><strong>Spuštění [%]</strong></td><td>3,7</td><td>0,4</td><td>30,3</td><td>0,4</td><td>9,1</td></tr>
+    </tbody>
+  </table>
+  <p><code>bloat6</code> kolísá hlavně na úrovni <em>iterace</em> (14,1 %), kdežto <code>lusearch9</code>
+  ohromně na úrovni <em>spuštění</em> (30,3 %).</p>
+
+  <div class="box pozor">
+    <p class="box-title">⚠️ Nekompilovat jen jednou</p>
+    <p>Rozložení kódu kompilátorem ovlivňuje chování instrukční cache – stejný zdroják, jinak slinkovaná
+    binárka, jiný výkon. Randomizace umístění funkcí v GCC mění čas typicky o <strong>±5 %</strong>. Tento šum
+    je <strong>neviditelný</strong>, pokud kompilujete jen jednou. Pravidlo: <em>nemůžeš-li faktor řídit, udělej
+    ho náhodným</em> – randomizuj pořadí linkování a <strong>průměruj přes alespoň 3 nezávislé kompilace</strong>.</p>
+  </div>
+
+  <h3>Odhad rozptylu po úrovních a optimální počty opakování</h3>
+  <p>Opakujeme, abychom <strong>zúžili interval spolehlivosti</strong>. Pokud variabilita vzniká na vyšší
+  úrovni, musíme opakovat alespoň na ní; opakování na <em>nižší</em> úrovni bývá <strong>levnější</strong>
+  (bez režie spuštění/kompilace). Hledá se kompromis: <em>málo</em> opakování → široký interval; <em>moc</em>
+  opakování → marnění času.</p>
+  <p>Po úvodním (dimenzovacím) experimentu spočítáme <strong>nestranné odhady rozptylu</strong> T<sub>i</sub>²
+  pro každou úroveň – kolik každá úroveň <em>nezávisle</em> přispívá k variabilitě. Vychází se z
+  <em>vychýleného</em> odhadu S<sub>i</sub>²:</p>
+  <pre><code>T₁² = S₁²
+
+pro 1 &lt; i ≤ n:   Tᵢ² = Sᵢ² − S²₍ᵢ₋₁₎ / r₍ᵢ₋₁₎</code></pre>
+  <p>Je-li <strong>T<sub>i</sub>² ≤ 0</strong>, daná úroveň přidává jen málo variability a její opakování lze
+  <strong>vynechat</strong>. Optimální počet opakování na úrovni i:</p>
+  <pre><code>rᵢ = ⌈ √( c₍ᵢ₊₁₎/cᵢ · Tᵢ²/T²₍ᵢ₊₁₎ ) ⌉</code></pre>
+  <p>kde c<sub>i</sub> je <strong>cena</strong> jedné operace na úrovni i (čas iterace, startup, doba kompilace…).
+  Počet opakování na úrovni roste s její relativní variabilitou a s tím, jak <em>levná</em> je úroveň pod ní.
+  Asymptotický interval spolehlivosti s důvěrou (1 − α):</p>
+  <pre><code>Ȳ ± t_(1−α/2, ν) · √( Sₙ² / rₙ )    ,   ν = rₙ − 1</code></pre>
+  <div class="box insight">
+    <p class="box-title">💡 Dimenzovat jednou, pak používat</p>
+    <p>Pro každou kombinaci <strong>benchmark / VM / platforma</strong> proveďte <strong>dimenzovací
+    experiment</strong> jednou, abyste zjistili optimální počty opakování pro každou úroveň kromě nejvyšší.
+    Re-dimenzujte, jen když se benchmark / VM / platforma změní.</p>
+  </div>
+
+  <h2 id="warmup">Warm-up a ustálený stav</h2>
+  <div class="box pisnicka" id="pisen-beh-na-95">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Běh na 95%</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s15">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p>Měření na úrovni iterací je o dosažení <strong>ustáleného stavu (steady state)</strong>.</p>
+  <ul>
+    <li><strong>Inicializační fáze</strong> – prvních pár iterací platí jednorázové náklady: zahřátí studené
+      cache, trénink prediktoru skoků, alokace paměti.</li>
+    <li><strong>Ustálený / nezávislý stav</strong> – měření mají být <strong>i.i.d.</strong> (nezávislá,
+      stejně rozdělená). <em>Nezávislé implikuje inicializované.</em></li>
+  </ul>
+  <p>Na run-sequence grafu jsou vidět <strong>vysoké špičky úplně vlevo</strong> (inicializace), po nichž se
+  data ustálí do stabilního zašuměného pásu (steady state).</p>
+
+  <h3>Diagnostika nezávislosti – tři grafy</h3>
+  <ol>
+    <li><strong>Run-sequence plot</strong> – identifikuj a odstřihni inicializační fázi.</li>
+    <li><strong>Lag plot</strong> – vykresli Time[i] proti Time[i−1]; <em>strukturovaný/zakřivený mrak</em> =
+      závislost mezi sousedními vzorky, <em>kruhový beztvarý mrak</em> = nezávislost.</li>
+    <li><strong>Autokorelační funkce (ACF)</strong> – kvantifikuje závislost na všech zpožděních (lagách);
+      kromě lagu 0 (vždy 1,0) by u nezávislých dat měly všechny hodnoty zůstat uvnitř mezí významnosti.</li>
+  </ol>
+  <p>Jakýkoli viditelný <strong>vzor</strong> v lag/ACF (na již odstřižených datech) znamená,
+  že <strong>nezávislosti dosaženo nebylo → je potřeba delší warm-up</strong>. Tento ruční postup se dělá
+  <em>jednou</em> pro danou kombinaci benchmark/VM/platforma. Pokud benchmark nezávislého stavu v rozumném
+  čase nedosáhne, vezmi <strong>tutéž iteraci z každého běhu</strong>.</p>
+
+  <h2 id="speedup">Speedup a jeho interval</h2>
+  <p>Speedup je <strong>poměr dvou dob běhu</strong> – tedy poměr dvou <em>náhodných veličin</em>, ne pevná
+  konstanta. Proto má i speedup svůj <strong>interval spolehlivosti</strong>.</p>
+  <ul>
+    <li>Ȳ – doba běhu starého systému (průměr měřených časů).</li>
+    <li>Ȳ′ – doba běhu nového systému.</li>
+    <li><strong>Speedup = Ȳ′ / Ȳ</strong></li>
+  </ul>
+  <p>Interval spolehlivosti speedupu (propagace obou nejistot):</p>
+  <pre><code>( Ȳ·Ȳ′ ± √[ (Ȳ·Ȳ′)² − (Ȳ² − h²)(Ȳ′² − h′²) ] ) / ( Ȳ² − h² )
+
+h  = √( t²_(α/2, ν) · Sₙ²/rₙ )
+h′ = √( t²_(α/2, ν) · Sₙ′²/rₙ )</code></pre>
+  <p>Vztah relativní poloviční šířky intervalu speedupu k intervalům jednotlivých měření:</p>
+  <pre><code>e_s ≈ (Ȳ′ / Ȳ) · √( e² + e′² )      ,   e = h / Ȳ</code></pre>
+  <p>kde e<sub>s</sub>, e, e′ jsou <strong>relativní</strong> poloviční šířky intervalu speedupu / starého /
+  nového systému. Chyby obou systémů se tedy <strong>skládají</strong>.</p>
+
+  <div class="box pozor">
+    <p class="box-title">⚠️ Proč na intervalu speedupu záleží</p>
+    <ul>
+      <li>Starý systém: 10 ± 1 s, e = 0,1 (10 %)</li>
+      <li>Nový systém: 9 ± 0,9 s, e′ = 0,1</li>
+      <li>Speedup ≈ <strong>0,9 ± 0,13</strong>, e<sub>s</sub> = 0,13</li>
+      <li><strong>Závěr: speedup může být 1, tj. žádné zrychlení!</strong> Protože 0,9 + 0,13 &gt; 1, interval
+        zahrnuje 1.</li>
+    </ul>
+  </div>
+  <div class="box insight">
+    <p class="box-title">💡 Klíčové ponaučení</p>
+    <p>Vždy uváděj <strong>velikost efektu s intervalem spolehlivosti</strong>. Slabě: <em>„nová verze je o 10 %
+    rychlejší.“</em> Silně: <strong>„Speedup = 1,10× ± 0,03 (95% CI).“</strong></p>
+  </div>
+  <div class="box poznamka">
+    <p class="box-title">💬 Z cvičení (JMH) – jak zpřesnit odhad</p>
+    <p>V Java části se speedup počítá z <code>ratio</code> průměrných časů a interval z mezí
+    <code>cf_lb</code> (dolní) a <code>cf_ub</code> (horní). Odhad <strong>zpřesníš</strong> tím, že: zvýšíš
+    počet <strong>měřicích iterací</strong>, počet <strong>forků</strong> (pokud se výsledky mezi forky liší),
+    dostatečný počet <strong>warm-up iterací</strong>, a zabráníš <em>dead-code elimination</em>. Cíl je užší
+    interval spolehlivosti, aby se intervaly „před“ a „po“ nepřekrývaly.</p>
+  </div>
+
+  <h2 id="timestamp">Timestamping</h2>
+  <p>Tři způsoby, jak získat časové razítko pro měření trvání:</p>
+
+  <h3>1. Přes systémová volání (syscall)</h3>
+  <ul>
+    <li>Linux: <code>gettimeofday</code>, <code>clock_gettime(CLOCK_MONOTONIC)</code>.</li>
+    <li><strong>Rozlišení:</strong> závisí na dostupném HW (až <strong>1 ns</strong>); dříve to byla perioda
+      systémového tiku (<strong>1–10 ms</strong>).</li>
+    <li><strong>Režie:</strong> stovky cyklů CPU (ale viz virtuální syscall níže).</li>
+  </ul>
+
+  <h3>2. Přímý přístup k hardwaru (čítač TSC)</h3>
+  <ul>
+    <li><strong>Registr TSC na x86:</strong> rozlišení <strong>1 takt</strong>, režie <strong>pár (≈ 8) taktů</strong>.</li>
+    <li><strong>Nevýhody:</strong> může podléhat <strong>frekvenčnímu škálování</strong>; TSC na různých jádrech/socketech
+      <strong>nemusí být synchronizované</strong> – migruje-li OS vlákno, může vyjít i <strong>záporné trvání</strong>.</li>
+  </ul>
+  <pre><code>static inline uint64_t rdtsc() {
+    uint64_t ret; asm volatile ( "rdtsc" : "=A" (ret) ); return ret;
+}</code></pre>
+
+  <h3>3. Kombinace: virtuální syscall (vDSO)</h3>
+  <p>Čtení TSC je <strong>rychlé</strong>, ale závislé na HW/frekvenci/socketu – problém hlavně při
+  <em>odečítání dvou razítek</em>. Jádro OS o HW ví vše, ale jeho volání má režii. <strong>Nápad:</strong>
+  jádro zveřejní do uživatelského prostoru dost informací, aby šel TSC převést na reálný čas
+  <strong>bez volání jádra</strong>:</p>
+  <pre><code>time_ns = rdtsc() * tsc_scale + tsc_offset;</code></pre>
+  <dl class="pojmy-list">
+    <dt>VDSO (Virtual Dynamic Shared Object)</dt>
+    <dd>Paměť jádra <strong>namapovaná do adresního prostoru procesu</strong>, jejíž obsah vypadá jako sdílená
+      knihovna. Aplikace z ní volá <strong>obyčejné funkce</strong>.</dd>
+  </dl>
+  <pre><code>cat /proc/$$/maps | grep vdso</code></pre>
+  <p>Funkce <code>gettimeofday()</code> a <code>clock_gettime()</code> jsou <strong>implementovány ve VDSO</strong>
+  (jádro nevolají). Proměnné <code>tsc_scale</code> a <code>tsc_offset</code> jsou ve VDSO uloženy a jádro je
+  aktualizuje, když je potřeba. Disassembly VDSO ukáže, že čtou TSC inline instrukcí <code>rdtscp</code> –
+  <strong>bez vstupu do jádra</strong>:</p>
+  <pre><code>$ objdump --disassemble /tmp/vdso.so
+__vdso_gettimeofday:
+ ...
+ 741: 0f 01 f9   rdtscp   ← zde
+ ...</code></pre>
+
+  <h2 id="exec">Spouštění programu (Linux)</h2>
+  <p>Doplňková, ale zkoušená látka – proč mají první iterace navíc režii (souvisí s warm-upem):</p>
+  <ol>
+    <li>Jádro OS načte <strong>hlavičky binárky</strong>.</li>
+    <li><strong>Staticky linkovaná binárka:</strong> nastaví struktury virtuální paměti a skočí na vstupní bod.</li>
+    <li><strong>Dynamicky linkovaná binárka:</strong> přečte jméno <strong>interpretu</strong>
+      (např. <code>/lib64/ld-linux-x86-64.so.2</code>), načte ho a spustí s názvem binárky jako parametrem
+      (umožňuje např. transparentně běh ARM binárek na x86 přes Qemu).</li>
+  </ol>
+  <ul>
+    <li><strong>Dynamické linkování</strong> dělá interpret pomocí <em>relokační tabulky</em>, ale za běhu.
+      Linkování velkých knihoven (Qt) je pomalé.</li>
+    <li><strong>Lazy linking:</strong> adresa funkce se najde a <code>call</code> přepíše až při
+      <strong>prvním volání</strong>. <em>Nevhodné pro real-time.</em> Lze vypnout proměnnou
+      <strong><code>LD_BIND_NOW</code></strong>.</li>
+    <li><strong>Líné věci, pokud to jde:</strong> binárka se nenačítá celá na začátku – jen <em>dotčené</em>
+      části přes <strong>page fault</strong>. Alokace paměti je také líná: OS nejdřív nastaví jen struktury
+      virtuální paměti, fyzická stránka se přiřadí až při dotyku → lze alokovat víc paměti, než fyzicky máme.</li>
+    <li><strong>Alokátory:</strong> dvě úrovně – OS (<code>brk()</code>, <code>mmap()</code>) a aplikace
+      (halda: <code>malloc()</code>, <code>new()</code>). Výchozí alokátor nemusí být pro vaši aplikaci nejrychlejší.</li>
+  </ul>
+
+  <h2 id="wcet">WCET – Worst-Case Execution Time</h2>
+  <p><strong>WCET</strong> je <strong>nejhorší možná (maximální) doba běhu</strong> daného kódu přes všechny
+  přípustné vstupy a stavy hardwaru. Zatímco benchmarking se zajímá o <em>střední</em> chování (průměr +
+  interval), <strong>real-time systémy se musí řídit nejhorším případem</strong>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Proč je WCET důležité</p>
+    <p>U <strong>tvrdých real-time systémů</strong> (řízení motoru, airbag, letecká avionika, ABS) není
+    zmeškání deadlinu „jen pomalost“, ale <strong>chyba</strong> s potenciálně fatálními následky. Plánovatelnost
+    úloh se dokazuje právě z <strong>horní meze WCET</strong>, ne z průměru – průměrná doba běhu nestačí, protože
+    jediný pomalý běh může deadline porušit.</p>
+  </div>
+  <h3>Proč je WCET těžké stanovit</h3>
+  <ul>
+    <li><strong>Hardwarový nedeterminismus:</strong> cache, pipeline, predikce skoků a out-of-order vykonávání
+      dělají dobu jedné instrukce závislou na historii – přesný horní odhad je obtížný.</li>
+    <li><strong>Měřením</strong> dostaneme jen <em>pozorované</em> maximum (může podcenit skutečné WCET);
+      <strong>statickou analýzou</strong> dostaneme bezpečnou, ale často <em>pesimistickou</em> (nadhodnocenou)
+      mez.</li>
+    <li>Proto se v real-time prostředí potlačují zdroje nedeterminismu: <strong>vypíná frekvenční škálování</strong>,
+      <strong>zakazuje lazy linking</strong> (<code>LD_BIND_NOW</code>), předdotýká se paměť (zamezí page faultům),
+      připínají se vlákna (<code>taskset</code>).</li>
+  </ul>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Klíčové pojmy</p>
+    <dl class="pojmy-list">
+      <dt>Benchmark</dt><dd>Metoda měření výkonu i program k tomu sloužící; objekt = HW / kompilátor / algoritmus / implementace.</dd>
+      <dt>Mikro- vs. makrobenchmark</dt><dd>Malá izolovaná část (snadná atribuce, nepřenosné závěry) vs. celá aplikace.</dd>
+      <dt>Náhodná veličina</dt><dd>Doba běhu není konstanta – kolísá vlivem všech vrstev stacku; finer granularita → větší relativní šum.</dd>
+      <dt>Interval spolehlivosti (CI)</dt><dd>Ȳ ± (S_Y/√r)·q_t; 95% CI obsahuje skutečnou střední hodnotu v 95 % případů.</dd>
+      <dt>Rozptyl / směrodatná odchylka</dt><dd>σ² = průměr čtverců odchylek; σ = √σ², ve stejných jednotkách jako data.</dd>
+      <dt>i.i.d. / steady state</dt><dd>Nezávislá, stejně rozdělená měření po odstřižení warm-upu; diagnostika run-sequence → lag → ACF.</dd>
+      <dt>Tři úrovně variability</dt><dd>Iterace / spuštění / kompilace; nestranný odhad rozptylu T_i², optimální r_i = ⌈√(c·T poměr)⌉.</dd>
+      <dt>Speedup</dt><dd>Ȳ′/Ȳ – poměr náhodných veličin; chyby se skládají (e_s ≈ (Ȳ′/Ȳ)√(e²+e′²)), interval může zahrnovat 1.</dd>
+      <dt>TSC / RDTSC</dt><dd>HW čítač x86, rozlišení 1 takt, ~8 cyklů; pozor na frekvenční škálování a nesynchronizaci jader.</dd>
+      <dt>VDSO</dt><dd>Knihovna namapovaná jádrem do procesu; převod TSC → čas bez vstupu do jádra (time_ns = rdtsc()·scale + offset).</dd>
+      <dt>WCET</dt><dd>Nejhorší doba běhu; klíčová pro plánovatelnost tvrdých real-time systémů.</dd>
+    </dl>
+  </div>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Dané vzorky měření rychlosti běhu před optimalizací a po, včetně 95% intervalu spolehlivosti – vypočítej speedup a urči, jestli je měření opakovatelné.</summary>
+    <div class="odpoved">
+      <p><strong>Postup.</strong> Z obou sad spočítej průměry Ȳ (před) a Ȳ′ (po). <strong>Speedup = Ȳ′ / Ȳ</strong>
+      (poměr nového ke starému dle definice z přednášky; hodnota &lt; 1 znamená zrychlení – nová verze je rychlejší.
+      Pozor na konvenci: v některých zadáních se uvádí obráceně jako Ȳ/Ȳ′ = „kolikrát je nová verze rychlejší“).</p>
+      <p><strong>Interval speedupu</strong> – chyby obou měření se skládají:
+      e<sub>s</sub> ≈ (Ȳ′/Ȳ)·√(e² + e′²), kde e = h/Ȳ je relativní poloviční šířka CI. Přesněji použij vzorec
+      pro CI poměru (h, h′ z t-kvantilu a S²/r).</p>
+      <p><strong>Opakovatelnost / průkaznost:</strong> rozhodni podle <em>překryvu intervalů</em>. Pokud se 95% CI
+      „před“ a „po“ <strong>nepřekrývají</strong> (a interval speedupu <em>nezahrnuje 1</em>), je rozdíl průkazný a
+      měření opakovatelné. Pokud se <strong>překrývají</strong> (interval speedupu obsahuje 1), výsledek je
+      <strong>neprůkazný</strong> – speedup může být 1 (žádné zrychlení) a je potřeba více měření.</p>
+      <p><em>Modelový příklad:</em> 10 ± 1 s vs. 9 ± 0,9 s → speedup ≈ 0,9 ± 0,13; protože 0,9 + 0,13 &gt; 1, interval
+      zahrnuje 1 → <strong>zrychlení neprokázáno</strong>.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Výpočet speedup ze dvou sad časů; jak odhad zpřesnit.</summary>
+    <div class="odpoved">
+      <p><strong>Výpočet:</strong> speedup = poměr průměrů obou sad (Ȳ′/Ȳ). Vždy doplň <strong>interval spolehlivosti</strong>
+      – speedup je poměr náhodných veličin, takže výsledek bez CI je bezcenný. Relativní poloviční šířka:
+      e<sub>s</sub> ≈ (Ȳ′/Ȳ)·√(e² + e′²).</p>
+      <p><strong>Jak zpřesnit (zúžit interval):</strong></p>
+      <ul>
+        <li>Více <strong>opakování</strong> – CI klesá s √r; opakuj zvlášť na úrovni, kde dominuje variabilita
+          (iterace / spuštění / kompilace).</li>
+        <li>Opakuj na <strong>nejlevnější</strong> dostatečné úrovni (úspora času) a urči optimální počty
+          r<sub>i</sub> = ⌈√((c<sub>i+1</sub>/c<sub>i</sub>)·(T<sub>i</sub>²/T<sub>i+1</sub>²))⌉.</li>
+        <li>Dostatečný <strong>warm-up</strong> a dosažení i.i.d. ustáleného stavu (run-sequence/lag/ACF).</li>
+        <li>Randomizuj a <strong>průměruj přes ≥3 kompilace</strong>; potlač řiditelné zdroje šumu (frekvence,
+          zátěž na pozadí, připnutí vlákna).</li>
+        <li>V JMH: víc měřicích iterací, víc forků, bránit dead-code elimination.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P3</span> Co znamená 95% interval spolehlivosti a jak ho spočítáš pro střední dobu běhu?</summary>
+    <div class="odpoved">
+      <p>Zopakuješ-li experiment mnohokrát, pak <strong>v 95 % případů</strong> bude skutečná střední hodnota
+      uvnitř spočítaného intervalu (ne „s pravděpodobností 95 % je skutečná hodnota tady“). Vzorec:
+      Ȳ ± (S_Y/√r)·q<sub>t(r−1)</sub>(1 − α/2), kde Ȳ je výběrový průměr, S_Y směrodatná odchylka, r počet měření,
+      q<sub>t</sub> kvantil Studentova t-rozdělení s r−1 stupni volnosti a α = 0,05. Interval se zužuje s √r.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P3</span> Jaké jsou tři způsoby snímání času? Srovnej syscall, RDTSC a vDSO.</summary>
+    <div class="odpoved">
+      <p><strong>1) Syscall</strong> (<code>gettimeofday</code>, <code>clock_gettime(CLOCK_MONOTONIC)</code>):
+      rozlišení až 1 ns, ale režie stovky cyklů (vstup do jádra). <strong>2) Přímý HW – TSC/RDTSC</strong> na x86:
+      rozlišení 1 takt, režie ~8 cyklů, ale podléhá frekvenčnímu škálování a TSC nemusí být synchronizované mezi
+      jádry → po migraci vlákna i záporné trvání. <strong>3) vDSO (virtuální syscall)</strong>: jádro namapuje do
+      procesu „knihovnu“ s funkcemi <code>gettimeofday</code>/<code>clock_gettime</code>, které čtou TSC inline
+      (<code>rdtscp</code>) a převedou ho přes zveřejněné <code>tsc_scale</code>/<code>tsc_offset</code>
+      (<code>time_ns = rdtsc()·tsc_scale + tsc_offset</code>) <strong>bez vstupu do jádra</strong> – spojuje
+      rychlost TSC s korektností syscallu.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P3</span> Co je WCET a proč se v real-time systémech řídíme nejhorším, ne průměrným případem?</summary>
+    <div class="odpoved">
+      <p><strong>WCET (worst-case execution time)</strong> je maximální možná doba běhu kódu přes všechny vstupy a
+      stavy HW. U <strong>tvrdých real-time systémů</strong> (avionika, airbag, řízení motoru) je zmeškání deadlinu
+      <strong>chyba</strong>, ne pomalost – plánovatelnost se proto dokazuje z horní meze WCET, protože jediný pomalý
+      běh deadline poruší. WCET se těžko stanovuje kvůli HW nedeterminismu (cache, pipeline, predikce); měření dá
+      jen pozorované maximum (může podcenit), statická analýza bezpečnou, ale pesimistickou mez. Nedeterminismus se
+      potlačuje (vypnuté škálování frekvence, <code>LD_BIND_NOW</code>, předdotyk paměti, připnutí vláken).</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li>Doba běhu je <strong>náhodná veličina</strong>, ne konstanta – nedeterminismus přidává každá vrstva stacku; finer granularita → větší relativní šum.</li>
+      <li>Měř opakovaně a shrnuj <strong>průměrem + intervalem spolehlivosti</strong> (fallback medián/minimum). 95% CI obsahuje skutečnou střední hodnotu v 95 % případů: Ȳ ± (S_Y/√r)·q_t.</li>
+      <li><strong>Mikrobenchmark</strong> izoluje příčinu, ale jeho zlepšení neimplikuje zlepšení celé aplikace; <strong>makrobenchmark</strong> měří celek.</li>
+      <li>Variabilita má <strong>tři úrovně</strong> (iterace / spuštění / kompilace); nestranný odhad T_i², optimální r_i = ⌈√((c_{i+1}/c_i)(T_i²/T_{i+1}²))⌉; dimenzuj jednou na benchmark/VM/platformu. Nekompiluj jen jednou (±5 %).</li>
+      <li>Měření musí být <strong>i.i.d.</strong> – odstřihni warm-up, ověř run-sequence → lag → ACF.</li>
+      <li><strong>Speedup = Ȳ′/Ȳ</strong> je poměr náhodných veličin; chyby se skládají, interval může zahrnovat 1 (žádné zrychlení). Uváděj „1,10× ± 0,03 (95% CI)“, ne „o 10 % rychleji“.</li>
+      <li><strong>Timestamping:</strong> syscall (~1 ns, stovky cyklů) · TSC/RDTSC (1 takt, ~8 cyklů, hazardy frekvence a jader) · vDSO (převod TSC → čas v user space bez jádra).</li>
+      <li><strong>WCET</strong> = nejhorší doba běhu; pro tvrdé real-time se řídíme jí, ne průměrem.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="02-bentley-kompilator-profiling.html">← Bentleyho pravidla, kompilátor, profiling</a></span>
+    <span><a href="04-skalovatelna-synchronizace.html">Další: Škálovatelná synchronizace →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

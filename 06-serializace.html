@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P6 – Serializace · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="05-pamet-cache-numa.html">← předchozí: Paměť a cache</a>
+    <a class="nav-link" href="07-beh-programu-jit.html">další: Běh programu a JIT →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 6 · <span class="badge badge-c">C/C++ část</span></div>
+    <h1>Serializace: JSON, XML, Protobuf, Avro, Cap'n Proto</h1>
+    <p class="perex">Jak si programy vyměňují strukturovaná data – po síti, mezi procesy nebo ve sdílené
+    paměti. Stránka staví textové formáty (XML, JSON) proti binárním přístupům („raw memory“) a
+    serializačním frameworkům (CORBA, Protocol Buffers, Cap'n Proto, FlatBuffers, Apache Avro). Ústřední
+    téma je <strong>výkon</strong>: parsování textu je drahé (chybné predikce skoků, nízké IPC), zatímco
+    specializované knihovny (RapidJSON, simdjson) nebo binární formáty se zero-copy mohou být o řády
+    rychlejší. Hlavní poselství: <strong>žádný formát nevyhrává ve všech ohledech – vyber ten, který sedí
+    na tvé úzké hrdlo.</strong></p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#uvod">Co je serializace a k čemu</a></li>
+      <li><a href="#rpc">RPC / RMI a komunikace programů</a></li>
+      <li><a href="#text">Textové formáty: XML a JSON</a></li>
+      <li><a href="#parsovani">Cena parsování textu</a></li>
+      <li><a href="#raw">Raw memory – nejrychlejší formát</a></li>
+      <li><a href="#osy">Co se mezi formáty liší</a></li>
+      <li><a href="#corba">CORBA, IDL a CDR</a></li>
+      <li><a href="#protobuf">Protocol Buffers</a></li>
+      <li><a href="#capnproto">Cap'n Proto a FlatBuffers</a></li>
+      <li><a href="#avro">Apache Avro</a></li>
+      <li><a href="#srovnani">Srovnání formátů</a></li>
+      <li><a href="#bezpecnost">Bezpečnost deserializace</a></li>
+      <li><a href="#anotace">Anotační serializace</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="uvod">Co je serializace a k čemu</h2>
+  <p><strong>Serializace</strong> je převod strukturovaných dat z paměti (objekty, struktury) do
+  <strong>proudu bajtů</strong>, který lze přenést po síti, mezi procesy (IPC) nebo uložit. Opačný
+  proces – z bajtů zpět na objekty – je <strong>deserializace</strong>. Programy si potřebují vyměňovat
+  data ve třech typických scénářích: přes síť, mezi procesy na jednom stroji a mezi vlákny.</p>
+
+  <p>Serializaci si můžeme zasadit do celého vykonávacího stacku. Dva <strong>identické stroje</strong>
+  (každý běží celý stack) komunikují přes síť, jejíž vrstvy leží mezi oběma stacky:</p>
+  <div class="diag">
+    <div class="diag-stack">
+      <div class="diag-layer"><span class="dl-title">Vaše aplikace</span></div>
+      <div class="diag-layer"><span class="dl-title">Knihovny</span></div>
+      <div class="diag-layer"><span class="dl-title">Kompilátor</span></div>
+      <div class="diag-layer"><span class="dl-title">Běhové prostředí</span> <span class="dl-sub">– Runtime: Garbage Collector, JIT</span></div>
+      <div class="diag-layer"><span class="dl-title">Operační systém</span> <span class="dl-sub">– Scheduler, virtuální paměť, I/O</span></div>
+      <div class="diag-layer"><span class="dl-title">Virtualizace</span></div>
+      <div class="diag-layer"><span class="dl-title">Hardware</span> <span class="dl-sub">– pipeline, cache, superskalár, SIMD, jádra, predikce, µ-ops</span></div>
+    </div>
+    <div class="diag-cap">Síť mezi dvěma stroji – oba stroje běží celý stack, mezi nimi leží síťové vrstvy:</div>
+    <div class="diag-flow">
+      <div class="diag-node c-blue"><span class="dn-title">Stroj A</span><span class="dn-sub">celý stack</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-teal"><span class="dn-title">Síťové vrstvy</span><span class="dn-sub">HTTP/gRPC → TCP/UDP → IP/Ethernet</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">Stroj B</span><span class="dn-sub">celý stack</span></div>
+    </div>
+  </div>
+  <p>Aplikační protokol (HTTP/gRPC) jede nad transportem (TCP/UDP), který jede nad síťovou/linkovou
+  vrstvou (IP/Ethernet).</p>
+
+  <h2 id="rpc">RPC / RMI a komunikace programů</h2>
+  <p>Komunikaci programů můžeme rozdělit na dva scénáře.</p>
+
+  <h3>Přes síť</h3>
+  <ul>
+    <li>Komunikační protokol (např. přes TCP nebo HTTP).</li>
+    <li>Strukturovaná data → <strong>serializace</strong> (JSON, protobuf, …).</li>
+    <li><strong>Remote Procedure Call (RPC)</strong> – vzdálené volání procedury ve třech krocích:
+      <ol>
+        <li>Serializuj název procedury a argumenty.</li>
+        <li>Pošli požadavek a čekej na odpověď.</li>
+        <li>Deserializuj odpověď.</li>
+      </ol>
+    </li>
+    <li><strong>Remote Method Invocation (RMI)</strong> – téměř totéž co RPC.</li>
+    <li><strong>HTTP-based API</strong> – koncepčně podobné.</li>
+  </ul>
+
+  <h3>Na lokálním stroji</h3>
+  <ul>
+    <li><strong>Jeden adresní prostor (vlákna)</strong> – datové struktury přímo v paměti; typový systém
+      jazyka vám pomáhá vyvarovat se chyb.</li>
+    <li><strong>Různé adresní prostory (procesy)</strong> – stejné jako „přes síť“. Ideálně
+      <strong>zero-copy přes sdílenou paměť</strong>. V Linuxu: <code>shm_open(...)</code> a
+      <code>mmap()</code>.</li>
+  </ul>
+
+  <h2 id="text">Textové formáty: XML a JSON</h2>
+
+  <h3>XML (eXtensible Markup Language)</h3>
+  <pre><code>&lt;employees&gt;
+    &lt;employee&gt;
+        &lt;firstName&gt;John&lt;/firstName&gt;
+        &lt;lastName&gt;Doe&lt;/lastName&gt;
+    &lt;/employee&gt;
+    &lt;employee&gt;
+        &lt;firstName&gt;Anna&lt;/firstName&gt;
+        &lt;lastName&gt;Smith&lt;/lastName&gt;
+    &lt;/employee&gt;
+    &lt;employee&gt;
+        &lt;firstName&gt;Peter&lt;/firstName&gt;
+        &lt;lastName&gt;Jones&lt;/lastName&gt;
+    &lt;/employee&gt;
+&lt;/employees&gt;</code></pre>
+  <ul>
+    <li><strong>Velmi vysoká režie</strong> (jak velikost, tak výpočet).</li>
+    <li>Složitý parser.</li>
+  </ul>
+
+  <h3>JSON (JavaScript Object Notation)</h3>
+  <pre><code>{
+  "employees": [
+    {
+      "firstName": "John",
+      "lastName": "Doe"
+    },
+    {
+      "firstName": "Anna",
+      "lastName": "Smith"
+    },
+    {
+      "firstName": "Peter",
+      "lastName": "Jones"
+    }
+  ]
+}</code></pre>
+  <ul>
+    <li><strong>Nižší režie</strong>, jednodušší parser.</li>
+    <li>Stále textový – parsování není zadarmo.</li>
+  </ul>
+  <div class="box poznamka">
+    <p class="box-title">💬 Křehkost ručně psaného textu</p>
+    <p>Slide ve zdroji ukazuje JSON s překlepem (<code>"firs tName": "Anna"</code> se zatoulanou mezerou
+    a špatně umístěnou závorkou) – ilustrace, jak snadno se ručně psaný textový formát poškodí.</p>
+  </div>
+
+  <h2 id="parsovani">Cena parsování textu</h2>
+  <p>Parsování textu je z pohledu mikroarchitektury CPU drahé: rozhoduje se o téměř každém bajtu, což
+  vede k chybným predikcím skoků a nízkému IPC. Demonstrováno na knihovně <strong>json-c</strong>
+  (jazyk C) nad souborem JSON o velikosti <strong>47 MB</strong> (měřeno na HW z roku 2017 – Haswell, glibc 2.24).</p>
+
+  <pre><code>#include &lt;json.h&gt;
+#include &lt;stdio.h&gt;
+int main(int argc, char *argv[]) {
+  struct json_tokener *tok = json_tokener_new();
+  struct json_object *jobj;
+  FILE *f = fopen("test.json", "r");
+  char buf[1024 * 1024];
+  do {
+    size_t len = fread(buf, 1, sizeof(buf), f);
+    jobj = json_tokener_parse_ex(tok, buf, len);
+  } while (
+      json_tokener_get_error(tok) ==
+      json_tokener_continue
+    );
+  fclose(f);
+  return 0;
+}</code></pre>
+
+  <p>Výstup <code>perf stat ./bench-json-c</code> ukazuje, kde to drhne:</p>
+  <table>
+    <thead><tr><th>Čítač</th><th>Hodnota</th><th>Poznámka</th></tr></thead>
+    <tbody>
+      <tr><td>cycles</td><td>9 368 533 705</td><td>3,121 GHz</td></tr>
+      <tr><td>stalled-cycles-frontend</td><td>3 377 028 216</td><td>36,05 % frontend cycles idle &rarr; dekodér čeká</td></tr>
+      <tr><td>instructions</td><td>14 910 459 852</td><td>1,59 insn per cycle &rarr; nízké IPC</td></tr>
+      <tr><td>branches</td><td>3 144 829 442</td><td>1047,647 M/sec</td></tr>
+      <tr><td>branch-misses</td><td>31 808 151</td><td>1,01 % of all branches</td></tr>
+      <tr><td>time elapsed</td><td>3,082290868 s</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>Nízké <strong>IPC (1,59)</strong> na superskalárním CPU.</li>
+    <li>Vysoký <strong>frontend stall (36 %)</strong> ⇒ dekodér CPU čeká.</li>
+    <li>Příčina: pravděpodobně chybné predikce skoků nebo složitý proud instrukcí (mj. přeskakování bílých znaků).</li>
+  </ul>
+
+  <h3>RapidJSON je v praxi mnohem rychlejší</h3>
+  <p>Specializovaná C++ knihovna <strong>RapidJSON</strong> na stejném souboru:</p>
+  <pre><code>#include &lt;rapidjson/document.h&gt;
+#include &lt;rapidjson/filereadstream.h&gt;
+using namespace rapidjson;
+int main(int argc, char *argv[])
+{
+  FILE *fp = fopen("test.json", "r");
+  char readBuffer[1024 * 1024];
+  FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+  Document d;
+  d.ParseStream(is);
+  fclose(fp);
+  return 0;
+}</code></pre>
+
+  <table>
+    <thead><tr><th>Metrika</th><th>json-c</th><th>RapidJSON</th></tr></thead>
+    <tbody>
+      <tr><td>Čas</td><td>3,08 s</td><td><strong>0,39 s</strong> (8× rychleji)</td></tr>
+      <tr><td>IPC</td><td>1,59</td><td>2,23</td></tr>
+      <tr><td>Frontend stall</td><td>36 %</td><td>18 %</td></tr>
+      <tr><td>Branch misses</td><td>1,01 %</td><td>0,01 %</td></tr>
+    </tbody>
+  </table>
+  <p>Jde tedy o <strong>~8–10× zrychlení</strong> (3,08 s → 0,39 s). Klíčové páky: minimalizovat chybné
+  predikce skoků a využít nápovědy kompilátoru. RapidJSON používá makro
+  <code>RAPIDJSON_UNLIKELY</code> (postavené na <code>__builtin_expect()</code>), které říká kompilátoru,
+  že případy escape sekvence (<code>\</code>) a uzavírací uvozovky (<code>"</code>) jsou vzácné – běžná
+  cesta tak zůstává v rychlé (predikované) větvi.</p>
+
+  <div class="box insight">
+    <p class="box-title">💡 simdjson – gigabajty JSONu za sekundu</p>
+    <p>(Lemire &amp; Langdale, VLDB Journal 2019.) Vstup se zpracovává <strong>po 64 bajtech</strong>
+    instrukcemi SIMD ve dvou fázích: <strong>Stage 1</strong> dělá strukturní sken (klasifikace
+    zajímavých znaků, nalezení řetězců, validace UTF-8 paralelně, emise strukturního indexu),
+    <strong>Stage 2</strong> projde index a parsuje čísla/řetězce do DOM/tape/iterátoru. Tradiční parsery
+    se větví na téměř každém bajtu; simdjson tuto větvící práci z velké části odstraní.</p>
+  </div>
+  <table>
+    <thead><tr><th>Parser</th><th>Rychlost</th><th>vs json-c</th></tr></thead>
+    <tbody>
+      <tr><td>json-c</td><td>0,12 GB/s</td><td>1×</td></tr>
+      <tr><td>RapidJSON</td><td>0,47 GB/s</td><td>4×</td></tr>
+      <tr><td>simdjson AVX2</td><td>3,5 GB/s</td><td>29×</td></tr>
+      <tr><td>simdjson AVX-512</td><td>4,5 GB/s</td><td>38×</td></tr>
+      <tr><td>simdjson ARM NEON</td><td>2,5 GB/s</td><td>21×</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="raw">Raw memory – nejrychlejší možný formát</h2>
+  <p>Nejrychlejší cesta je poslat bajty z paměti přímo na drát:</p>
+  <pre><code>struct data {
+  char flag;
+  long int data;
+  char info[3];
+};
+
+void sendData(struct data &amp;d) {
+  send(sock, &amp;d, sizeof(d));
+}
+void recvData(struct data &amp;d) {
+  recv(sock, &amp;d, sizeof(d));
+}</code></pre>
+  <p>Nejrychlejší možná cesta, ale rozložení v paměti se „prolije“ na drát. Kompilátor navíc vkládá
+  <strong>padding</strong>, aby byla každá položka přirozeně zarovnaná (offsety vlevo):</p>
+  <div class="diag">
+    <div class="diag-cap">Nezabalená struktura (offset vlevo)</div>
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">flag</span><span class="db-sub">offset 00 · 1 B</span></div>
+      <div class="diag-box muted"><span class="db-title">padding</span><span class="db-sub">7 B (zarovnání)</span></div>
+      <div class="diag-box accent"><span class="db-title">data</span><span class="db-sub">offset 08 · long int = 8 B</span></div>
+      <div class="diag-box accent"><span class="db-title">info[3]</span><span class="db-sub">offset 16 · 3 B</span></div>
+      <div class="diag-box muted"><span class="db-title">padding</span><span class="db-sub">5 B (do násobku 8)</span></div>
+    </div>
+  </div>
+  <p>Protože <code>long int</code> musí být zarovnán na 8 bajtů, za jediným <code>char flag</code> je 7
+  bajtů paddingu; za <code>info[3]</code> je padding, aby velikost struktury byla násobkem 8.</p>
+
+  <h3>Raw memory potřebuje explicitní opravy rozložení</h3>
+  <p>Aby raw struktury fungovaly mezi stroji, musíte ohlídat tři věci:</p>
+  <ul>
+    <li><strong>Typy s pevnou šířkou:</strong> <code>int32_t</code> místo <code>int</code>.</li>
+    <li><strong>Endianitu:</strong> <code>htole32()</code> / <code>le32toh()</code>.</li>
+    <li><strong>Kontrolu rozložení:</strong> <code>__attribute__((__packed__))</code>.</li>
+  </ul>
+  <pre><code>struct __attribute__((__packed__)) data {
+  char flag;
+  int32_t data;
+  char info[3];
+};
+
+// numerická pole deserializuj explicitně
+d.data = le32toh(dd.data);</code></pre>
+  <div class="diag">
+    <div class="diag-cap">Zabalená struktura – žádný padding, celková velikost = 8 B</div>
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">flag</span><span class="db-sub">offset 0 · 1 B</span></div>
+      <div class="diag-box accent"><span class="db-title">data</span><span class="db-sub">offset 1 · int32_t = 4 B</span></div>
+      <div class="diag-box accent"><span class="db-title">info[3]</span><span class="db-sub">offset 5 · 3 B</span></div>
+    </div>
+  </div>
+
+  <div class="box pozor">
+    <p class="box-title">⚠️ Rychlé, ale křehké</p>
+    <p>Raw memory je <strong>extrémně rychlé, ale nepružné</strong>. Odesílatel i příjemce se musí shodnout
+    na <em>přesném</em> rozložení; jakékoli přidání/odebrání pole nebo změna typu rozbije kompatibilitu.
+    Funguje jen tam, kde se obě strany vyvíjejí společně. V dlouho žijících systémech vždy okamžitě
+    <strong>verzujte protokol</strong> (verze nebo feature flagy).</p>
+  </div>
+
+  <h2 id="osy">Co se mezi formáty liší</h2>
+  <p>Každá osa je spektrum mezi dvěma extrémy. Klíčová myšlenka: <strong>vyberte formát, který sedí na vaše
+  úzké hrdlo – žádný formát nevyhrává ve všech osách.</strong></p>
+  <table>
+    <thead><tr><th>Osa</th><th>Jeden extrém</th><th>↔</th><th>Druhý extrém</th></tr></thead>
+    <tbody>
+      <tr><td>Cena CPU</td><td>FlatBuffers / Cap'n Proto</td><td>↔</td><td>stdlib JSON</td></tr>
+      <tr><td>Velikost na drátě</td><td>Protobuf / Avro</td><td>↔</td><td>JSON</td></tr>
+      <tr><td>Evoluce schématu</td><td>Protobuf / Avro</td><td>↔</td><td>raw struct</td></tr>
+      <tr><td>Náhodný přístup</td><td>FlatBuffers</td><td>↔</td><td>stream-oriented</td></tr>
+      <tr><td>Čitelnost</td><td>člověkem čitelné</td><td>↔</td><td>binární</td></tr>
+      <tr><td>Schéma</td><td>volitelné</td><td>↔</td><td>povinné</td></tr>
+      <tr><td>Zero-copy</td><td>FlatBuffers / Cap'n Proto</td><td>↔</td><td>JSON / Protobuf</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="corba">CORBA, IDL a CDR</h2>
+  <h3>CORBA (Common Object Request Broker Architecture)</h3>
+  <ul>
+    <li>Jazykově nezávislý RPC framework z <strong>90. let</strong>.</li>
+    <li><strong>Interface Description Language (IDL)</strong> jako kontrakt.</li>
+    <li>Z IDL se generuje kód <strong>stub/skeleton</strong>.</li>
+    <li>Vlivný, ale na dnešní poměry těžkopádný.</li>
+  </ul>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-blue"><span class="dn-num">1</span><span class="dn-title">Kód klienta</span><span class="dn-sub">Klientský proces</span></div>
+      <div class="diag-arrow"><span class="lbl">Invoke</span></div>
+      <div class="diag-node c-purple"><span class="dn-num">2</span><span class="dn-title">Proxy (stub)</span><span class="dn-sub">marshaling</span></div>
+      <div class="diag-arrow"><span class="lbl">Invoke</span></div>
+      <div class="diag-node c-amber"><span class="dn-num">3</span><span class="dn-title">ORB (klient)</span><span class="dn-sub">Object Request Broker</span></div>
+      <div class="diag-arrow"><span class="lbl">Request ⇄ Reply</span></div>
+      <div class="diag-node c-amber"><span class="dn-num">4</span><span class="dn-title">ORB (server)</span><span class="dn-sub">Serverový proces</span></div>
+      <div class="diag-arrow"><span class="lbl">Invoke</span></div>
+      <div class="diag-node c-teal"><span class="dn-num">5</span><span class="dn-title">POA</span><span class="dn-sub">Portable Object Adapter</span></div>
+      <div class="diag-arrow"><span class="lbl">Invoke</span></div>
+      <div class="diag-node c-green"><span class="dn-num">6</span><span class="dn-title">Servant</span><span class="dn-sub">implementace objektu</span></div>
+    </div>
+    <div class="diag-cap">Request putuje od klienta k Servantu, Reply stejnou cestou zpět.</div>
+  </div>
+  <p>Klient volá lokální <strong>Proxy</strong> (stub), která zabalí (marshaluje) volání přes klientský
+  <strong>ORB</strong> (Object Request Broker), pošle <em>Request</em> přes síť serverovému ORB, ten
+  přes <strong>POA</strong> (Portable Object Adapter) předá volání <strong>Servantu</strong> (skutečné
+  implementaci objektu). <em>Reply</em> putuje zpět.</p>
+
+  <h3>Interface Description Language (IDL)</h3>
+  <ul>
+    <li>V mnoha novějších frameworcích nazýván <strong>„schéma“</strong>.</li>
+    <li>Popisuje pouze <strong>typy a rozhraní</strong>, ne implementaci.</li>
+    <li>IDL kompilátor generuje jazykové vazby (bindings) a převodní kód do/z
+      <strong>CDR</strong> (Common Data Representation).</li>
+  </ul>
+  <pre><code>module Finance {
+  typedef sequence&lt;string&gt; StringSeq;
+  struct AccountDetails {
+    string name;
+    StringSeq address;
+    long account_number;
+    double current_balance;
+  };
+  exception insufficientFunds {};
+  interface Account {
+    void deposit(in double amount);
+    void withdraw(in double amount)
+      raises(insufficientFunds);
+    readonly attribute AccountDetails details;
+  };
+};</code></pre>
+
+  <h3>Common Data Representation (CDR)</h3>
+  <ul>
+    <li><strong>Wire reprezentace:</strong> definuje, jak data vypadají „na drátě“. Většina dnešních
+      serializačních schémat <strong>konverguje k něčemu podobnému</strong>. Data se zarovnávají
+      (padding) jako v paměti ⇒ efektivní (de)serializace.</li>
+    <li><strong>Endianita:</strong> odesílatel volí endian, hlavička zaznamenává, který byl použit;
+      podobní hostitelé tak mohou vynechat prohazování bajtů.</li>
+    <li><strong>TypeCodes:</strong> sebepopis IDL datových typů – umožní bezpečně posílat hodnoty
+      <code>Any</code>.</li>
+  </ul>
+
+  <h2 id="protobuf">Protocol Buffers (protobuf)</h2>
+  <div class="box pisnicka" id="pisen-protobaf-a-json">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Protobaf a JSON</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s11">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <ul>
+    <li>Popis dat – koncepčně podobný IDL.</li>
+    <li>Automatické generování kódu.</li>
+    <li><strong>Částečný popis dat se posílá spolu s daty</strong> ⇒ méně problémů s verzováním.</li>
+    <li>Snadné API; podpora mnoha jazyků (Java, Python, C++, C#, …).</li>
+  </ul>
+  <pre><code>syntax = "proto3";
+message SearchRequest {
+  string query = 1;
+  int32  page_number = 2;
+  int32  result_per_page = 3;
+}</code></pre>
+  <p>Číslované <strong>„tagy“</strong> jednoznačně identifikují pole a zároveň udržují zpětnou
+  kompatibilitu (verzování).</p>
+
+  <h3>Wire encoding</h3>
+  <ul>
+    <li>Páry klíč–hodnota.</li>
+    <li><strong>Klíč</strong> = tag (číslo pole) + informace o typu ⇒ neznámé klíče (i jejich hodnoty)
+      lze <strong>vždy přeskočit</strong>.</li>
+    <li><strong>Kódování klíče:</strong> <code>(field_number &lt;&lt; 3) | wire_type</code>, uloženo jako Varint.</li>
+  </ul>
+  <table>
+    <thead><tr><th>Typ</th><th>Význam</th><th>Použito pro</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>Varint</td><td>int32, int64, uint32, uint64, sint32, sint64, bool, enum</td></tr>
+      <tr><td>1</td><td>64-bit</td><td>fixed64, sfixed64, double</td></tr>
+      <tr><td>2</td><td>Length-delimited</td><td>string, bytes, vnořené zprávy, packed repeated pole</td></tr>
+      <tr><td>3</td><td>Start group</td><td>groups (deprecated)</td></tr>
+      <tr><td>4</td><td>End group</td><td>groups (deprecated)</td></tr>
+      <tr><td>5</td><td>32-bit</td><td>fixed32, sfixed32, float</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Varint</h3>
+  <ul>
+    <li>Proměnný počet bajtů; malá čísla zaberou jen jeden bajt.</li>
+    <li>Varint je <strong>kompromis mezi velikostí kódovaných dat a rychlostí kódování/dekódování</strong>.</li>
+    <li><strong>Nejvyšší (7.) bit je 1 ve všech bajtech kromě posledního</strong> (continuation bit). Bity
+      0–6 nesou hodnotu (skupiny po 7 bitech, little-endian).</li>
+  </ul>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">9 = 0000 1001b</span><span class="db-sub">→ Varint: 0000 1001 (1 bajt)</span></div>
+      <div class="diag-box accent"><span class="db-title">300 = 1 0010 1100b</span><span class="db-sub">→ Varint: 1010 1100&nbsp;&nbsp;0000 0010 (2 bajty)</span></div>
+    </div>
+    <div class="diag-cap">300: skupiny po 7 bitech 0000010&nbsp;0101100, nejnižší skupina první s nastaveným continuation bitem: 1·0101100&nbsp;&nbsp;0·0000010</div>
+  </div>
+  <p>Znaménková čísla (<code>sint</code>) používají <strong>Zigzag kódování</strong>, aby se čísla blízká
+  nule vešla do jednoho bajtu: <code>n</code> se zakóduje jako <code>(n &lt;&lt; 1) ^ (n &gt;&gt; 31)</code>
+  (pro 32 bitů; pro 64 bitů <code>&gt;&gt; 63</code>).</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">0</span><span class="db-sub">→ 0</span></div>
+      <div class="diag-box accent"><span class="db-title">-1</span><span class="db-sub">→ 1</span></div>
+      <div class="diag-box accent"><span class="db-title">1</span><span class="db-sub">→ 2</span></div>
+      <div class="diag-box accent"><span class="db-title">-2</span><span class="db-sub">→ 3</span></div>
+      <div class="diag-box muted"><span class="db-title">…</span><span class="db-sub">→ …</span></div>
+    </div>
+  </div>
+
+  <h3>Řetězce a zprávy (length-delimited)</h3>
+  <p>Varintem kódovaná <strong>délka</strong> + bajty řetězce/zprávy. Prefix délky umožní parseru
+  efektivně přeskočit neznámá pole.</p>
+  <pre><code>message Test2 {
+  required string b = 6;
+}</code></pre>
+  <p>S <code>b = "testing"</code> je kódování (hex): <code>32 07 74 65 73 74 69 6e 67</code></p>
+  <ul>
+    <li><code>32h</code> = <code>(6 &lt;&lt; 3) | 2</code>  // 6 = tag, 2 = length-delimited wire type</li>
+    <li><code>07h</code> = délka (7 bajtů)</li>
+    <li><code>74 65 73 74 69 6e 67</code> = ASCII pro <code>testing</code></li>
+  </ul>
+
+  <h3>Packed repeated pole</h3>
+  <pre><code>message Test4 {
+  repeated int32 d = 4 [packed=true];
+}</code></pre>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">0x22</span><span class="db-sub">tag · pole 4, wire type 2</span></div>
+      <div class="diag-box muted"><span class="db-title">0x06</span><span class="db-sub">velikost payloadu · 6 B</span></div>
+      <div class="diag-box accent"><span class="db-title">0x03</span><span class="db-sub">1. prvek · varint 3</span></div>
+      <div class="diag-box accent"><span class="db-title">0x8E 0x02</span><span class="db-sub">2. prvek · varint 270</span></div>
+      <div class="diag-box accent"><span class="db-title">0x9E 0xA7 0x05</span><span class="db-sub">3. prvek · varint 86942</span></div>
+    </div>
+  </div>
+  <p>Díky prefixu délky lze <strong>celé pole přeskočit bez dekódování všech hodnot</strong>.</p>
+
+  <div class="box poznamka">
+    <p class="box-title">💬 Streaming zpráv</p>
+    <p>Parser neví, kde zpráva začíná a kde končí. Řešení: před zprávu dej její <strong>délku</strong>,
+    pak přečti přesně tolik bajtů. (Stejný trik vyžaduje i laboratorní úloha – Java strana posílá velikost
+    zprávy před zprávou samotnou.)</p>
+  </div>
+
+  <h3>Příklad: OpenStreetMap PBF</h3>
+  <p>OSM PBF používá syntaxi proto2 (předchází proto3):</p>
+  <pre><code>message Node {
+  required sint64 id = 1;
+  repeated uint32 keys = 2 [packed = true]; // String IDs.
+  repeated uint32 vals = 3 [packed = true]; // String IDs.
+  optional Info info = 4;
+  required sint64 lat = 8;
+  required sint64 lon = 9;
+}
+message Way {
+   required int64 id = 1;
+   repeated uint32 keys = 2 [packed = true];
+   repeated uint32 vals = 3 [packed = true];
+   optional Info info = 4;
+   repeated sint64 refs = 8 [packed = true];  // DELTA coded
+}</code></pre>
+  <p><strong>Way</strong> je uspořádaný seznam odkazů na uzly (<code>refs</code>, delta-kódované pro
+  kompaktnost). Keys/vals jsou <strong>paralelní pole</strong> ID z tabulky řetězců.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Velikost pro Českou republiku</p>
+    <p>PBF = <strong>881 MB</strong>, XML = <strong>21 GB</strong> (jako XML ≈ 24× větší).</p>
+  </div>
+
+  <h2 id="capnproto">Cap'n Proto a FlatBuffers</h2>
+  <h3>Cap'n Proto</h3>
+  <ul>
+    <li>Vytvořil <strong>původní autor protobufu</strong>, o pár let později – zúročil poučení z protobufu.</li>
+    <li><strong>Velmi efektivní pro komunikaci přes sdílenou paměť</strong> (i mezi různými jazyky).
+      Použitelné i přes síť.</li>
+  </ul>
+  <div class="box insight">
+    <p class="box-title">💡 Klíčová myšlenka – zero-copy</p>
+    <p><strong>Není potřeba žádné de/enkódování</strong> – serializovaná forma je rovnou použitelná jako
+    nativní (in-memory) forma (pokud se nepoužije packing). ⇒ Lze prostě <code>mmap</code> soubor do paměti
+    a pracovat s daty.</p>
+  </div>
+  <p>Schéma a hex dump serializované zprávy:</p>
+  <pre><code>struct Person {
+  id @0 :UInt32;    # 0xab
+  name @1 :Text;    # Alice
+  email @2 :Text;   # alice@example.com
+  phones @3 :List(PhoneNumber);
+  struct PhoneNumber {
+    number @0 :Text; # "555-1212"
+    type @1 :Type;
+  }
+  employment :union {
+    unemployed @4 :Void;
+    employer @5 :Text;  # MIT
+    school @6 :Text;
+    selfEmployed @7 :Void;
+  }
+}</code></pre>
+  <table>
+    <thead><tr><th>Offset</th><th>Bajty (hex)</th><th>ASCII</th></tr></thead>
+    <tbody>
+      <tr><td>00000000</td><td>00 00 00 00 10 00 00 00&nbsp;&nbsp;00 00 00 00 01 00 04 00</td><td>................</td></tr>
+      <tr><td>00000010</td><td>ab 00 00 00 02 00 00 00&nbsp;&nbsp;0d 00 00 00 32 00 00 00</td><td>............2...</td></tr>
+      <tr><td>00000020</td><td>0d 00 00 00 92 00 00 00&nbsp;&nbsp;15 00 00 00 17 00 00 00</td><td>................</td></tr>
+      <tr><td>00000030</td><td>25 00 00 00 22 00 00 00&nbsp;&nbsp;41 6c 69 63 65 00 00 00</td><td>%..."...Alice...</td></tr>
+      <tr><td>00000040</td><td>61 6c 69 63 65 40 65 78&nbsp;&nbsp;61 6d 70 6c 65 2e 63 6f</td><td>alice@example.co</td></tr>
+      <tr><td>00000050</td><td>6d 00 00 00 00 00 00 00&nbsp;&nbsp;04 00 00 00 01 00 01 00</td><td>m...............</td></tr>
+      <tr><td>00000060</td><td>00 00 00 00 00 00 00 00&nbsp;&nbsp;01 00 00 00 4a 00 00 00</td><td>............J...</td></tr>
+      <tr><td>00000070</td><td>35 35 35 2d 31 32 31 32&nbsp;&nbsp;00 00 00 00 00 00 00 00</td><td>555-1212........</td></tr>
+      <tr><td>00000080</td><td>4d 49 54 00 00 00 00 00</td><td>MIT.....</td></tr>
+    </tbody>
+  </table>
+  <p>Bajty se sdružují do regionů: hlavička <strong>Message</strong> → <strong>Struct</strong> →
+  <strong>Name</strong> (Alice) / <strong>Email</strong> → <strong>Phones</strong> (555-1212) →
+  <strong>Employment</strong> (MIT).</p>
+
+  <h4>Cap'n Proto encoding</h4>
+  <ul>
+    <li><strong>Bool:</strong> 1 bit.</li>
+    <li><strong>Celá čísla:</strong> little-endian, nativní velikost, zarovnaná na násobek své velikosti (padding).</li>
+    <li><strong>Výchozí hodnoty:</strong> vždy kódovány jako nula, tj. <code>enc = val ^ default</code>
+      (<code>^</code> = XOR). Pole rovné své výchozí hodnotě se serializuje na samé nuly.</li>
+    <li><strong>Struktury:</strong> Pointer (= index) na data a podstruktury – stromová struktura,
+      umožňuje přeskakování neznámých/nepotřebných dat.</li>
+  </ul>
+  <p><strong>Volitelný packing</strong> zbaví zprávu nulových bajtů: nastavené bity v prvním (tagovém)
+  bajtu udávají, které z následujících 8 bajtů jsou nenulové; nenulové bajty pak následují.</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box muted"><span class="db-title">unpacked</span><span class="db-sub">08 00 00 00 03 00 02 00&nbsp;&nbsp;19 00 00 00 aa 01 00 00 (16 B)</span></div>
+      <div class="diag-box accent"><span class="db-title">packed</span><span class="db-sub">51 08 03 02&nbsp;&nbsp;&nbsp;31 19 aa 01 (8 B)</span></div>
+    </div>
+  </div>
+  <p>V prvním 8-bajtovém slově jsou nenulové bajty na pozicích 0, 4, 6 → tag <code>0x51</code> (binárně
+  <code>0101 0001</code>), následují <code>08 03 02</code>. Ve druhém slově dají nenulové bajty tag
+  <code>0x31</code> a <code>19 aa 01</code>. V uvedeném příkladu packing odstraní všech
+  <strong>83 nulových bajtů</strong>, ale přidá <strong>17 bajtů</strong> packing tagů – jde tedy o směnu
+  odstranění nul za režii tagu na každé slovo.</p>
+
+  <p>Čtení v C++ používá <strong><code>Reader</code> typy</strong> (zero-copy pohledy na zprávu) a
+  <code>PackedFdMessageReader</code> pro čtení packed zprávy přímo z file descriptoru; <code>union</code>
+  se čte přes <code>.which()</code>:</p>
+  <pre><code>#include "addressbook.capnp.h"
+#include &lt;capnp/message.h&gt;
+#include &lt;capnp/serialize-packed.h&gt;
+void printAddressBook(int fd) {
+  ::capnp::PackedFdMessageReader message(fd);
+  AddressBook::Reader addressBook = message.getRoot&lt;AddressBook&gt;();
+  for (Person::Reader person : addressBook.getPeople()) {
+    std::cout &lt;&lt; person.getName().cStr() &lt;&lt; ": "
+              &lt;&lt; person.getEmail().cStr() &lt;&lt; std::endl;
+    // ... phones, employment přes .which() ...
+  }
+}</code></pre>
+
+  <h3>FlatBuffers</h3>
+  <ul>
+    <li>Podobné Cap'n Proto: přístup k serializovaným datům <strong>bez parsování/rozbalování</strong>
+      (zero-copy).</li>
+    <li>Od <strong>Googlu</strong>. Ideální pro náhodný přístup do velkých bufferů.</li>
+  </ul>
+
+  <h2 id="avro">Apache Avro</h2>
+  <ul>
+    <li><strong>Komunikační model:</strong> <strong>schéma v JSONu</strong>; po navázání spojení proběhne
+      <strong>handshake</strong> schématu. <strong>V datech nejsou žádné tagy</strong>, protože schéma
+      znají všechny strany (šetří místo).</li>
+    <li><strong>Uložení do souboru:</strong> komprese a <strong>bloky</strong> umožňující přeskakovat data
+      bez jejich deserializace.</li>
+  </ul>
+
+  <h2 id="srovnani">Srovnání formátů</h2>
+  <table>
+    <thead><tr>
+      <th>Formát</th><th>Typ</th><th>Schéma</th><th>Tagy v datech</th>
+      <th>Zero-copy</th><th>Evoluce</th><th>Charakteristika</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>XML</td><td>text</td><td>volitelné (XSD)</td><td>—</td><td>ne</td><td>dobrá</td>
+        <td>velmi vysoká režie, složitý parser</td></tr>
+      <tr><td>JSON</td><td>text</td><td>volitelné</td><td>názvy klíčů</td><td>ne</td><td>dobrá</td>
+        <td>čitelné, ale parsování není zadarmo</td></tr>
+      <tr><td>Raw struct</td><td>binární</td><td>žádné (kód)</td><td>—</td><td>ano</td><td>žádná</td>
+        <td>nejrychlejší, ale křehké; nutné verzovat</td></tr>
+      <tr><td>Protobuf</td><td>binární</td><td>povinné (.proto)</td><td>ano (číselné tagy)</td><td>ne</td><td>výborná</td>
+        <td>varint, zigzag, length-delimited; ~40 % menší než JSON</td></tr>
+      <tr><td>Cap'n Proto</td><td>binární</td><td>povinné (.capnp)</td><td>ne</td><td><strong>ano</strong></td><td>dobrá</td>
+        <td>serializovaná forma = paměťová; mmap, sdílená paměť</td></tr>
+      <tr><td>FlatBuffers</td><td>binární</td><td>povinné (.fbs)</td><td>ne</td><td><strong>ano</strong></td><td>dobrá</td>
+        <td>náhodný přístup bez parsování</td></tr>
+      <tr><td>Avro</td><td>binární</td><td>povinné (JSON)</td><td><strong>ne</strong></td><td>ne</td><td>výborná</td>
+        <td>schéma přes handshake → kompaktní; bloky, komprese</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Kdo co používá a proč</h3>
+  <table>
+    <thead><tr><th>Firma</th><th>Formát</th><th>Použití</th><th>Výsledek</th></tr></thead>
+    <tbody>
+      <tr><td>Google</td><td>Protobuf</td><td>všechny interní služby (Search, Gmail, Maps)</td><td>10B+ zpráv/s · o 40 % menší než JSON</td></tr>
+      <tr><td>Discord</td><td>Protobuf</td><td>real-time události, hlasové pakety</td><td>velikost ↓ 50 % · CPU ↓ 30 % na mobilu · úspora >1 mil. $/rok</td></tr>
+      <tr><td>Meta</td><td>Thrift</td><td>News Feed, Messaging, Instagram RPC</td><td>miliony RPC/s; vestavěný multi-transport</td></tr>
+      <tr><td>Netflix</td><td>Avro</td><td>Kafka pipeline – 450B událostí/den</td><td>2× propustnost vs JSON; schema registry</td></tr>
+      <tr><td>LinkedIn</td><td>Avro</td><td>Kafka (vytvořili oboje) – activity streams</td><td>kompaktní + evoluce schématu bez redeploye</td></tr>
+      <tr><td>Cloudflare</td><td>FlatBuffers</td><td>edge config – 25M+ req/s, 200+ PoP</td><td>parse 150 µs (JSON) → 1 µs zero-copy přístup</td></tr>
+      <tr><td>Uber</td><td>Protobuf</td><td>data o jízdách, poloha řidiče, platby</td><td>nahradil JSON API; 3× rychlejší kódování na mobilu</td></tr>
+      <tr><td>Apple</td><td>msgpack</td><td>iCloud push notifikace</td><td>schema-less binární; snadný rollout napříč zařízeními</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="bezpecnost">Bezpečnost deserializace</h2>
+  <p>Deserializace je <strong>útočná plocha</strong>.</p>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Nebezpečné formáty – spuštění libovolného kódu</p>
+    <ul>
+      <li><strong>Java native serialization</strong> – <code>ObjectInputStream.readObject()</code> spouští
+        kód v <em>gadget chains</em> během deserializace. <strong>CVE-2015-4852</strong> globálně položila
+        servery WebLogic. Java to odrazuje; allowlisty <code>ObjectInputFilter</code> přidány v <strong>Javě 9</strong>.</li>
+      <li><strong>Python <code>pickle</code></strong> – <code>pickle.loads()</code> spustí libovolný Python
+        bytecode. Nikdy nedeserializujte z nedůvěryhodného zdroje – bezpečná podmnožina neexistuje.</li>
+      <li><strong>.NET <code>BinaryFormatter</code></strong> – po letech CVE zcela odstraněn v
+        <strong>.NET 9 (2024)</strong>.</li>
+    </ul>
+  </div>
+  <div class="box insight">
+    <p class="box-title">💡 Bezpečné už návrhem</p>
+    <p><strong>Protobuf / Cap'n Proto / FlatBuffers</strong> jsou čistá data – žádné ukazatele na kód, žádná
+    resoluce typů. Deserializace <strong>nemůže spustit kód</strong>; schéma přesně určuje, která pole
+    existují. Zbylá rizika: <strong>billion laughs</strong> (hluboce vnořené struktury → kvadratická/exponenciální
+    práce), <strong>integer overflow</strong> (varint pole mohou být nečekaně velká) a malformovaný vstup –
+    po deserializaci vždy validujte.</p>
+  </div>
+
+  <h2 id="anotace">Anotační serializace</h2>
+  <p>Alternativa bez souboru se schématem a bez generátoru kódu: <strong>anotujte vlastní typy</strong>.</p>
+  <table>
+    <thead><tr><th></th><th>Schéma + codegen (.proto/.capnp/.fbs)</th><th>Anotační (Serde, Jackson…)</th></tr></thead>
+    <tbody>
+      <tr><td>Postup</td><td>schéma → generátor → vygenerované typy → serializace zabudovaná</td>
+        <td>vlastní struktura → derive makro / anotace → framework prozkoumá typ → serializace do libovolného backendu</td></tr>
+      <tr><td>✓ Plus</td><td>cross-language · max. výkon</td><td>vlastní typy · ergonomické</td></tr>
+      <tr><td>✗ Minus</td><td>krok navíc v sestavení (build) · cizí typy</td><td>obvykle jen jeden jazyk</td></tr>
+    </tbody>
+  </table>
+  <pre><code>use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+struct Person { id: u32, name: String, email: String }
+
+let json  = serde_json::to_string(&amp;p)?;   // JSON backend
+let bytes = rmp_serde::to_vec(&amp;p)?;        // MessagePack – stejná struktura!
+let proto = prost::Message::encode(&amp;p)?;   // Protobuf backend</code></pre>
+  <p>Obdoby v dalších ekosystémech: <strong>Jackson</strong> (Java, <code>@JsonProperty</code>),
+  <strong>System.Text.Json</strong> (C#, <code>[JsonPropertyName]</code>), <strong>marshmallow</strong>
+  (Python), <strong>encoding/json</strong> (Go, struct field tags).</p>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Klíčové pojmy</p>
+    <dl class="pojmy-list">
+      <dt>Serializace / deserializace</dt><dd>Převod dat z paměti na proud bajtů a zpět (síť, IPC, sdílená paměť).</dd>
+      <dt>RPC / RMI</dt><dd>Vzdálené volání procedury/metody: serializuj jméno + argumenty, pošli, deserializuj odpověď.</dd>
+      <dt>IDL / schéma</dt><dd>Popis typů a rozhraní (ne implementace); kompilátor z něj generuje vazby a (de)serializační kód.</dd>
+      <dt>CDR</dt><dd>Common Data Representation – wire formát CORBy; odesílatel volí endian, hlavička ho zaznamenává.</dd>
+      <dt>Varint</dt><dd>Proměnně dlouhé kódování; nejvyšší bit = continuation. Kompromis velikost vs rychlost.</dd>
+      <dt>Zigzag</dt><dd><code>(n&lt;&lt;1)^(n&gt;&gt;31)</code> – znaménková čísla blízká nule se vejdou do 1 bajtu.</dd>
+      <dt>Length-delimited</dt><dd>Délka před daty → neznámá pole lze přeskočit bez dekódování.</dd>
+      <dt>Zero-copy</dt><dd>Serializovaná forma = paměťová forma; přístup bez parsování (Cap'n Proto, FlatBuffers, mmap).</dd>
+      <dt>Schema evolution</dt><dd>Přidávání/odebírání polí bez rozbití kompatibility (číselné tagy v protobufu, schéma u Avra).</dd>
+    </dl>
+  </div>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Máme zprávu k přenosu – jaký formát použijeme místo JSON? Popiš jeho binární reprezentaci a porovnej s JSON z hlediska rychlosti serializace, paměti a rozšiřitelnosti.</summary>
+    <div class="odpoved">
+      <p>Vhodná volba je <strong>Protocol Buffers (protobuf)</strong> – binární, schématem definovaný formát s
+      generováním kódu a širokou jazykovou podporou.</p>
+      <p><strong>Binární reprezentace:</strong> zpráva je posloupnost párů klíč–hodnota. <strong>Klíč</strong>
+      kóduje číslo pole a wire type: <code>(field_number &lt;&lt; 3) | wire_type</code>, uložený jako
+      <strong>Varint</strong> (proměnně dlouhé kódování, nejvyšší bit = continuation; malá čísla = 1 bajt).
+      Znaménková čísla používají <strong>Zigzag</strong> (<code>(n&lt;&lt;1)^(n&gt;&gt;31)</code>), aby se
+      hodnoty blízké nule vešly do jednoho bajtu. Řetězce a vnořené zprávy jsou <strong>length-delimited</strong>
+      (varint délka + bajty). Příklad: <code>string b = 6</code> s hodnotou <code>"testing"</code> →
+      <code>32 07 74 65 73 74 69 6e 67</code> (32h = tag 6 + wire type 2, 07h = délka 7, pak ASCII).</p>
+      <p><strong>Rychlost serializace:</strong> protobuf je výrazně rychlejší – odpadá parsování textu
+      s rozhodováním na každém bajtu (json-c mělo IPC 1,59 a 36 % frontend stall na 47 MB JSONu; binární
+      formát se ani neparsuje znak po znaku). Uber uvádí 3× rychlejší kódování, Discord ↓ 30 % CPU.</p>
+      <p><strong>Paměť / velikost na drátě:</strong> menší – varint a kompaktní kódování místo textu;
+      Google uvádí o ~40 % méně než JSON, OSM PBF je vs XML ≈24× menší.</p>
+      <p><strong>Rozšiřitelnost (schema evolution):</strong> výborná díky <strong>číselným tagům</strong> –
+      neznámé tagy (i s hodnotami) lze vždy přeskočit, takže staré i nové verze schématu spolu fungují bez
+      přepisu. JSON sice tagy nepotřebuje (názvy klíčů jsou v datech), ale za cenu velikosti a pomalého
+      parsování. Poznámka: kdyby šlo hlavně o sdílenou paměť / zero-copy, byl by lepší
+      <strong>Cap'n Proto</strong> nebo <strong>FlatBuffers</strong> (serializovaná = paměťová forma, jen
+      <code>mmap</code>).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P6</span> Jaký je rozdíl mezi textovou a binární serializací?</summary>
+    <div class="odpoved">
+      <p><strong>Textová</strong> (XML, JSON): člověkem čitelná, schéma volitelné, ale vysoká velikost
+      i výpočetní režie – parsování se rozhoduje na téměř každém bajtu (chybné predikce skoků, nízké IPC,
+      drahé přeskakování bílých znaků). <strong>Binární</strong> (protobuf, Avro, Cap'n Proto, raw struct):
+      kompaktní, rychlá, většinou vyžaduje schéma a není čitelná okem. Extrém binárního je raw memory
+      (nejrychlejší, ale křehké) a zero-copy formáty (serializovaná = paměťová forma).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P6</span> Co přináší IDL / schéma a CDR?</summary>
+    <div class="odpoved">
+      <p><strong>IDL (Interface Description Language)</strong>, v novějších frameworcích zvané „schéma“,
+      popisuje pouze <strong>typy a rozhraní</strong>, ne implementaci. Kompilátor z něj generuje jazykové
+      vazby a převodní kód do/z wire formátu. Přínos: jazyková nezávislost, automatické generování kódu,
+      kontrakt mezi stranami. <strong>CDR (Common Data Representation)</strong> je wire formát CORBy –
+      definuje, jak data vypadají na drátě; odesílatel volí endianitu (hlavička ji zaznamenává), TypeCodes
+      umožní sebepopis a posílání <code>Any</code>. Většina dnešních formátů konverguje k něčemu podobnému.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P6</span> V čem se liší Protobuf, Avro a Cap'n Proto?</summary>
+    <div class="odpoved">
+      <p><strong>Protobuf:</strong> binární, schéma <code>.proto</code>, <strong>číselné tagy v datech</strong>
+      → snadné verzování a přeskakování neznámých polí; varint/zigzag/length-delimited kódování. Stále se
+      musí (de)serializovat.</p>
+      <p><strong>Avro:</strong> <strong>schéma v JSONu</strong> vyměněné <em>handshakem</em>, takže
+      <strong>v datech nejsou žádné tagy</strong> (kompaktnější). Soubory podporují kompresi a skippable bloky.
+      Silné v datových pipeline (Kafka).</p>
+      <p><strong>Cap'n Proto:</strong> od autora protobufu; <strong>serializovaná forma = paměťová forma</strong>
+      → žádné de/enkódování, jen <code>mmap</code> (zero-copy). Bool = 1 bit, integery little-endian
+      a zarovnané, defaulty kódované jako nula přes <code>enc = val ^ default</code>, struktury přes pointery;
+      volitelný packing odstraní nulové bajty. Ideální pro sdílenou paměť.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li><strong>Serializace</strong> = data z paměti → proud bajtů (síť, IPC, sdílená paměť); <strong>RPC/RMI</strong> přidají abstrakci volání procedury.</li>
+      <li><strong>Textové formáty</strong> (XML, JSON) jsou čitelné, ale drahé – velká režie a pomalé parsování řízené větvením na každém bajtu. XML je nejtěžší.</li>
+      <li>Rychlost parseru je příběh mikroarchitektury: json-c IPC 1,59 / 36 % stall; RapidJSON IPC 2,23 / 18 % a ~8–10× rychleji; simdjson 3,5–4,5 GB/s přes SIMD.</li>
+      <li><strong>Raw struct</strong> je nejrychlejší, ale křehký – nutné <code>int32_t</code>, <code>htole32/le32toh</code>, <code>__packed__</code> a verzování.</li>
+      <li><strong>CORBA</strong> přinesla IDL + stub/skeleton + CDR; <strong>Protobuf</strong> = číselné tagy, varint, zigzag, length-delimited.</li>
+      <li><strong>Cap'n Proto / FlatBuffers</strong> = zero-copy (serializovaná = paměťová forma, mmap); <strong>Avro</strong> = schéma v JSONu přes handshake, bez tagů v datech.</li>
+      <li>Volba formátu je <strong>vícerozměrná</strong> (CPU, velikost, evoluce, náhodný přístup, čitelnost, schéma, zero-copy) – žádný nevyhrává ve všem.</li>
+      <li>Deserializace je útočná plocha: Java <code>readObject()</code>, Python <code>pickle</code>, .NET <code>BinaryFormatter</code> umí spustit kód; čistá data (Protobuf/Cap'n Proto) ne, ale pozor na billion laughs a overflow.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="05-pamet-cache-numa.html">← Paměť a cache</a></span>
+    <span><a href="07-beh-programu-jit.html">Další: Běh programu a JIT →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

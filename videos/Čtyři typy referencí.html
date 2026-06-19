@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Čtyři typy referencí — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#1a1020; --bg-bot:#070409; --panel:#160d1f; --text:#f6ecff; --muted:#9a86a8;
+    --accent:#FFC23D; --accent2:#FF6A3D;
+    --strong:#FFD45E; --soft:#FF9E3D; --weak:#5ad0e0; --phantom:#B58CFF; --object:#fff4d6;
+    --storm:#3a5a78; --danger:#ff4a4a; --quiescent:#5be08a; --ink:#0b0610; --border:#2a1c36;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(255,194,61,.16);border:1px solid rgba(255,194,61,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#040208;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.78),rgba(0,0,0,.34) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(255,194,61,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 16px rgba(255,194,61,.95)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#e6d2ff;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(40,24,55,.85),rgba(4,2,8,.93));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#FFC23D,#FF6A3D);color:#0b0610;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(255,106,61,.5)}
+  #bigplay .hint{max-width:580px;font-size:14px;color:#efe2ff} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#34243f var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">Čtyři typy referencí</span>
+    <span class="badge">IMMERSIVE VIDEO 🛡️</span>
+    <span class="hints">space = play/pause · ←/→ = ±5s · R = restart</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">Čtyři síly úchopu — výuková lyric-video k B4M36ESW. Čtyři válečníci drží jeden objekt z žebříku síly (strong &gt; soft &gt; weak &gt; phantom); GC bouře je trhá zdola. Každé slovo je sesynchronizované se zpěvem.<small>~3 min 15 s · zpívaná videolekce · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="195" step="0.01" value="0">
+    <span class="time" id="tDur">3:15</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-ctyri-typy-referenci.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){showErr('pixi-filters not loaded after pixi');}
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/Čtyři typy referencí.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:192580,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=195.0;            // MP3 / stage fallback length (real audio.duration sets seek max + tDur)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (storyboard §2 — single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // Beat (138 BPM driving rock anthem)
+  const BPM=138;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  function beatHit(t){ const ph0=(t*BPM/60)%1; return ph0<(0.06*BPM/60)?1:0; }
+  // GLOBAL beat gates (default 1.0; end-card S27 ramps both to 0 over 192.58 -> 194.5)
+  function beatAmp(t){ return 1-easeInOut(ph(t,192.58,194.5)); }
+  function gripWaveAmp(t){ return 1-easeInOut(ph(t,192.58,194.5)); }
+
+  // ============================================================
+  //  2) PALETTE + CARDINALITY MODEL (the FOUR tiers)
+  // ============================================================
+  const C={
+    bgTop:0x1a1020, bgBot:0x070409, bgTopCold:0x101622, bgBotCold:0x040308, bgTopEnd:0x0d0712,
+    panel:0x160d1f, accent:0xFFC23D, accent2:0xFF6A3D,
+    strong:0xFFD45E, soft:0xFF9E3D, weak:0x5ad0e0, phantom:0xB58CFF, object:0xfff4d6,
+    storm:0x3a5a78, danger:0xff4a4a, quiescent:0x5be08a,
+    text:0xf6ecff, muted:0x9a86a8, ink:0x0b0610, white:0xffffff
+  };
+  const W=1280,H=720;
+  // THE FOUR — index ∈ {0,1,2,3} = {strong,soft,weak,phantom}; SAME indices drive everything.
+  const TIER={STRONG:0,SOFT:1,WEAK:2,PHANTOM:3};
+  const TIER_COLOR=[0xFFD45E,0xFF9E3D,0x5ad0e0,0xB58CFF];
+  const TIER_NAME=["STRONG","SOFT","WEAK","PHANTOM"];
+  const TIER_VERDICT=["NIKDY","v nouzi","příští GC","po smrti"];
+  // canonical ledge geometry (storyboard §1 — reused VERBATIM everywhere)
+  const LEDGE_Y=[180,320,460,600];   // tiers 0..3, top->bottom, 140px apart
+  const LEDGE_X=360;                  // warrior body x
+  const OBJ_X=560;                    // shared object on his rung
+  const RAIL_X=300;
+  const objAnchor=tier=>[OBJ_X,LEDGE_Y[tier]];
+  const warriorHand=tier=>[430,LEDGE_Y[tier]];
+  const GRIP_W=[8,5,1.5,1];           // chain / rope / thread / ghost tether
+  // shared object hub for the line-up scenes (chorus/pre-chorus)
+  const HUB=[640,360];
+  // HUD anchors
+  const GAUGE_X=1180, GAUGE_Y0=120, GAUGE_Y1=360;
+  const MAILBOX=[900,470];
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list (managed ONLY via add/removeOverlayFx)
+  const _ofx=[];
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §7 / §6.24)
+  //  Optional keyed PNGs in window.ASSETS layer ADDITIVELY / low-alpha over the always-drawn
+  //  vector actors. With NO assets-*.js tag present, window.ASSETS is undefined => the video is a
+  //  COMPLETE, visually-unchanged PURE VECTOR masterpiece. Loader never crashes / never blanks.
+  // ============================================================
+  const IMG={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,contain){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1;
+    let sc=targetW/tw;
+    if(contain){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc);
+    s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s);
+    return s;
+  }
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    if(!window.ASSETS) return; // PURE VECTOR ship — no assets tag => skip entirely (null-safe)
+    const SLUGS=['warrior-strong','warrior-soft','warrior-weak','warrior-phantom','object-core','gc-storm','arena-bg','reference-queue-mailbox'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{
+      if(!tex) return; IMG[slug]=tex;
+      try{
+        if(slug==='arena-bg'){
+          const s=heroSprite(bgLayer,'arena-bg',W/2,H/2,W,0.25,true);
+          if(s){ bgLayer.setChildIndex(s,1); }
+        } else if(slug==='gc-storm'){
+          const s=heroSprite(stormLayer,'gc-storm',640,640,900,0.4,false);
+          if(s){ stormImg=s; }
+        }
+        // warriors / object-core / mailbox have no persistent host; scene builders attach via IMG[].
+      }catch(e){ showErr('img '+slug+': '+e.message); }
+    }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={gold:radialTex(0xFFE9A8),amber:radialTex(0xFFB85C),strong:radialTex(0xFFD45E),soft:radialTex(0xFFB36A),weak:radialTex(0x9af0fb),phantom:radialTex(0xCDA8FF),object:radialTex(0xFFF4D6),storm:radialTex(0x6f9ec8),white:radialTex(0xffffff),red:radialTex(0xff8a8a),green:radialTex(0x7fe6a6),ember:radialTex(0xFF9E5C)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={gold:lineTex(0xFFE9A8),weak:lineTex(0x9af0fb),phantom:lineTex(0xCDA8FF),red:lineTex(0xff6a6a),storm:lineTex(0x6f9ec8)};
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  const _cardG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,30,22,4).endFill();
+  const CARD_TEX=app.renderer.generateTexture(_cardG,{resolution:2}); _cardG.destroy();
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const img=g.createImageData(256,256);for(let i=0;i<img.data.length;i+=4){const v=Math.random()*255;img.data[i]=v;img.data[i+1]=Math.random()*255;img.data[i+2]=128;img.data[i+3]=255;}
+    g.putImageData(img,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (arena gradient + ledge silhouette + ash + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:false,kawase:false,hsl:false};
+
+  // static arena cliff / ledge silhouette (cacheAsBitmap)
+  const arena=new PIXI.Graphics();
+  // distant jagged cliff
+  arena.beginFill(0x120a1a,0.55).moveTo(0,H);
+  arena.lineTo(0,300); arena.lineTo(120,250); arena.lineTo(240,310); arena.lineTo(360,240);
+  arena.lineTo(520,300); arena.lineTo(680,230); arena.lineTo(860,300); arena.lineTo(1040,250);
+  arena.lineTo(1180,310); arena.lineTo(W,260); arena.lineTo(W,H); arena.closePath().endFill();
+  // foreground rock ledges (the four rungs as stone shelves under the rail region)
+  for(let i=0;i<4;i++){ const y=LEDGE_Y[i];
+    arena.beginFill(0x1c1226,0.5).drawRoundedRect(RAIL_X-30,y+18,330,16,5).endFill();
+    arena.beginFill(0x0e0814,0.45).drawRect(RAIL_X-30,y+34,330,9).endFill();
+  }
+  bgLayer.addChild(arena); arena.cacheAsBitmap=true;
+
+  // tiling rising ember-ash band (slow upward drift)
+  const ashTile=new PIXI.TilingSprite(GLOW.ember,W,H);
+  ashTile.alpha=0.05; ashTile.blendMode=PIXI.BLEND_MODES.ADD; ashTile.tint=0xFF9E5C;
+  ashTile.tileScale.set(2.2,2.2);
+  bgLayer.addChild(ashTile);
+
+  // wet-stone reflection band (bottom)
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x1a1020,0.18).drawRect(0,650,W,70).endFill();
+  bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,4],waveLength:[40,120],alpha:[0.3,0.3],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,650,W,70); }
+
+  // persistent godray (storm-light shafts)
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:30,gain:0.4,lacunarity:2.2,time:0,parallel:true}); }
+
+  // ============================================================
+  //  6) AMBIENT EMBER MOTES (persistent ParticleContainer)
+  // ============================================================
+  const MOTE_COUNT=240;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:false},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const s=new PIXI.Sprite(GLOW.ember);s.anchor.set(0.5);s.tint=0xFF9E5C;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.05+Math.random()*0.15);s.alpha=0;motePC.addChild(s);
+    motes.push({s,vx:(Math.random()-.5)*7,vy:-(5+Math.random()*15),phs:Math.random()*TAU,sp:0.5+Math.random(),baseScale:s.scale.x});}
+  let RT=0;
+  let moteEnvelope=0;
+  let moteVisibleRatio=1;
+  let moteDensity=1;   // chorus occ bumps this (×1 / ×1.5 / ×2)
+
+  // spark bursts (recycled pool)
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:-Math.abs(Math.sin(a)*v)-v*0.4,life:0,max:0.8+Math.random()*1.0});}
+  }
+
+  // ============================================================
+  //  7) GC STORM LAYER (persistent, between bg & scene)
+  // ============================================================
+  const stormLayer=new PIXI.Container(); fxLayer.addChildAt(stormLayer,0);
+  let stormImg=null; // optional hero gc-storm sprite (attached by loader)
+  const stormG=new PIXI.Graphics(); stormLayer.addChild(stormG);
+  let stormBloom=null;
+  if(hasF('AdvancedBloomFilter')){ stormBloom=new F.AdvancedBloomFilter({threshold:0.5,bloomScale:1.0,brightness:1.0,blur:6,quality:4}); stormLayer.filters=[stormBloom]; stormLayer.filterArea=new PIXI.Rectangle(0,0,W,H); }
+  // stormY(t): the reach-front world-y, rising from 720 toward the top. Per-scene scheduled surges.
+  // Default low idle far below all ledges; named scenes push it up to cross a LEDGE_Y at the grab time.
+  let stormTargetY=700, stormAlpha=0.4;
+  function drawStorm(t,topY,alpha){
+    stormG.clear();
+    const a=clamp01(alpha);
+    if(a<=0.001){ if(stormImg) stormImg.alpha=0; return; }
+    // churning band of ~24 reaching tendril beziers from bottom up to topY
+    const N=24;
+    stormG.beginFill(C.storm,0.22*a).drawRect(0,topY,W,H-topY).endFill();
+    stormG.lineStyle(2,C.storm,0.55*a);
+    for(let i=0;i<N;i++){
+      const x=(i+0.5)*W/N;
+      const reach=18+14*Math.sin(t*2.0+i*0.9)+10*Math.sin(t*3.7+i*2.1);
+      stormG.moveTo(x,H);
+      stormG.bezierCurveTo(x-12,topY+reach*1.2, x+12, topY+reach*0.6, x+(i%2?6:-6), topY-reach);
+    }
+    // bright crest line
+    stormG.lineStyle(2.4,lerpColor(C.storm,C.white,0.3),0.5*a).moveTo(0,topY);
+    for(let i=0;i<=N;i++){ const x=i*W/N; const yy=topY-6*Math.sin(t*2.3+i*0.7); stormG.lineTo(x,yy); }
+    if(stormImg){ stormImg.alpha=0.4*a; stormImg.position.set(640,topY+60); }
+  }
+
+  // ============================================================
+  //  8) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  // the shared OBJECT-core orb
+  function drawObjectCore(g,sc,tint){
+    g.clear();
+    const r=22*sc;
+    g.beginFill(tint==null?C.object:tint,0.95).drawCircle(0,0,r).endFill();
+    g.lineStyle(2,lerpColor(tint==null?C.object:tint,C.white,0.4),0.8).drawCircle(0,0,r);
+    g.lineStyle(0).beginFill(C.white,0.5).drawCircle(-r*0.3,-r*0.3,r*0.32).endFill();
+    // facets
+    g.lineStyle(1.2,C.ink,0.3);
+    g.moveTo(-r,0).lineTo(r,0); g.moveTo(0,-r).lineTo(0,r);
+  }
+  // a warrior figure (helmet + torso + gripping arm) at local 0,0
+  function drawWarrior(g,tone,grip01,taken01){
+    g.clear();
+    const fall=easeOut(taken01);                 // 0 held, 1 fully taken (slumped/torn off)
+    const slump=fall*22;
+    const dim=1-0.55*fall;
+    // legs / stance
+    g.lineStyle(5,lerpColor(tone,C.ink,0.3),0.9*dim);
+    g.moveTo(-6,18+slump).lineTo(-14,40+slump); g.moveTo(6,18+slump).lineTo(14,40+slump);
+    // torso
+    g.lineStyle(0).beginFill(lerpColor(tone,C.ink,0.15),0.95*dim);
+    g.moveTo(-15,-6+slump*0.4).quadraticCurveTo(0,-22+slump*0.3,15,-6+slump*0.4).lineTo(11,20+slump).lineTo(-11,20+slump).closePath().endFill();
+    // shield emblem on chest
+    g.beginFill(lerpColor(tone,C.white,0.25),0.5*dim).drawCircle(0,2+slump*0.4,6).endFill();
+    // head/helmet
+    g.beginFill(tone,1*dim).drawCircle(0,-20+slump*0.35,10).endFill();
+    g.beginFill(lerpColor(tone,C.ink,0.4),0.9*dim).drawRoundedRect(-10,-26+slump*0.35,20,7,3).endFill(); // helmet brim
+    // gripping arm reaching right toward the object (raises with grip01)
+    const reach=lerp(0.5,1.0,clamp01(grip01))*(1-fall);
+    g.lineStyle(5,tone,0.95*dim);
+    g.moveTo(8,-2+slump*0.4).quadraticCurveTo(34*reach,-14*reach, 64*reach, -4*reach*40/40);
+    // fist
+    g.lineStyle(0).beginFill(tone,1*dim).drawCircle(64*reach,-4*reach,5).endFill();
+  }
+  // grip line (chain/rope/thread/tether) from hand to object anchor
+  function drawGrip(g,tier,from,to,strength01,taken01){
+    g.clear();
+    const w=GRIP_W[tier];
+    const col=TIER_COLOR[tier];
+    const fall=easeOut(taken01);
+    if(fall>=0.999){ return; } // snapped/torn — nothing
+    const a=(tier===3?0.35:0.9)*(1-fall);
+    const sag=lerp(10,2,clamp01(strength01))+fall*30;
+    const mx=(from[0]+to[0])/2, my=(from[1]+to[1])/2+sag;
+    if(tier===0){
+      // steel chain: a series of links
+      g.lineStyle(w,col,a);
+      g.moveTo(from[0],from[1]); g.quadraticCurveTo(mx,my,to[0],to[1]);
+      g.lineStyle(0);
+      const links=7;
+      for(let i=1;i<links;i++){ const f=i/links; const x=lerp(from[0],to[0],f); const y=lerp(from[1],to[1],f)+sag*(1-Math.abs(2*f-1));
+        g.lineStyle(2.2,lerpColor(col,C.ink,0.3),a).drawEllipse(x,y,5,3.4); g.lineStyle(0); }
+    } else if(tier===1){
+      // thick rope: twisted double strand
+      g.lineStyle(w,col,a);
+      g.moveTo(from[0],from[1]); g.quadraticCurveTo(mx,my,to[0],to[1]);
+      g.lineStyle(1.4,lerpColor(col,C.ink,0.35),a*0.7);
+      for(let i=0;i<=10;i++){ const f=i/10; const x=lerp(from[0],to[0],f); const y=lerp(from[1],to[1],f)+sag*(1-Math.abs(2*f-1))+Math.sin(f*TAU*3)*2; if(i===0)g.moveTo(x,y);else g.lineTo(x,y);}
+    } else if(tier===2){
+      // single thread
+      g.lineStyle(w,col,a);
+      g.moveTo(from[0],from[1]); g.quadraticCurveTo(mx,my,to[0],to[1]);
+    } else {
+      // phantom ghost tether — dashed faint
+      g.lineStyle(w,col,a);
+      const segs=14;
+      for(let i=0;i<segs;i++){ if(i%2)continue; const f0=i/segs,f1=(i+1)/segs;
+        const x0=lerp(from[0],to[0],f0),y0=lerp(from[1],to[1],f0)+sag*(1-Math.abs(2*f0-1));
+        const x1=lerp(from[0],to[0],f1),y1=lerp(from[1],to[1],f1)+sag*(1-Math.abs(2*f1-1));
+        g.moveTo(x0,y0).lineTo(x1,y1); }
+    }
+  }
+  // a SimpleRope helper
+  function makeRope(texKey,n,tint){
+    const pts=[]; for(let i=0;i<(n||10);i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(TRAIL[texKey]||TRAIL.gold,pts); r.blendMode=PIXI.BLEND_MODES.ADD; if(tint!=null)r.tint=tint; r.alpha=0;
+    r._pts=pts; return r;
+  }
+  function setRopeAlongPath(rope,path){
+    const p=rope._pts; const segs=path.length-1;
+    for(let i=0;i<p.length;i++){
+      const f=i/(p.length-1)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si;
+      p[i].x=lerp(path[si][0],path[si+1][0],lf); p[i].y=lerp(path[si][1],path[si+1][1],lf);
+    }
+  }
+  function setRopeLine(rope,from,to){
+    const p=rope._pts; for(let i=0;i<p.length;i++){const f=i/(p.length-1);p[i].x=lerp(from[0],to[0],f);p[i].y=lerp(from[1],to[1],f);}
+  }
+
+  // ============================================================
+  //  9) PERSISTENT LADDER LAYER (rail + 4 warriors + shared object)
+  //  Alive across all teaching scenes; only re-styled by render/scene updates.
+  // ============================================================
+  const ladderRoot=new PIXI.Container(); sceneLayer.addChild(ladderRoot);
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot); // per-scene actors host
+
+  // static strength ladder rail + rung plates (cacheAsBitmap)
+  const rail=new PIXI.Graphics(); ladderRoot.addChild(rail);
+  rail.lineStyle(6,0x3a2a48,0.9).moveTo(RAIL_X,150).lineTo(RAIL_X,640);
+  rail.lineStyle(3,0x4a3658,0.7).moveTo(RAIL_X+10,150).lineTo(RAIL_X+10,640);
+  for(let i=0;i<4;i++){ const y=LEDGE_Y[i]; const col=TIER_COLOR[i];
+    // rung plate
+    rail.lineStyle(2,col,0.8).beginFill(C.ink,0.55).drawRoundedRect(RAIL_X-66,y-14,60,28,6).endFill();
+    rail.lineStyle(0);
+    // strength bar (length ∝ 4-tier)
+    const blen=lerp(24,84,(4-i)/4);
+    rail.beginFill(lerpColor(col,C.ink,0.1),0.85).drawRoundedRect(RAIL_X+18,y-5,blen,10,3).endFill();
+  }
+  rail.cacheAsBitmap=true;
+  // rung name labels (Text — not cached so they stay crisp)
+  const rungLabels=[];
+  for(let i=0;i<4;i++){ const lb=txt(TIER_NAME[i],14,TIER_COLOR[i],'800'); lb.position.set(RAIL_X-36,LEDGE_Y[i]); legible(lb); ladderRoot.addChild(lb); rungLabels.push(lb); }
+
+  // the four warriors + grips + per-warrior grip-glow
+  const WAR=[];
+  for(let i=0;i<4;i++){
+    const cont=new PIXI.Container(); cont.position.set(LEDGE_X,LEDGE_Y[i]); ladderRoot.addChild(cont);
+    const grip=new PIXI.Graphics(); ladderRoot.addChildAt(grip,ladderRoot.getChildIndex(rail)+1); // grips behind warriors
+    const body=new PIXI.Graphics(); cont.addChild(body);
+    const gl=glow('white',OBJ_X,LEDGE_Y[i],0.7,0.0,TIER_COLOR[i]); ladderRoot.addChildAt(gl,1);
+    // hero warrior sprite host (attached later if image loads)
+    WAR.push({i,cont,body,grip,gl,taken:0,gripStrength:1});
+  }
+  // the shared object orb (persistent, lives at HUB in line-up scenes, or per-tier in focus scenes)
+  const objCont=new PIXI.Container(); ladderRoot.addChild(objCont);
+  const objG=new PIXI.Graphics(); objCont.addChild(objG);
+  const objGlow=glow('object',0,0,1.4,0.9,C.object); objCont.addChildAt(objGlow,0);
+  objCont.position.set(HUB[0],HUB[1]);
+  let objCoreF=null;
+  if(hasF('GlowFilter')){ objCoreF=new F.GlowFilter({distance:18,outerStrength:1.5,innerStrength:0,color:C.accent,quality:0.4}); objCont.filters=[objCoreF]; }
+
+  // memory gauge (SOFT) HUD — vertical fuel bar top-right
+  const gaugeRoot=new PIXI.Container(); ladderRoot.addChild(gaugeRoot);
+  const gaugeFrame=new PIXI.Graphics(); gaugeRoot.addChild(gaugeFrame);
+  const gaugeFill=new PIXI.Graphics(); gaugeRoot.addChild(gaugeFill);
+  const gaugeLbl=txt('memory',14,C.muted,'700'); gaugeLbl.position.set(GAUGE_X,GAUGE_Y0-22); legible(gaugeLbl); gaugeRoot.addChild(gaugeLbl);
+  gaugeRoot.visible=false;
+  function drawGauge(fill01){
+    const x=GAUGE_X-14, w=28, y0=GAUGE_Y0, y1=GAUGE_Y1, hh=y1-y0;
+    gaugeFrame.clear();
+    gaugeFrame.lineStyle(2,C.muted,0.7).beginFill(C.ink,0.5).drawRoundedRect(x,y0,w,hh,6).endFill();
+    gaugeFill.clear();
+    const f=clamp01(fill01);
+    const fh=f*(hh-4);
+    const col=lerpColor(C.danger,C.soft,f); // empty(bottom)=danger, full=soft
+    if(fh>1) gaugeFill.beginFill(col,0.92).drawRoundedRect(x+2,y1-2-fh,w-4,fh,4).endFill();
+    // red threshold mark
+    gaugeFrame.lineStyle(1.5,C.danger,0.6).moveTo(x,y1-(hh-4)*0.28-2).lineTo(x+w,y1-(hh-4)*0.28-2);
+  }
+
+  // ReferenceQueue mailbox (PHANTOM) HUD
+  const mailRoot=new PIXI.Container(); ladderRoot.addChild(mailRoot); mailRoot.position.set(MAILBOX[0],MAILBOX[1]);
+  const mailG=new PIXI.Graphics(); mailRoot.addChild(mailG);
+  const mailLbl=txt('ReferenceQueue',13,C.phantom,'700'); mailLbl.position.set(0,-44); legible(mailLbl); mailRoot.addChild(mailLbl);
+  mailRoot.visible=false;
+  function drawMailbox(g,flagUp,ping01,dead){
+    g.clear();
+    const base=dead?lerpColor(0x6a6a6a,C.ink,0.2):0xb98a3a;
+    // post
+    g.lineStyle(4,lerpColor(base,C.ink,0.3),1).moveTo(0,30).lineTo(0,10);
+    // box body
+    g.lineStyle(2,lerpColor(base,C.white,0.2),1).beginFill(lerpColor(base,C.ink,0.25),0.95).drawRoundedRect(-22,-14,44,28,5).endFill();
+    g.lineStyle(0).beginFill(base,0.9).moveTo(-22,-14).quadraticCurveTo(0,-30,22,-14).lineTo(22,-10).quadraticCurveTo(0,-24,-22,-10).closePath().endFill();
+    // flag
+    const fy=flagUp?-22:-4;
+    const fcol=ping01>0.01?lerpColor(C.danger,C.quiescent,ping01):(dead?C.muted:C.danger);
+    g.lineStyle(2,lerpColor(fcol,C.ink,0.2),1).moveTo(20,-12).lineTo(20,fy);
+    g.lineStyle(0).beginFill(fcol,dead?0.5:0.95).drawRect(20,fy,12,8).endFill();
+    if(ping01>0.01){ g.beginFill(C.quiescent,0.4*ping01).drawCircle(0,0,30).endFill(); }
+  }
+
+  // next-GC blade (WEAK) — sweeping arc graphics
+  const bladeG=new PIXI.Graphics(); ladderRoot.addChild(bladeG); bladeG.visible=false;
+  function drawBlade(progress01,y){ // progress 0..1 left->right at world y
+    bladeG.clear();
+    const x=lerp(RAIL_X-10,W-40,progress01);
+    bladeG.lineStyle(3,C.weak,0.85).moveTo(x,y-60).quadraticCurveTo(x+30,y,x,y+60);
+    bladeG.lineStyle(1.5,C.white,0.7).moveTo(x,y-50).quadraticCurveTo(x+20,y,x,y+50);
+    bladeG.beginFill(C.weak,0.3).drawCircle(x,y,8).endFill();
+  }
+
+  // greyed "(interní: final)" footnote — off the ladder (FACT 7), never a 5th rung
+  const finalNote=txt('(interní: final — čekání na finalize)',13,C.muted,'400'); finalNote.position.set(1010,96); finalNote.alpha=0; legible(finalNote); ladderRoot.addChild(finalNote);
+
+  // --- per-tier focus glow (object positioning per scene) ---
+  let objSlotTier=-1;  // -1 == HUB center; else objAnchor(tier)
+  function objSlot(){ return objSlotTier<0?HUB:objAnchor(objSlotTier); }
+
+  // ============================================================
+  //  10) GRAB MECHANIC (one-shot per tier, pure-f(t) via scene fired sets)
+  //  taken01 per warrior is computed by scenes as f(t); grab() just fires the FX.
+  // ============================================================
+  function fireGrab(tier,t,danger){
+    const hp=warriorHand(tier);
+    if(FILT.shock){ const gp=ladderRoot.toGlobal(new PIXI.Point(hp[0],LEDGE_Y[tier])); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('grabShock',FILT.shock); }
+    if(danger!==false && FILT.flashRed){ FILT.flashRed.alpha=0.42; sceneFlash(FILT.flashRed,true); }
+    burst(hp[0],LEDGE_Y[tier],TIER_COLOR[tier],22,3,0.2);
+  }
+
+  // ============================================================
+  //  11) CAMERA RIG (GOLDEN RULE: all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  // scheduled one-shot stomp/grab shakes (amp px, decaying)
+  function shakeAmp(t){
+    let a=0;
+    // warrior slams (S1)
+    for(let i=0;i<4;i++){ a+=shakeEnv(t,0.90+i*0.22,3); }
+    a+=shakeEnv(t,30.35,4);    // S4 GC bounce stomp
+    a+=shakeEnv(t,43.52,3);    // S7 order plate 1
+    a+=shakeEnv(t,49.35,3);    // S7 order plate 4
+    a+=shakeEnv(t,54.45,5);    // S8 PHANTOM grab
+    a+=shakeEnv(t,83.26,4);    // S11 WEAK cut
+    a+=shakeEnv(t,93.06,4);    // S13 null slam
+    a+=shakeEnv(t,110.95,5);   // S16 grab
+    a+=shakeEnv(t,136.44,5);   // S19 NENÍ finalizer slam
+    a+=shakeEnv(t,151.20,3);   // S21 line-up stomp
+    a+=shakeEnv(t,188.04,4);   // S26 climax pop
+    // chorus L1 stomps + WEAK cuts (occ #1/#2/#3)
+    [56.40,112.08,157.94].forEach(L1=>{ a+=shakeEnv(t,L1,5); });
+    [69.90,125.79,170.99].forEach(g=>{ a+=shakeEnv(t,g,4); });
+    return a<0.05?0:a;
+  }
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  function shakeJitter(t,axis){
+    const n=Math.floor(t*1000)*0.001*137.13+axis*57.31;
+    return hash01(n)-0.5;
+  }
+  function updateCamera(t,dt){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.014*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  12) SHARED FILTER INSTANCES (built once)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:22,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flash=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashRed=new F.ColorOverlayFilter(C.danger,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashGreen=new F.ColorOverlayFilter(C.quiescent,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashPhantom=new F.ColorOverlayFilter(C.phantom,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,360],innerRadius:0});
+  if(hasF('ZoomBlurFilter')) FILT.zoomGrab=new F.ZoomBlurFilter({strength:0,center:[430,600],innerRadius:60});
+  if(hasF('BulgePinchFilter')) FILT.bulge=new F.BulgePinchFilter({center:[560/1280,360/720],radius:300,strength:0});
+  else FILT.bulgeDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('CRTFilter')) FILT.crt=new F.CRTFilter({curvature:1.2,lineWidth:1.2,lineContrast:0.3,vignetting:0.4,noise:0.15,time:0});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('GlitchFilter')) FILT.glitch=new F.GlitchFilter({slices:6,offset:14,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('RGBSplitFilter')) FILT.rgb=new F.RGBSplitFilter({red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('HslAdjustmentFilter')) FILT.hsl=new F.HslAdjustmentFilter({hue:0,saturation:0,lightness:0,colorize:false,alpha:1});
+  // sceneRoot full-frame transient flash filters
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0)return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);}
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+
+  // ============================================================
+  //  13) SCENE MANAGER
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{sceneRoot.removeChild(prev.inst.c);prev.inst.c.destroy({children:true});}catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ============================================================
+  //  14) LADDER RENDER (persistent — pure f(t), driven by global schedule)
+  //  taken01(tier,t) and gripStrength(tier,t) computed from scheduled grab times.
+  // ============================================================
+  // grab schedule: each entry {tier, at, mode} — mode 'snap'(weak/phantom→1) or 'yield'(soft→0.6)
+  // taken value is held until a RESET (chorus / pre-chorus entry) — encoded as windows.
+  // We compute taken01 as a pure function of t by walking scheduled grab/reset events.
+  const GRAB_EVENTS=[
+    // verse/pre-chorus teaching grabs
+    {tier:3,at:54.45,to:1.0,dur:0.6},   // S8 PHANTOM grab (lower-first)
+    {tier:1,at:38.41,to:0.6,dur:0.9},   // S6 SOFT yields (cache sheds)
+    {tier:2,at:83.26,to:1.0,dur:0.5},   // S11 WEAK cut
+    {tier:3,at:110.95,to:1.0,dur:0.6},  // S16 PHANTOM grab reprise
+    {tier:1,at:36.40,to:0.0,dur:0.01},  // (no-op anchor) keep soft seated pre-shed
+  ];
+  // RESET points: at these times all four warriors snap back to held (taken=0).
+  const RESET_TIMES=[0.90, 43.52, 55.60, 79.12, 101.72, 112.08, 134.80, 146.50, 157.94, 180.06];
+  // chorus per-occ scheduled verdict grabs (WEAK cut + SOFT yield + PHANTOM post-mortem)
+  const CHORUS_GRABS=[
+    // occ1
+    {tier:2,at:69.90,to:1.0,dur:0.5},{tier:1,at:64.58,to:0.6,dur:0.9},{tier:3,at:74.84,to:1.0,dur:0.5},
+    // occ2
+    {tier:2,at:125.79,to:1.0,dur:0.5},{tier:1,at:120.21,to:0.6,dur:0.9},{tier:3,at:131.14,to:1.0,dur:0.5},
+    // occ3
+    {tier:2,at:170.99,to:1.0,dur:0.5},{tier:1,at:164.84,to:0.6,dur:0.9},{tier:3,at:176.45,to:1.0,dur:0.5},
+  ];
+  const ALL_GRABS=GRAB_EVENTS.concat(CHORUS_GRABS);
+  function lastResetBefore(t){ let r=0; for(const rt of RESET_TIMES){ if(t>=rt) r=rt; } return r; }
+  function taken01(tier,t){
+    const reset=lastResetBefore(t);
+    let v=0;
+    for(const g of ALL_GRABS){ if(g.tier!==tier) continue; if(g.at<reset) continue; if(t<g.at) continue;
+      const p=easeOutBack(ph(t,g.at,g.at+g.dur)); v=Math.max(v,g.to*p); }
+    return clamp01(v);
+  }
+  function gripStrengthOf(tier,t){
+    // STRONG dead-taut always; others relax slightly into their grab
+    if(tier===0) return 1.0;
+    return 1.0;
+  }
+  function renderLadder(t,sec){
+    const gw=gripWaveAmp(t);
+    // object position: HUB center, or focus tier slot
+    const os=objSlot();
+    objCont.position.set(os[0],os[1]);
+    // object pulse
+    let osc=0.85+0.06*beat(t);
+    drawObjectCore(objG,osc,C.object);
+    objGlow.scale.set(1.3+0.18*beat(t));
+    if(objCoreF){ objCoreF.outerStrength=1.5+1.2*beat(t); }
+    // four warriors + grips + glow
+    for(let i=0;i<4;i++){
+      const w=WAR[i];
+      const tk=taken01(i,t);
+      const gs=gripStrengthOf(i,t);
+      drawWarrior(w.body,TIER_COLOR[i],gs,tk);
+      // grip line: hand -> object anchor on its OWN rung (line-up scenes converge on HUB)
+      const from=warriorHand(i);
+      // if object is centered at HUB (line-up), grips reach the hub; else to its own rung anchor
+      const to=(objSlotTier<0)? HUB : objAnchor(i);
+      drawGrip(w.grip,i,from,to,gs,tk);
+      // grip-glow pulse on the beat, staggered by tier
+      const gripGlow=(0.6+gw*0.4*beat(t-i*0.07))*(1-easeOut(tk));
+      w.gl.position.set(to[0],to[1]);
+      w.gl.alpha=0.45*gripGlow;
+      w.gl.scale.set(0.6+0.25*beat(t-i*0.07));
+      w.gl.tint=TIER_COLOR[i];
+    }
+  }
+
+  // ============================================================
+  //  15) SCENES  S0 .. S27
+  // ============================================================
+
+  // ---------- S0 : COLD OPEN 0.00-0.90 ----------
+  scene(0,0.90,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      const a=easeOut(ph(t,0,0.9));
+      ladderRoot.alpha=a;
+      moteEnvelope=0.3*ph(t,0,0.9);
+      stormTargetY=700; stormAlpha=0.4*a;
+      objSlotTier=-1;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false; finalNote.alpha=0;
+      // warriors hidden until S1 slam
+      for(const w of WAR){ w.cont.alpha=0; w.grip.alpha=0; w.gl.alpha=0; }
+    }};
+  });
+
+  // ---------- S1 : INTRO L1 0.90-5.70 (reveal the FOUR + the axis) ----------
+  scene(0.90,5.70,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    ladderRoot.alpha=1;
+    const title=txt('ČTYŘI SÍLY ÚCHOPU',58,C.accent,'900'); title.position.set(640,312); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('typy referencí · síla = jak ochotně GC sebere',24,C.muted,'700'); sub.position.set(640,356); legible(sub);
+    c.addChild(title,sub);
+    // axis sweep rope (gold) + riding label
+    const axis=makeRope('gold',10,C.accent); c.addChild(axis);
+    const axisLbl=txt('síla = ochota GC',20,C.accent,'800'); axisLbl.position.set(440,180); axisLbl.alpha=0; legible(axisLbl); c.addChild(axisLbl);
+    return {c,update(lt,t){
+      objSlotTier=-1;
+      const tin=easeOut(ph(t,0.9,2.6));
+      title.alpha=tin*(1-ph(t,9.6,10.7)); title.y=312-tin*12; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // four warriors SLAM in order on "Čtyři" (staggered)
+      for(let i=0;i<4;i++){ const w=WAR[i]; const tk=0.90+i*0.22;
+        const drop=easeOutBack(ph(t,tk,tk+0.55));
+        w.cont.y=lerp(LEDGE_Y[i]-80,LEDGE_Y[i],drop);
+        w.cont.alpha=ph(t,tk,tk+0.3);
+        w.grip.alpha=ph(t,tk+0.1,tk+0.5);
+        if(t>=tk && !S.fired.has('slam'+i)){ S.fired.add('slam'+i); burst(LEDGE_X,LEDGE_Y[i],TIER_COLOR[i],14,2.6,0.18); }
+      }
+      // axis arrow sweep top->bottom @3.20
+      const ap=easeInOut(ph(t,3.20,4.59));
+      if(ap>0.001){ setRopeLine(axis,[RAIL_X+50,180],[RAIL_X+50,lerp(180,600,ap)]); axis.alpha=0.7*(1-ph(t,5.0,5.6)); axisLbl.position.set(440,lerp(180,600,ap)); axisLbl.alpha=easeOut(ph(t,3.20,3.7))*(1-ph(t,5.0,5.6)); }
+      else axis.alpha=0;
+      // storm idles low
+      stormTargetY=700+6*Math.sin(t*1.2); stormAlpha=0.4;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+    }};
+  });
+
+  // ---------- S2 : INTRO L2 5.70-10.70 (the GC-eagerness axis) ----------
+  scene(5.70,10.70,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    const gcBrand=txt('GC',30,C.storm,'900'); gcBrand.position.set(640,650); gcBrand.alpha=0; legible(gcBrand); c.addChild(gcBrand);
+    return {c,update(lt,t){
+      objSlotTier=-1;
+      // "objekt" @6.96 pulse handled in renderLadder beat; extra swell here on objGlow via scale
+      const pulse=easeOut(ph(t,6.96,7.5));
+      objGlow.scale.set(1.3+0.18*beat(t)+0.4*pulse*(1-ph(t,8.0,9.0)));
+      // GC reveal @7.72: storm surges then recedes
+      let surge=0;
+      if(t>=7.72){ surge=ph(t,7.72,8.7)*(1-ph(t,9.0,10.0)); }
+      stormTargetY=lerp(700,650,surge); stormAlpha=lerp(0.4,0.6,surge);
+      gcBrand.alpha=easeOut(ph(t,7.72,8.2))*(1-ph(t,9.8,10.5));
+      // PHANTOM loosens his tether (alpha dip) — done via gripStrength visual: we nudge via a quick taken-ish flicker is avoided; show as glow dip
+      WAR[3].gl.alpha*=lerp(1,0.5,triWave(t,8.70,10.70));
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+    }};
+  });
+
+  // ---------- S3 : VERSE 1a 10.70-27.70 (STRONG = ordinary, never collected) ----------
+  scene(10.70,27.70,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    let tiltF=null;
+    if(hasF('TiltShiftFilter')){ tiltF=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,180),end:new PIXI.Point(W,180)}); }
+    const baseTag=txt('Object o = new Object()  ·  běžná reference',20,C.strong,'800'); baseTag.position.set(620,150); baseTag.alpha=0; legible(baseTag); c.addChild(baseTag);
+    const holdTag=txt('drží objekt dál — naživu',20,C.quiescent,'800'); holdTag.position.set(620,205); holdTag.alpha=0; legible(holdTag); c.addChild(holdTag);
+    // GC bounce arm (SimpleRope) reaching to rung 0 then recoiling
+    const arm=makeRope('storm',10,C.storm); c.addChild(arm);
+    return {c,update(lt,t){
+      objSlotTier=0; // focus the object on STRONG's rung
+      // focus pull to rung 0
+      if(tiltF){ const band=easeOut(ph(t,10.70,12.0)); tiltF.blur=80*band;
+        tiltF.start.y=180; tiltF.end.y=180;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(tiltF)<0)){ sceneRoot.filters=[tiltF]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);} }
+      // STRONG lamp swell during held note
+      WAR[0].gl.alpha=clamp01(WAR[0].gl.alpha*(1+0.5*beat(t)));
+      baseTag.alpha=easeOut(ph(t,15.01,15.6))*(1-ph(t,21.5,22.5));
+      holdTag.alpha=easeOut(ph(t,25.43,26.0))*(1-ph(t,27.2,27.6));
+      // GC tries STRONG, bounces @ ~24.7
+      let ba=0;
+      if(t>=24.70){ ba=triWave(t,24.70,25.9); }
+      if(ba>0.001){ const rch=lerp(700,200,ba); setRopeAlongPath(arm,[[480,700],[470,400],[440,rch]]); arm.alpha=0.6*ba; }
+      else arm.alpha=0;
+      if(t>=24.70 && !S.fired.has('bounce')){ S.fired.add('bounce'); if(FILT.flash){ FILT.flash.color=0xffffff; FILT.flash.alpha=0.18; sceneFlash(FILT.flash,true);} }
+      if(FILT.flash && S.fired.has('bounce')){ FILT.flash.alpha=0.18*(1-ph(t,24.70,25.0)); if(t>25.05) sceneFlash(FILT.flash,false); }
+      stormTargetY=690+6*Math.sin(t*1.2); stormAlpha=0.4;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+    },destroy(){ if(sceneRoot.filters) sceneRoot.filters=null; objSlotTier=-1; }};
+  });
+
+  // ---------- S4 : VERSE 1b 27.70-32.02 (never-while-referenced guarantee) ----------
+  scene(27.70,32.02,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    // code pointer rope (cyan) from a variable box -> STRONG object
+    const box=new PIXI.Graphics().beginFill(C.ink,0.9).lineStyle(2,C.weak,0.9).drawRoundedRect(120,134,80,32,5).endFill(); c.addChild(box);
+    const boxLbl=txt('kód',16,C.weak,'800'); boxLbl.position.set(160,150); c.addChild(boxLbl);
+    const ptr=makeRope('weak',12,C.weak); c.addChild(ptr);
+    const codeCap=txt('dokud kód míří…',18,C.muted,'700'); codeCap.position.set(300,118); codeCap.alpha=0; legible(codeCap); c.addChild(codeCap);
+    const stamp=txt('GC ✗ · NIKDY',24,C.danger,'900'); stamp.position.set(560,180); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    return {c,update(lt,t){
+      objSlotTier=0;
+      // pointer locks on @28.86
+      const lp=easeOut(ph(t,28.86,29.6));
+      setRopeLine(ptr,[200,150],[lerp(200,OBJ_X,lp),lerp(150,LEDGE_Y[0],lp)]);
+      ptr.alpha=0.7*lp*(1-ph(t,31.6,32.0));
+      codeCap.alpha=easeOut(ph(t,28.86,29.3))*(1-ph(t,31.0,31.8));
+      // GC surges hard @30.35, slams chain, bounces
+      let surge=0; if(t>=30.35){ surge=ph(t,30.35,30.7)*(1-ph(t,31.0,31.6)); }
+      stormTargetY=lerp(690,LEDGE_Y[0]+30,surge); stormAlpha=lerp(0.4,0.7,surge);
+      if(t>=30.35 && !S.fired.has('slam')){ S.fired.add('slam');
+        if(FILT.shock){ const gp=ladderRoot.toGlobal(new PIXI.Point(430,LEDGE_Y[0])); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s4shock',FILT.shock); }
+        if(FILT.flash){ FILT.flash.color=0xffffff; FILT.flash.alpha=0.5; sceneFlash(FILT.flash,true); }
+      }
+      if(FILT.shock && hasOverlayFx('s4shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s4shock'); }
+      if(FILT.flash && S.fired.has('slam')){ FILT.flash.alpha=0.5*(1-ph(t,30.35,30.6)); if(t>30.65) sceneFlash(FILT.flash,false); }
+      stamp.alpha=easeOut(ph(t,30.35,30.8))*(1-ph(t,31.8,32.0));
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+    },destroy(){ removeOverlayFx('s4shock'); objSlotTier=-1; }};
+  });
+
+  // ---------- S5 : VERSE 1c 32.02-36.40 (SOFT = memory pressure) ----------
+  scene(32.02,36.40,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    let tiltF=null;
+    if(hasF('TiltShiftFilter')){ tiltF=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,320),end:new PIXI.Point(W,320)}); }
+    const cap=txt('povolí jen při nedostatku paměti',18,C.soft,'800'); cap.position.set(620,345); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      objSlotTier=1;
+      gaugeRoot.visible=true; mailRoot.visible=false; bladeG.visible=false;
+      if(tiltF){ const band=easeOut(ph(t,32.02,32.8)); tiltF.blur=80*band; tiltF.start.y=320; tiltF.end.y=320;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(tiltF)<0)){ sceneRoot.filters=[tiltF]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);} }
+      cap.alpha=easeOut(ph(t,32.38,33.0))*(1-ph(t,36.0,36.4));
+      // gauge drains @34.81 toward 0.45 (memory thinning) — does NOT release yet
+      const f=lerp(1.0,0.45,easeOut(ph(t,34.81,36.40)));
+      drawGauge(f);
+      // SOFT rope creak (tiny wobble) — handled via slight glow flicker
+      WAR[1].gl.alpha*=(1+0.15*Math.sin(t*30)*ph(t,34.81,36.4));
+      stormTargetY=695; stormAlpha=0.4;
+    },destroy(){ if(sceneRoot.filters) sceneRoot.filters=null; objSlotTier=-1; }};
+  });
+
+  // ---------- S6 : VERSE 1d 36.40-43.52 (cache use + OOM) ----------
+  scene(36.40,43.52,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    // cache shelf — 4 cards near SOFT
+    const cards=[]; for(let i=0;i<4;i++){ const g=new PIXI.Container(); const cg=new PIXI.Graphics(); g.addChild(cg);
+      cg.beginFill(lerpColor(C.soft,C.ink,0.2),0.9).lineStyle(1.5,C.soft,0.9).drawRoundedRect(-18,-13,36,26,4).endFill();
+      cg.lineStyle(1,lerpColor(C.soft,C.white,0.3),0.6).moveTo(-12,-4).lineTo(12,-4); cg.moveTo(-12,2).lineTo(8,2);
+      g.position.set(640,300+i*0); c.addChild(g); cards.push(g); }
+    const oom=txt('OOM →',22,C.danger,'900'); oom.position.set(1120,420); oom.alpha=0; legible(oom); c.addChild(oom);
+    const cap=txt('cache — smí zmizet, šetří OOM',18,C.soft,'800'); cap.position.set(620,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      objSlotTier=1;
+      gaugeRoot.visible=true; mailRoot.visible=false; bladeG.visible=false;
+      // cards appear @37.26 stacked
+      const sp=easeOut(ph(t,37.26,38.0));
+      for(let i=0;i<4;i++){ const g=cards[i]; g.position.set(lerp(700,648,sp), 250+i*30); g.alpha=sp; }
+      // gauge crosses red threshold @38.41 -> valve trips, cards shed bottom-first
+      let f;
+      if(t<38.41) f=lerp(0.45,0.30,easeOut(ph(t,36.40,38.41)));
+      else f=lerp(0.30,0.7,easeOut(ph(t,40.5,42.5))); // recovery after relief
+      drawGauge(clamp01(f));
+      // cards shed bottom-first staggered after 38.41
+      for(let i=0;i<4;i++){ const g=cards[i]; const shedAt=38.41+(3-i)*0.15;
+        if(t>=shedAt){ const sh=easeIn(ph(t,shedAt,shedAt+0.5)); g.position.y=250+i*30+sh*120; g.alpha=(1-sh)*sp;
+          if(!S.fired.has('shed'+i)){ S.fired.add('shed'+i); burst(648,250+i*30,C.soft,10,2.2,0.16); } } }
+      // OOM klaxon flashes 2Hz then fades as relieved
+      const klax=(t>=39.84 && t<42.0)? (0.5+0.5*Math.sin(t*TAU*2)) : 0;
+      oom.alpha=klax*(1-ph(t,41.5,42.0));
+      if(t>=39.84 && t<41.8 && Math.sin(t*TAU*2)>0.9 && FILT.flashRed && !hasOverlayFx('na')){ /* subtle: skip full flash to avoid strobing */ }
+      cap.alpha=easeOut(ph(t,39.84,40.4))*(1-ph(t,43.0,43.5));
+      stormTargetY=695; stormAlpha=0.4;
+    },destroy(){ objSlotTier=-1; }};
+  });
+
+  // ---------- ORDER CALL (reusable for S7 + S15) ----------
+  function buildOrderCall(LS){
+    return (S)=>{
+      const c=new PIXI.Container();
+      camDollyScale=1;
+      const plates=[]; const order=['1','2','3','4'];
+      for(let i=0;i<4;i++){ const g=new PIXI.Container(); const pg=new PIXI.Graphics();
+        pg.lineStyle(2,TIER_COLOR[i],0.95).beginFill(C.ink,0.7).drawRoundedRect(-16,-16,32,32,6).endFill(); g.addChild(pg);
+        const num=txt(order[i],20,TIER_COLOR[i],'900'); g.addChild(num);
+        g.position.set(RAIL_X-100,LEDGE_Y[i]); g.alpha=0; c.addChild(g); plates.push(g); }
+      // vertical order banner (assembles token by token)
+      const toks=['strong','>','soft','>','weak','>','phantom'];
+      const banner=new PIXI.Container(); banner.position.set(980,300); c.addChild(banner);
+      const bToks=[]; toks.forEach((tk,i)=>{ const col=tk==='>'?C.muted:TIER_COLOR[[0,0,1,1,2,2,3][i]]; const e=txt(tk,22,col,'800'); e.position.set(0,(i-3)*30); e.alpha=0; legible(e); banner.addChild(e); bToks.push(e); });
+      const word=[LS.strong,LS.soft,LS.weak,LS.phantom];
+      const bigBloom={s7:0.4,s15:0.6}[LS.tag]||0.4;
+      let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:7,quality:4}); c.filters=[bloomF]; }
+      return {c,update(lt,t){
+        objSlotTier=-1; camDollyScale=1;
+        gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+        if(bloomF) bloomF.bloomScale=1.0+bigBloom*beat(t);
+        for(let i=0;i<4;i++){ const at=word[i];
+          plates[i].alpha=easeOut(ph(t,at,at+0.3));
+          // warrior flare + numbered plate slams on his name-word
+          const flare=triWave(t,at,at+0.25);
+          WAR[i].gl.alpha=clamp01(WAR[i].gl.alpha+flare*0.6);
+          if(t>=at && !S.fired.has('plate'+i)){ S.fired.add('plate'+i); burst(LEDGE_X,LEDGE_Y[i],TIER_COLOR[i],12,2.6,0.18); }
+        }
+        // banner tokens assemble — one per name word boundary
+        const tkTimes=[word[0],word[0]+0.2,word[1],word[1]+0.2,word[2],word[2]+0.2,word[3]];
+        bToks.forEach((e,i)=>{ const at=tkTimes[i]; e.alpha=easeOut(ph(t,at,at+0.3)); e.x=lerp(6,0,easeOut(ph(t,at,at+0.3))); });
+        stormTargetY=695; stormAlpha=0.4;
+      },destroy(){ objSlotTier=-1; }};
+    };
+  }
+
+  // ---------- S7 : PRE-CHORUS 1 (order call) 43.52-50.68 ----------
+  scene(43.52,50.68,'PRE-CHORUS','verse',buildOrderCall({strong:43.52,soft:46.50,weak:47.73,phantom:49.35,tag:'s7'}));
+
+  // ---------- S8 : PRE-CHORUS 1b (lower ⇒ sooner) 50.68-55.60 ----------
+  scene(50.68,55.60,'PRE-CHORUS','verse',(S)=>{
+    const c=new PIXI.Container();
+    const arrow=new PIXI.Graphics(); c.addChild(arrow);
+    const cap=txt('čím níž → tím dřív tě sebere GC',18,C.muted,'800'); cap.position.set(640,650); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      objSlotTier=-1;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+      // down arrow runs the rail @51.11
+      arrow.clear();
+      const dp=easeOut(ph(t,51.11,52.5));
+      if(dp>0.001){ const ay=lerp(180,600,dp); arrow.lineStyle(4,C.accent,0.8*(1-ph(t,54.0,55.0))).moveTo(RAIL_X+30,180).lineTo(RAIL_X+30,ay);
+        arrow.beginFill(C.accent,0.8*(1-ph(t,54.0,55.0))).drawPolygon([RAIL_X+22,ay,RAIL_X+38,ay,RAIL_X+30,ay+12]).endFill(); }
+      // GC grabs PHANTOM first @54.45
+      let surge=ph(t,53.77,54.45)*(1-ph(t,55.0,55.6));
+      stormTargetY=lerp(700,LEDGE_Y[3]+10,Math.max(surge,ph(t,53.77,54.45))); stormAlpha=lerp(0.4,0.7,ph(t,53.77,54.45));
+      if(t>=54.45 && !S.fired.has('grab3')){ S.fired.add('grab3'); fireGrab(3,t,true);
+        if(FILT.zoomGrab){ FILT.zoomGrab.center=[430,600]; FILT.zoomGrab.strength=0.28; addOverlayFx('gcSweepZoom',FILT.zoomGrab); }
+      }
+      if(FILT.zoomGrab && hasOverlayFx('gcSweepZoom')){ FILT.zoomGrab.strength=0.28*(1-ph(t,54.45,54.95)); if(t>55.0) removeOverlayFx('gcSweepZoom'); }
+      if(FILT.shock && hasOverlayFx('grabShock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('grabShock'); }
+      if(FILT.flashRed){ FILT.flashRed.alpha=0.42*(1-ph(t,54.45,54.8)); if(t>54.85) sceneFlash(FILT.flashRed,false); }
+      cap.alpha=easeOut(ph(t,50.68,51.3))*(1-ph(t,55.2,55.6));
+    },destroy(){ removeOverlayFx('gcSweepZoom'); removeOverlayFx('grabShock'); if(FILT.flashRed) sceneFlash(FILT.flashRed,false); }};
+  });
+
+  // ============================================================
+  //  REUSABLE CHORUS SCENE (storyboard §4) — buildChorus / updateChorus
+  // ============================================================
+  function buildChorus(occ,S){
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const bloomGain={1:0.5,2:0.7,3:0.9}[occ];
+    let bloomF=null;
+    if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // verdict stamps (the singable hook)
+    const vNikdy=txt('NIKDY',24,C.strong,'900'); vNikdy.position.set(560,160); vNikdy.alpha=0; legible(vNikdy); c.addChild(vNikdy);
+    const vAlive=txt('✓ naživu',18,C.quiescent,'800'); vAlive.position.set(560,205); vAlive.alpha=0; legible(vAlive); c.addChild(vAlive);
+    const vNouzi=txt('v nouzi',24,C.soft,'900'); vNouzi.position.set(560,300); vNouzi.alpha=0; legible(vNouzi); c.addChild(vNouzi);
+    const vGC=txt('PŘÍŠTÍ GC',22,C.weak,'900'); vGC.position.set(560,440); vGC.alpha=0; legible(vGC); c.addChild(vGC);
+    const vSmrti=txt('PO SMRTI',22,C.phantom,'900'); vSmrti.position.set(760,600); vSmrti.alpha=0; legible(vSmrti); c.addChild(vSmrti);
+    const nullCard=txt('get() → null',18,C.phantom,'800'); nullCard.position.set(760,560); nullCard.alpha=0; legible(nullCard); c.addChild(nullCard);
+    c._chorus={occ,bloomGain,bloomF,vNikdy,vAlive,vNouzi,vGC,vSmrti,nullCard};
+    return c;
+  }
+  function updateChorus(c,t,LS,occ,S){
+    camDollyScale=1; objSlotTier=-1;
+    const X=c._chorus;
+    const {bloomF,vNikdy,vAlive,vNouzi,vGC,vSmrti,nullCard}=X;
+    const L1=LS.L1,L2=LS.L2,L3=LS.L3,L4=LS.L4;
+    if(bloomF) bloomF.bloomScale=1.0+X.bloomGain*beat(t);
+    if(stormBloom) stormBloom.bloomScale=1.0+X.bloomGain*0.5*beat(t);
+    // ember density bump
+    moteDensity={1:1,2:1.5,3:2}[occ];
+    // HUD on for chorus
+    gaugeRoot.visible=true; mailRoot.visible=true; bladeG.visible=true; finalNote.alpha=0;
+
+    // ---- L1 STOMP (STRONG verdict) ----
+    if(t>=L1 && !S.fired.has('stomp'+occ)){ S.fired.add('stomp'+occ);
+      if(FILT.zoom){ FILT.zoom.center=[HUB[0],HUB[1]]; FILT.zoom.strength=0.30; addOverlayFx('chStomp',FILT.zoom); }
+    }
+    if(FILT.zoom && hasOverlayFx('chStomp')){ FILT.zoom.strength=0.30*(1-ph(t,L1,L1+0.25)); if(t>L1+0.26) removeOverlayFx('chStomp'); }
+    // STRONG flare to MAX; on nikdy GC slams rung0 and bounces
+    WAR[0].gl.alpha=clamp01(WAR[0].gl.alpha+triWave(t,L1,L1+0.6)*0.7);
+    vNikdy.alpha=easeOut(ph(t,L1+0.8,L1+1.1))*(1-ph(t,L2-0.2,L2));
+    vAlive.alpha=easeOut(ph(t,L1+2.0,L1+2.3))*(1-ph(t,L2-0.2,L2));
+    // STRONG bounce micro-flash on its slam (around L1+1.0)
+    if(t>=L1+1.0 && !S.fired.has('bounce'+occ)){ S.fired.add('bounce'+occ);
+      if(FILT.flash){ FILT.flash.color=0xffffff; FILT.flash.alpha=0.16; sceneFlash(FILT.flash,true);} }
+    if(FILT.flash && S.fired.has('bounce'+occ)){ FILT.flash.alpha=0.16*(1-ph(t,L1+1.0,L1+1.3)); if(t>L1+1.35 && !S.fired.has('alive'+occ)) sceneFlash(FILT.flash,false); }
+
+    // ---- L2 SOFT verdict (gauge drains then recovers) ----
+    let gf;
+    if(t<L2) gf=1.0;
+    else if(t<L3) gf=lerp(1.0,0.30,easeOut(ph(t,L2+0.5,L3-0.3)));
+    else gf=lerp(0.30,0.7,easeOut(ph(t,L3,L3+0.8)));
+    drawGauge(clamp01(gf));
+    vNouzi.alpha=easeOut(ph(t,L2+1.0,L2+1.3))*(1-ph(t,L3-0.2,L3));
+    if(t>=L2 && t<L3 && !S.fired.has('softshed'+occ) && gf<0.33){ S.fired.add('softshed'+occ); burst(OBJ_X,LEDGE_Y[1],C.soft,14,2.4,0.16); }
+
+    // ---- L3 WEAK verdict (next-GC blade cuts) ----
+    // GC word time per occ
+    const gcWord={1:69.90,2:125.79,3:170.99}[occ];
+    const bladeP=ph(t,L3,gcWord+0.4);
+    if(t>=L3 && t<L4){ bladeG.visible=true; drawBlade(clamp01(bladeP),LEDGE_Y[2]); } else bladeG.visible=(t>=L3&&t<L4);
+    if(t>=gcWord && !S.fired.has('weakcut'+occ)){ S.fired.add('weakcut'+occ); fireGrab(2,t,true);
+      if(FILT.flashRed){ FILT.flashRed.alpha=0.4; sceneFlash(FILT.flashRed,true);} }
+    if(FILT.flashRed && S.fired.has('weakcut'+occ)){ FILT.flashRed.alpha=0.4*(1-ph(t,gcWord,gcWord+0.3)); if(t>gcWord+0.35) sceneFlash(FILT.flashRed,false); }
+    if(FILT.shock && hasOverlayFx('grabShock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('grabShock'); }
+    vGC.alpha=easeOut(ph(t,gcWord+0.3,gcWord+0.6))*(1-ph(t,L4-0.2,L4));
+
+    // ---- L4 PHANTOM verdict (post-mortem janitor + mailbox ping) ----
+    const uklidWord={1:74.84,2:131.14,3:176.45}[occ];
+    const smrtiWord={1:77.31,2:133.82,3:179.31}[occ];
+    const sceneEnd=SC[activeIdx].t1;
+    vSmrti.alpha=easeOut(ph(t,smrtiWord,smrtiWord+0.3))*(1-ph(t,sceneEnd-0.4,sceneEnd));
+    nullCard.alpha=easeOut(ph(t,uklidWord,uklidWord+0.3))*0.85*(1-ph(t,smrtiWord+0.8,smrtiWord+1.2));
+    // mailbox pings green when cleanup enqueued (on smrti)
+    const ping=(t>=smrtiWord)? easeOut(ph(t,smrtiWord,smrtiWord+0.4))*(1-ph(t,smrtiWord+1.2,smrtiWord+1.8)) : 0;
+    drawMailbox(mailG,true,ping,false);
+    if(t>=smrtiWord && !S.fired.has('ping'+occ)){ S.fired.add('ping'+occ); if(FILT.flashGreen){ FILT.flashGreen.alpha=0.3; sceneFlash(FILT.flashGreen,true);} }
+    if(FILT.flashGreen && S.fired.has('ping'+occ)){ FILT.flashGreen.alpha=0.3*(1-ph(t,smrtiWord,smrtiWord+0.3)); if(t>smrtiWord+0.35) sceneFlash(FILT.flashGreen,false); }
+    stormTargetY=695; stormAlpha=0.45;
+  }
+
+  // ---------- S9 : CHORUS 1 (L1/L2) 55.60-67.83 ----------
+  scene(55.60,67.83,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(1,S);
+    return {c,update(lt,t){ updateChorus(c,t,{L1:56.40,L2:61.38,L3:67.83,L4:73.04},1,S); }};
+  });
+  // ---------- S10 : CHORUS 1 (L3/L4) 67.83-79.12 ----------
+  scene(67.83,79.12,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(1,S);
+    return {c,update(lt,t){ updateChorus(c,t,{L1:56.40,L2:61.38,L3:67.83,L4:73.04},1,S); }};
+  });
+
+  // ---------- S11 : VERSE 2a 79.12-84.21 (WEAK precondition) ----------
+  scene(79.12,84.21,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    let tiltF=null;
+    if(hasF('TiltShiftFilter')){ tiltF=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,460),end:new PIXI.Point(W,460)}); }
+    const cap=txt('weakly reachable — nic silného nedrží',18,C.weak,'800'); cap.position.set(620,485); cap.alpha=0; legible(cap); c.addChild(cap);
+    // last strong tether (faint gold thread) that drops away
+    const strongThread=new PIXI.Graphics(); c.addChild(strongThread);
+    const runCounter=txt('GC #n →',16,C.weak,'800'); runCounter.position.set(1100,485); runCounter.alpha=0; legible(runCounter); c.addChild(runCounter);
+    return {c,update(lt,t){
+      objSlotTier=2;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=true;
+      if(tiltF){ const band=easeOut(ph(t,79.12,79.9)); tiltF.blur=80*band; tiltF.start.y=460; tiltF.end.y=460;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(tiltF)<0)){ sceneRoot.filters=[tiltF]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);} }
+      cap.alpha=easeOut(ph(t,82.78,83.2))*(1-ph(t,84.0,84.21));
+      // strong tether drops away @82.78
+      strongThread.clear();
+      const drop=ph(t,82.78,83.26);
+      if(drop<0.999){ strongThread.lineStyle(2,C.strong,0.5*(1-drop)).moveTo(160,160).lineTo(OBJ_X,LEDGE_Y[2]); }
+      // next-GC blade sweeps; cut @83.26
+      const bp=ph(t,80.02,83.26); drawBlade(clamp01(bp),LEDGE_Y[2]);
+      if(t>=83.26 && !S.fired.has('cut')){ S.fired.add('cut'); fireGrab(2,t,true); }
+      if(FILT.shock && hasOverlayFx('grabShock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('grabShock'); }
+      if(FILT.flashRed){ FILT.flashRed.alpha=0.42*(1-ph(t,83.26,83.6)); if(t>83.65) sceneFlash(FILT.flashRed,false); }
+      runCounter.alpha=easeOut(ph(t,80.02,80.5))*(1-ph(t,84.0,84.21));
+      stormTargetY=695; stormAlpha=0.4;
+    },destroy(){ if(sceneRoot.filters) sceneRoot.filters=null; removeOverlayFx('grabShock'); objSlotTier=-1; }};
+  });
+
+  // ---------- S12 : VERSE 2b 84.21-90.00 (WeakHashMap use) ----------
+  scene(84.21,90.00,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const board=new PIXI.Graphics(); c.addChild(board);
+    const boardLbl=txt('WeakHashMap · klíče · listenery',18,C.weak,'800'); boardLbl.position.set(760,400); boardLbl.alpha=0; legible(boardLbl); c.addChild(boardLbl);
+    // two key-cards
+    const keyCard=new PIXI.Container(); c.addChild(keyCard); const kg=new PIXI.Graphics(); keyCard.addChild(kg);
+    kg.beginFill(lerpColor(C.weak,C.ink,0.2),0.92).lineStyle(1.5,C.weak,0.9).drawRoundedRect(-26,-16,52,32,5).endFill(); keyCard.position.set(720,330);
+    const keyLbl=txt('🔑 klíč',14,C.weak,'800'); keyCard.addChild(keyLbl);
+    const lisCard=new PIXI.Container(); c.addChild(lisCard); const lg=new PIXI.Graphics(); lisCard.addChild(lg);
+    lg.beginFill(lerpColor(C.weak,C.ink,0.2),0.92).lineStyle(1.5,C.weak,0.9).drawRoundedRect(-30,-16,60,32,5).endFill(); lisCard.position.set(800,330);
+    const lisLbl=txt('🎧 listener',13,C.weak,'800'); lisCard.addChild(lisLbl);
+    // external owner figure
+    const owner=new PIXI.Graphics(); drawWarrior2(owner,0x8fb3c0); c.addChild(owner); owner.position.set(1080,330);
+    function drawWarrior2(g,tone){ g.clear(); g.beginFill(tone,1).drawCircle(0,-14,9).endFill(); g.beginFill(tone,0.9).moveTo(-13,6).quadraticCurveTo(0,-6,13,6).lineTo(11,18).lineTo(-11,18).closePath().endFill(); }
+    // weak threads
+    const th1=new PIXI.Graphics(); c.addChild(th1);
+    return {c,update(lt,t){
+      objSlotTier=2;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=true;
+      board.clear();
+      const ba=easeOut(ph(t,85.0,85.8));
+      board.lineStyle(2,C.weak,0.5*ba).beginFill(C.ink,0.4*ba).drawRoundedRect(660,300,200,120,8).endFill();
+      keyCard.alpha=easeOut(ph(t,85.80,86.3)); lisCard.alpha=easeOut(ph(t,86.84,87.3));
+      // weak threads pin the cards
+      th1.clear();
+      if(keyCard.alpha>0.1){ th1.lineStyle(1.5,C.weak,0.6*keyCard.alpha).moveTo(720,314).lineTo(700,300); }
+      // owner walks off @88.33; key-card auto-detaches on next GC
+      const walk=easeInOut(ph(t,88.33,89.5));
+      owner.position.set(lerp(1080,1300,walk),330); owner.alpha=1-ph(t,89.0,89.8);
+      if(t>=89.0){ const det=easeIn(ph(t,89.0,89.8)); keyCard.position.set(720,330+det*120); keyCard.alpha=(1-det)*easeOut(ph(t,85.80,86.3));
+        if(!S.fired.has('detach')){ S.fired.add('detach'); burst(720,330,C.weak,12,2.2,0.16); } }
+      boardLbl.alpha=easeOut(ph(t,87.27,87.8))*(1-ph(t,89.6,90.0));
+      stormTargetY=695; stormAlpha=0.4;
+    },destroy(){ objSlotTier=-1; }};
+  });
+
+  // ---------- S13 : VERSE 2c 90.00-95.27 (get()→null ALWAYS) ----------
+  scene(90.00,95.27,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    let tiltF=null;
+    if(hasF('TiltShiftFilter')){ tiltF=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,600),end:new PIXI.Point(W,600)}); }
+    const panel=new PIXI.Graphics(); c.addChild(panel);
+    const hand=new PIXI.Graphics(); c.addChild(hand);
+    const nullCard=txt('get() → null',24,C.phantom,'900'); nullCard.position.set(760,360); nullCard.alpha=0; legible(nullCard); c.addChild(nullCard);
+    const deadEnd=txt('k objektu nevede cesta',18,C.phantom,'800'); deadEnd.position.set(760,420); deadEnd.alpha=0; legible(deadEnd); c.addChild(deadEnd);
+    return {c,update(lt,t){
+      objSlotTier=3;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+      if(tiltF){ const band=easeOut(ph(t,90.0,90.8)); tiltF.blur=80*band; tiltF.start.y=600; tiltF.end.y=600;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(tiltF)<0)){ sceneRoot.filters=[tiltF]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);} }
+      // panel + hand reaching through
+      panel.clear();
+      const pa=easeOut(ph(t,91.38,92.0));
+      panel.lineStyle(2,C.phantom,0.5*pa).beginFill(C.ink,0.45*pa).drawRoundedRect(680,320,200,90,8).endFill();
+      // hand reaches THROUGH (passes the empty spot) — repeats on the beat (vždy)
+      hand.clear();
+      const reach=0.5+0.5*Math.sin(t*TAU*1.0);
+      if(pa>0.1){ hand.lineStyle(4,C.phantom,0.7*pa).moveTo(700,365).lineTo(lerp(700,820,reach),365);
+        hand.beginFill(C.phantom,0.7*pa).drawCircle(lerp(700,820,reach),365,5).endFill(); }
+      // null card slams @93.06 (and re-fires on beat)
+      const nc=ph(t,93.06,93.4);
+      nullCard.alpha=easeOut(nc)*(0.7+0.3*Math.abs(Math.sin(t*TAU*0.7)))*(1-ph(t,94.8,95.27));
+      if(t>=93.06 && !S.fired.has('null')){ S.fired.add('null');
+        if(FILT.shock){ FILT.shock.center=[760,360]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('nullShock',FILT.shock); }
+        if(FILT.flashPhantom){ FILT.flashPhantom.alpha=0.35; sceneFlash(FILT.flashPhantom,true);} }
+      if(FILT.shock && hasOverlayFx('nullShock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('nullShock'); }
+      if(FILT.flashPhantom && S.fired.has('null')){ FILT.flashPhantom.alpha=0.35*(1-ph(t,93.06,93.4)); if(t>93.45) sceneFlash(FILT.flashPhantom,false); }
+      deadEnd.alpha=easeOut(ph(t,94.00,94.5))*(1-ph(t,95.0,95.27));
+      stormTargetY=695; stormAlpha=0.4;
+    },destroy(){ if(sceneRoot.filters) sceneRoot.filters=null; removeOverlayFx('nullShock'); if(FILT.flashPhantom) sceneFlash(FILT.flashPhantom,false); objSlotTier=-1; }};
+  });
+
+  // ---------- S14 : VERSE 2d 95.27-101.72 (mandatory ReferenceQueue) ----------
+  scene(95.27,101.72,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const tether=makeRope('phantom',12,C.phantom); c.addChild(tether);
+    const qLbl=txt('ReferenceQueue · POVINNÉ',20,C.phantom,'800'); qLbl.position.set(900,420); qLbl.alpha=0; legible(qLbl); c.addChild(qLbl);
+    // second dead mailbox (no queue)
+    const deadMail=new PIXI.Graphics(); c.addChild(deadMail); deadMail.position.set(760,560);
+    const deadCap=txt('bez queue → úklid se neoznámí',18,C.danger,'800'); deadCap.position.set(760,600); deadCap.alpha=0; legible(deadCap); c.addChild(deadCap);
+    return {c,update(lt,t){
+      objSlotTier=3;
+      gaugeRoot.visible=false; mailRoot.visible=true; bladeG.visible=false;
+      // wire PHANTOM into mailbox @96.86
+      const wp=easeOut(ph(t,96.86,98.0));
+      setRopeAlongPath(tether,[[430,LEDGE_Y[3]],[lerp(430,MAILBOX[0],wp),lerp(LEDGE_Y[3],MAILBOX[1],wp)*0.5+LEDGE_Y[3]*0.5],[MAILBOX[0],MAILBOX[1]]]);
+      tether.alpha=0.7*wp;
+      // queued mailbox flag up, pings green on enqueue (after 99.74)
+      const ping=(t>=99.74)? easeOut(ph(t,99.74,100.2))*(1-ph(t,100.8,101.4)) : 0;
+      drawMailbox(mailG,true,ping,false);
+      qLbl.alpha=easeOut(ph(t,97.83,98.4))*(1-ph(t,101.2,101.72));
+      // dead mailbox (greyed, flag down) shown @98.58
+      const da=easeOut(ph(t,98.58,99.2));
+      deadMail.clear(); if(da>0.01){ drawMailbox(deadMail,false,0,true); deadMail.alpha=da*(1-ph(t,101.3,101.72)); }
+      deadCap.alpha=easeOut(ph(t,98.58,99.2))*(1-ph(t,101.2,101.72));
+      stormTargetY=695; stormAlpha=0.4;
+    },destroy(){ objSlotTier=-1; }};
+  });
+
+  // ---------- S15 : PRE-CHORUS 2 (order reprise) 101.72-107.14 ----------
+  scene(101.72,107.14,'PRE-CHORUS','verse',buildOrderCall({strong:101.72,soft:104.06,weak:105.04,phantom:106.38,tag:'s15'}));
+
+  // ---------- S16 : PRE-CHORUS 2b 107.14-112.08 ----------
+  scene(107.14,112.08,'PRE-CHORUS','verse',(S)=>{
+    const c=new PIXI.Container();
+    const arrow=new PIXI.Graphics(); c.addChild(arrow);
+    const cap=txt('čím níž → tím dřív',18,C.muted,'800'); cap.position.set(640,650); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      objSlotTier=-1;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+      arrow.clear();
+      const dp=easeOut(ph(t,107.56,108.8));
+      if(dp>0.001){ const ay=lerp(180,600,dp); arrow.lineStyle(4,C.accent,0.8*(1-ph(t,110.5,111.5))).moveTo(RAIL_X+30,180).lineTo(RAIL_X+30,ay);
+        arrow.beginFill(C.accent,0.8*(1-ph(t,110.5,111.5))).drawPolygon([RAIL_X+22,ay,RAIL_X+38,ay,RAIL_X+30,ay+12]).endFill(); }
+      let surge=ph(t,110.19,110.95);
+      stormTargetY=lerp(700,LEDGE_Y[3]+10,surge); stormAlpha=lerp(0.4,0.7,surge);
+      if(t>=110.95 && !S.fired.has('grab3')){ S.fired.add('grab3'); fireGrab(3,t,true);
+        if(FILT.zoomGrab){ FILT.zoomGrab.center=[430,600]; FILT.zoomGrab.strength=0.28; addOverlayFx('gcSweepZoom',FILT.zoomGrab); }
+      }
+      if(FILT.zoomGrab && hasOverlayFx('gcSweepZoom')){ FILT.zoomGrab.strength=0.28*(1-ph(t,110.95,111.45)); if(t>111.5) removeOverlayFx('gcSweepZoom'); }
+      if(FILT.shock && hasOverlayFx('grabShock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('grabShock'); }
+      if(FILT.flashRed){ FILT.flashRed.alpha=0.42*(1-ph(t,110.95,111.3)); if(t>111.35) sceneFlash(FILT.flashRed,false); }
+      cap.alpha=easeOut(ph(t,107.14,107.8))*(1-ph(t,111.6,112.08));
+    },destroy(){ removeOverlayFx('gcSweepZoom'); removeOverlayFx('grabShock'); if(FILT.flashRed) sceneFlash(FILT.flashRed,false); }};
+  });
+
+  // ---------- S17 : CHORUS 2 (L1/L2) 112.08-123.48 ----------
+  scene(112.08,123.48,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(2,S);
+    return {c,update(lt,t){ updateChorus(c,t,{L1:112.08,L2:117.78,L3:123.48,L4:129.26},2,S); }};
+  });
+  // ---------- S18 : CHORUS 2 (L3/L4) 123.48-134.80 ----------
+  scene(123.48,134.80,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(2,S);
+    return {c,update(lt,t){ updateChorus(c,t,{L1:112.08,L2:117.78,L3:123.48,L4:129.26},2,S); }};
+  });
+
+  // ---------- S19 : BRIDGE 1 134.80-140.58 (NOT a finalizer) ----------
+  scene(134.80,140.58,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    // old finalize() gremlin cog (left)
+    const cog=new PIXI.Container(); c.addChild(cog); cog.position.set(360,300);
+    const cogG=new PIXI.Graphics(); cog.addChild(cogG);
+    const cogQ=txt('finalize()  ?',16,C.muted,'700'); cogQ.position.set(0,-50); legible(cogQ); cog.addChild(cogQ);
+    const stamp=txt('NENÍ finalizer',30,C.danger,'900'); stamp.position.set(360,300); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    const slash=new PIXI.Graphics(); c.addChild(slash);
+    const detCap=txt('deterministický úklid (místo finalize())',18,C.phantom,'800'); detCap.position.set(760,560); detCap.alpha=0; legible(detCap); c.addChild(detCap);
+    // RGBSplit applied to cog only
+    let cogRgb=null; if(FILT.rgb){ cogRgb=FILT.rgb; }
+    return {c,update(lt,t){
+      objSlotTier=3;
+      gaugeRoot.visible=false; mailRoot.visible=true; bladeG.visible=false;
+      finalNote.alpha=0.4*easeOut(ph(t,134.80,136.0));
+      // cold bridge filters on overlayFx
+      if(t>=134.80){
+        if(FILT.crt && !hasOverlayFx('bridgeCRT')) addOverlayFx('bridgeCRT',FILT.crt);
+        if(FILT.kawase && !hasOverlayFx('bridgeKawase')) addOverlayFx('bridgeKawase',FILT.kawase);
+      }
+      if(FILT.crt){ FILT.crt.time=t; }
+      if(FILT.kawase && hasOverlayFx('bridgeKawase')){ FILT.kawase.strength=1.5*ph(t,134.80,136.0)*(1-ph(t,139.0,140.4)); }
+      // gremlin cog jitters with random timing
+      cogG.clear();
+      const jit=Math.sin(t*23)*4*(t<136.44?1:0.3);
+      const rot=t*1.3+Math.sin(t*7)*0.5;
+      cogG.lineStyle(0).beginFill(lerpColor(0x88808f,C.ink,0.2),0.9);
+      const teeth=8;
+      for(let i=0;i<teeth;i++){ const a=rot+i/teeth*TAU; cogG.drawRect(Math.cos(a)*22-4+jit,Math.sin(a)*22-4,8,8); }
+      cogG.drawCircle(jit,0,16).endFill();
+      cogG.beginFill(C.ink,0.8).drawCircle(jit,0,7).endFill();
+      // NENÍ finalizer stamp @136.44 + glitch burst + RGBsplit on cog
+      stamp.alpha=easeOut(ph(t,136.44,136.8))*(1-ph(t,139.6,140.4));
+      slash.clear();
+      if(t>=136.44){ const sa=easeOut(ph(t,136.44,136.8))*(1-ph(t,139.6,140.4)); slash.lineStyle(6,C.danger,sa).moveTo(330,270).lineTo(390,330); }
+      if(t>=136.44 && !S.fired.has('stamp')){ S.fired.add('stamp');
+        if(FILT.glitch){ FILT.glitch.seed=hash01(Math.floor(t*60)); FILT.glitch.slices=6; FILT.glitch.offset=14; addOverlayFx('bridgeGlitch',FILT.glitch); }
+      }
+      if(FILT.glitch && hasOverlayFx('bridgeGlitch')){ FILT.glitch.seed=hash01(Math.floor(t*60)); FILT.glitch.offset=14*(1-ph(t,136.44,136.84)); if(t>136.86) removeOverlayFx('bridgeGlitch'); }
+      detCap.alpha=easeOut(ph(t,137.80,138.4))*(1-ph(t,140.2,140.58));
+      stormTargetY=700; stormAlpha=0.35;
+    },destroy(){ ['bridgeCRT','bridgeKawase','bridgeGlitch'].forEach(removeOverlayFx); objSlotTier=-1; }};
+  });
+
+  // ---------- S20 : BRIDGE 2 140.58-146.50 (closes external handles) ----------
+  scene(140.58,146.50,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:7,quality:4}); c.filters=[bloomF]; }
+    // two handle icons
+    const fileIco=new PIXI.Container(); c.addChild(fileIco); fileIco.position.set(600,300);
+    const fg=new PIXI.Graphics(); fileIco.addChild(fg);
+    const fLbl=txt('📄 soubor',16,C.phantom,'800'); fLbl.position.set(0,34); legible(fLbl); fileIco.addChild(fLbl);
+    const connIco=new PIXI.Container(); c.addChild(connIco); connIco.position.set(700,300);
+    const cg=new PIXI.Graphics(); connIco.addChild(cg);
+    const cLbl=txt('🔌 spojení',16,C.phantom,'800'); cLbl.position.set(0,34); legible(cLbl); connIco.addChild(cLbl);
+    const check=txt('close(file) · close(connection)',18,C.phantom,'800'); check.position.set(650,420); check.alpha=0; legible(check); c.addChild(check);
+    const okFile=txt('✓',22,C.quiescent,'900'); okFile.position.set(600,270); okFile.alpha=0; c.addChild(okFile);
+    const okConn=txt('✓',22,C.quiescent,'900'); okConn.position.set(700,270); okConn.alpha=0; c.addChild(okConn);
+    return {c,update(lt,t){
+      objSlotTier=3;
+      gaugeRoot.visible=false; mailRoot.visible=true; bladeG.visible=false;
+      finalNote.alpha=0.4*(1-ph(t,144.0,145.0));
+      // bridge filters detach as we re-warm
+      if(t>=144.0){ ['bridgeCRT','bridgeKawase','bridgeGlitch'].forEach(removeOverlayFx); }
+      else { if(FILT.crt){ FILT.crt.time=t; if(!hasOverlayFx('bridgeCRT')) addOverlayFx('bridgeCRT',FILT.crt);} }
+      // file icon @141.30, shutter close
+      fg.clear();
+      const fa=easeOut(ph(t,140.58,141.3));
+      fg.lineStyle(2,C.phantom,0.9*fa).beginFill(lerpColor(C.phantom,C.ink,0.3),0.85*fa).drawRoundedRect(-16,-20,32,40,4).endFill();
+      const fClose=ph(t,141.30,141.9); fg.beginFill(C.quiescent,0.5*fa*fClose).drawRect(-16,-20,32,40*fClose).endFill();
+      okFile.alpha=easeOut(ph(t,141.30,141.8))*(1-ph(t,145.8,146.4));
+      // conn icon @142.15
+      cg.clear();
+      const ca=easeOut(ph(t,142.15,142.8));
+      cg.lineStyle(3,C.phantom,0.9*ca).moveTo(-14,0).lineTo(14,0); cg.beginFill(C.phantom,0.9*ca).drawCircle(-14,0,5).drawCircle(14,0,5).endFill();
+      const cClose=ph(t,142.15,142.8); cg.lineStyle(3,C.quiescent,0.6*ca*cClose).moveTo(0,-10*cClose).lineTo(0,10*cClose);
+      okConn.alpha=easeOut(ph(t,142.15,142.7))*(1-ph(t,145.8,146.4));
+      check.alpha=easeOut(ph(t,143.84,144.4))*(1-ph(t,146.0,146.5));
+      drawMailbox(mailG,true, easeOut(ph(t,143.84,144.4))*(1-ph(t,145.5,146.2)) ,false);
+      if(bloomF) bloomF.bloomScale=1.0+0.4*easeOut(ph(t,144.0,146.0))*beat(t);
+      stormTargetY=700; stormAlpha=0.35;
+    },destroy(){ ['bridgeCRT','bridgeKawase'].forEach(removeOverlayFx); objSlotTier=-1; }};
+  });
+
+  // ---------- S21 : BRIDGE 3 (line-up) 146.50-152.12 ----------
+  scene(146.50,152.12,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:7,quality:4}); c.filters=[bloomF]; }
+    const banner=txt('čtyři síly',28,C.accent,'900'); banner.position.set(640,250); banner.alpha=0; legible(banner); c.addChild(banner);
+    // strength staircase bars
+    const stair=new PIXI.Graphics(); c.addChild(stair);
+    const word=[146.50,147.32,147.93,148.44];
+    return {c,update(lt,t){
+      objSlotTier=-1;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false;
+      finalNote.alpha=0.35;
+      if(bloomF) bloomF.bloomScale=1.0+0.5*beat(t);
+      // each warrior flares on his name
+      for(let i=0;i<4;i++){ const flare=triWave(t,word[i],word[i]+0.25); WAR[i].gl.alpha=clamp01(WAR[i].gl.alpha+flare*0.6);
+        if(t>=word[i] && !S.fired.has('flare'+i)){ S.fired.add('flare'+i); burst(LEDGE_X,LEDGE_Y[i],TIER_COLOR[i],12,2.6,0.18); } }
+      banner.alpha=easeOut(ph(t,149.42,150.0))*(1-ph(t,151.6,152.12));
+      // strength staircase steps down strong->phantom @149.42
+      stair.clear();
+      const sp=easeOut(ph(t,149.42,150.6));
+      for(let i=0;i<4;i++){ const blen=lerp(24,90,(4-i)/4)*sp; stair.beginFill(TIER_COLOR[i],0.7).drawRoundedRect(960,LEDGE_Y[i]-6,blen,12,3).endFill(); }
+      stormTargetY=698; stormAlpha=0.38;
+    },destroy(){ objSlotTier=-1; }};
+  });
+
+  // ---------- S22 : BRIDGE 4 152.12-157.94 (the two extremes) ----------
+  scene(152.12,157.94,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const naporad=txt('napořád',22,C.strong,'900'); naporad.position.set(560,160); naporad.alpha=0; legible(naporad); c.addChild(naporad);
+    const vzadu=txt('po smrti — úklid vzadu',18,C.phantom,'800'); vzadu.position.set(760,620); vzadu.alpha=0; legible(vzadu); c.addChild(vzadu);
+    return {c,update(lt,t){
+      objSlotTier=-1;
+      gaugeRoot.visible=false; mailRoot.visible=true; bladeG.visible=false;
+      finalNote.alpha=0.3;
+      // STRONG chain glows max, GC bounces @152.12
+      WAR[0].gl.alpha=clamp01(WAR[0].gl.alpha+0.5*beat(t));
+      naporad.alpha=easeOut(ph(t,152.12,152.7))*(1-ph(t,156.0,157.0));
+      let surge=triWave(t,152.86,153.9);
+      stormTargetY=lerp(700,LEDGE_Y[0]+40,surge); stormAlpha=lerp(0.35,0.6,surge);
+      if(t>=152.86 && !S.fired.has('bounce')){ S.fired.add('bounce');
+        if(FILT.shock){ const gp=ladderRoot.toGlobal(new PIXI.Point(430,LEDGE_Y[0])); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s22shock',FILT.shock);} }
+      if(FILT.shock && hasOverlayFx('s22shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s22shock'); }
+      // PHANTOM sweeps quietly back @154.91
+      const ping=(t>=155.76)? easeOut(ph(t,155.76,156.2))*(1-ph(t,157.0,157.6)) : 0;
+      drawMailbox(mailG,true,ping,false);
+      vzadu.alpha=easeOut(ph(t,154.91,155.5))*(1-ph(t,157.4,157.94));
+    },destroy(){ removeOverlayFx('s22shock'); objSlotTier=-1; }};
+  });
+
+  // ---------- S23 : CHORUS 3 (L1/L2) 157.94-168.70 ----------
+  scene(157.94,168.70,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(3,S);
+    return {c,update(lt,t){ updateChorus(c,t,{L1:157.94,L2:163.08,L3:168.70,L4:174.50},3,S); }};
+  });
+  // ---------- S24 : CHORUS 3 (L3/L4) 168.70-180.06 ----------
+  scene(168.70,180.06,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(3,S);
+    return {c,update(lt,t){ updateChorus(c,t,{L1:157.94,L2:163.08,L3:168.70,L4:174.50},3,S); }};
+  });
+
+  // ---------- S25 : OUTRO 1 180.06-185.68 (the two poles) ----------
+  scene(180.06,185.68,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const strongCap=txt('strong drží napořád',18,C.strong,'800'); strongCap.position.set(560,160); strongCap.alpha=0; legible(strongCap); c.addChild(strongCap);
+    const phantomCap=txt('phantom až po smrti',18,C.phantom,'800'); phantomCap.position.set(760,620); phantomCap.alpha=0; legible(phantomCap); c.addChild(phantomCap);
+    return {c,update(lt,t){
+      objSlotTier=-1;
+      gaugeRoot.visible=false; mailRoot.visible=true; bladeG.visible=false; finalNote.alpha=0;
+      WAR[0].gl.alpha=clamp01(WAR[0].gl.alpha+0.4*beat(t));
+      strongCap.alpha=easeOut(ph(t,180.06,180.8))*(1-ph(t,184.5,185.5));
+      // GC bounces off STRONG
+      let surge=triWave(t,180.86,182.0);
+      stormTargetY=lerp(700,LEDGE_Y[0]+50,surge*0.7); stormAlpha=lerp(0.35,0.5,surge);
+      // PHANTOM post-mortem sweep @183.54
+      const ping=(t>=183.54)? easeOut(ph(t,183.54,184.0))*(1-ph(t,185.0,185.68)) : 0;
+      drawMailbox(mailG,true,ping,false);
+      phantomCap.alpha=easeOut(ph(t,183.54,184.1))*(1-ph(t,185.2,185.68));
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      if(godrayF) godrayF.gain=lerp(0.4,0.55,ph(t,180.06,183.0));
+      // calm storm
+    },destroy(){ objSlotTier=-1; }};
+  });
+
+  // ---------- S26 : OUTRO 2 (descent climax) 185.68-192.58 ----------
+  scene(185.68,192.58,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const banner=new PIXI.Container(); banner.position.set(640,300); c.addChild(banner);
+    const toks=['strong','>','soft','>','weak','>','phantom'];
+    const bToks=[]; toks.forEach((tk,i)=>{ const col=tk==='>'?C.muted:TIER_COLOR[[0,0,1,1,2,2,3][i]]; const e=txt(tk,30,col,'900'); e.position.set((i-3)*120,0); e.alpha=0; legible(e); banner.addChild(e); bToks.push(e); });
+    const title=txt('ČTYŘI SÍLY ÚCHOPU',50,C.accent,'900'); title.position.set(640,250); title.alpha=0; legible(title); c.addChild(title);
+    const sub=txt('strong > soft > weak > phantom · ESW B4M36ESW',22,C.muted,'700'); sub.position.set(640,300); sub.alpha=0; legible(sub); c.addChild(sub);
+    const stair=new PIXI.Graphics(); c.addChild(stair);
+    const pvX0=camPivotX, pvY0=camPivotY;
+    return {c,update(lt,t){
+      objSlotTier=-1;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false; finalNote.alpha=0;
+      // camera tilts DOWN the ladder @185.68 (pivot y 180->600)
+      const tilt=easeInOut(ph(t,185.68,189.0));
+      camPivotX=lerp(pvX0,560,easeInOut(ph(t,185.68,187.0))); camPivotY=lerp(pvY0,lerp(180,600,tilt),1); camDollyScale=lerp(1.0,1.08,tilt);
+      // strength bars step down as it descends
+      stair.clear();
+      for(let i=0;i<4;i++){ const blen=lerp(24,90,(4-i)/4)*easeOut(ph(t,185.68+i*0.3,186.5+i*0.3)); stair.beginFill(TIER_COLOR[i],0.7).drawRoundedRect(RAIL_X+18,LEDGE_Y[i]-5,blen,10,3).endFill(); }
+      // BulgePinch climax pop on "klesá," @188.04
+      if(t>=188.04 && !hasOverlayFx('climaxBulge')){
+        if(FILT.bulge){ FILT.bulge.center=[560/1280,360/720]; addOverlayFx('climaxBulge',FILT.bulge); }
+        else if(FILT.bulgeDisp){ addOverlayFx('climaxBulge',FILT.bulgeDisp); }
+      }
+      if(hasOverlayFx('climaxBulge')){ const k=0.35*(1-ph(t,188.04,188.6));
+        if(FILT.bulge) FILT.bulge.strength=k; else if(FILT.bulgeDisp) FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=k/0.35*30;
+        if(t>=189.1) removeOverlayFx('climaxBulge'); }
+      // big banner re-assembles @189.92 (one token per beat) — but then settle to title/sub
+      const banAt=189.92;
+      bToks.forEach((e,i)=>{ const at=banAt+i*0.18; e.alpha=easeOut(ph(t,at,at+0.3))*(1-ph(t,191.0,191.6)); });
+      banner.alpha=1-ph(t,191.0,191.6);
+      // title return @190.0
+      title.alpha=easeOut(ph(t,190.0,191.5)); sub.alpha=easeOut(ph(t,190.0,191.5));
+      if(bloomF) bloomF.bloomScale=1.0+0.5*beat(t);
+      stormTargetY=702; stormAlpha=0.3;
+    },destroy(){ removeOverlayFx('climaxBulge'); camPivotX=W/2; camPivotY=H/2; camDollyScale=1; objSlotTier=-1; }};
+  });
+
+  // ---------- S27 : END-CARD 192.58-audio.duration ----------
+  scene(192.58,STAGE_DUR,'END','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const title=txt('ČTYŘI SÍLY ÚCHOPU',50,C.accent,'900'); title.position.set(640,250); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:1.5,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('strong > soft > weak > phantom · ESW B4M36ESW',22,C.muted,'700'); sub.position.set(640,300); legible(sub);
+    const badge=txt('🛡️  Čtyři síly úchopu · typy referencí · ESW B4M36ESW',20,C.muted,'700'); badge.position.set(640,560); legible(badge);
+    c.addChild(title,sub,badge);
+    return {c,update(lt,t){
+      objSlotTier=-1; camPivotX=W/2; camPivotY=H/2; camDollyScale=1;
+      gaugeRoot.visible=false; mailRoot.visible=false; bladeG.visible=false; finalNote.alpha=0;
+      const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+      const q=easeInOut(ph(t,192.58,dur-1));
+      moteVisibleRatio=lerp(1.0,0.18,q); moteEnvelope=lerp(0.3,0.12,q); moteDensity=1;
+      if(title._g) title._g.outerStrength=lerp(1.5,0.2,q);
+      if(bloomF) bloomF.bloomScale=1.0+0.25*Math.exp(-Math.pow((t-((192.58+dur)/2)),2)/0.6);
+      stormTargetY=lerp(702,720,q); stormAlpha=lerp(0.3,0.1,q);
+    },destroy(){ moteVisibleRatio=1; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='bridge' && t<144.0){
+      const cold=ph(t,134.80,136.0);
+      bgGrade.saturate(-0.4*cold,false);
+      bgGrade.brightness(1-0.1*cold,true);
+    } else if(sec==='chorus'){
+      bgGrade.saturate(0.15,false);
+    } else if(sec==='outro'){
+      bgGrade.saturate(0.06,false);
+    } else {
+      bgGrade.saturate(0.1,false);
+    }
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM) — EXACT FINAL ACTIVE-LINE PICKER (storyboard §5)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=900;     // line 0 start_ms — pre-roll gate (S0 fully blank)
+  const LAST_WORD_END=192580;     // last word "ty." end_ms — end-card gate (S27 fully blank)
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;   // GLOBAL GATE first — S0 & S27: nothing
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; } // primary window
+    return null;                                               // FALLBACK REMOVED — gaps show no line
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  let stormY=700;
+  function render(t){
+    RT=t;
+    const dt=app.ticker.deltaMS/1000;
+    bgIntent.kawase=false; bgIntent.hsl=false;
+    // reset per-frame defaults that scenes may override
+    moteDensity=1;
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='bridge' && t<144.0){ const cold=ph(t,134.80,136.0); top=lerpColor(C.bgTop,C.bgTopCold,cold); bot=lerpColor(C.bgBot,C.bgBotCold,cold); }
+    else if(sec==='bridge' && t>=144.0){ const warm=ph(t,144.0,146.5); top=lerpColor(C.bgTopCold,C.bgTop,warm); bot=lerpColor(C.bgBotCold,C.bgBot,warm); }
+    if(t>=192.58){ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; const q=easeInOut(ph(t,192.58,dur-1)); top=lerpColor(top,C.bgTopEnd,q); bot=lerpColor(bot,C.bgBot,q); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // ash drift + reflection + godray time
+    ashTile.tilePosition.y=(-(t*18))%256; ashTile.alpha=0.05*(moteEnvelope/0.3);
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time=t; }
+    bgIntent.godray=(sec==='intro'||sec==='chorus'||sec==='outro');
+
+    // ----- scene manager (with backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.12);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame -----
+    { const arr=[bgGrade];
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(bgIntent.hsl && FILT.hsl) arr.push(FILT.hsl);
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+
+    // ----- persistent ladder + storm -----
+    if(t>=0.90){ ladderRoot.alpha=clamp01(lerp(ladderRoot.alpha,1,0.2)); }
+    // warriors visible after S1 slam
+    if(t>=2.6){ for(const w of WAR){ if(w.cont.alpha<1){ w.cont.alpha=1; } w.cont.y=LEDGE_Y[w.i]; } }
+    renderLadder(t,sec);
+    // storm-front: ease stormY toward target
+    stormY=lerp(stormY,stormTargetY,0.18);
+    drawStorm(t,stormY,stormAlpha);
+
+    // ----- camera -----
+    updateCamera(t,dt);
+
+    // ----- karaoke -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — motes + sparks (non-load-bearing)
+  //  Advance ONLY while audio is actually playing (PAUSE FREEZES everything).
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    const playing = !player.paused && !player.ended;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y<-20){ m.s.y=H+20; m.s.x=Math.random()*W; } }
+      const baseVis=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      const densVis=(i/motes.length) < clamp01(moteDensity*0.55);
+      const visible=baseVis && (densVis || moteDensity<=1);
+      m.s.alpha=visible? moteEnvelope*(0.7+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>

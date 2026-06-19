@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2 – Bentleyho pravidla, kompilátor, profiling · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="01-uvod-architektura.html">← předchozí: Úvod a architektura</a>
+    <a class="nav-link" href="03-benchmarking-statistika-wcet.html">další: Benchmarking →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 2 · <span class="badge badge-c">C/C++ část</span></div>
+    <h1>Bentleyho pravidla, kompilátor a profiling</h1>
+    <p class="perex">Dvě doplňující se témata efektivního softwaru. Nejdřív <strong>Bentleyho pravidla</strong> –
+    katalog zdrojových optimalizací (datové struktury, logika, smyčky, funkce), které snižují <em>množství
+    práce</em>, kterou program vykoná. Pak <strong>kompilátor a profiling</strong>: jak je kompilátor
+    postavený (frontend → middle-end → backend), co je AST a IR, které z Bentleyho pravidel kompilátor
+    dělá sám a které ne, co znamenají <code>restrict</code>, <code>volatile</code>, undefined behavior,
+    <code>-O2</code>/<code>-O3</code>, LTO a PGO – a nakonec jak <strong>profilovat</strong> reálné
+    programy (instrumentace vs. sampling, perf, performance counters, flamegraphy), abyste optimalizovali
+    skutečná úzká hrdla, a ne podle dojmu.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#ds">Bentley: datové struktury</a></li>
+      <li><a href="#logika">Bentley: logika</a></li>
+      <li><a href="#smycky">Bentley: smyčky</a></li>
+      <li><a href="#funkce">Bentley: funkce</a></li>
+      <li><a href="#zaver-bentley">Redukce práce je jen heuristika</a></li>
+      <li><a href="#kompilator">Struktura kompilátoru</a></li>
+      <li><a href="#ast">Frontend a AST</a></li>
+      <li><a href="#backend">Naivní backend</a></li>
+      <li><a href="#ir">IR a middle-end (LLVM)</a></li>
+      <li><a href="#pasy">Optimalizační pasy</a></li>
+      <li><a href="#restrict">restrict, UB, volatile</a></li>
+      <li><a href="#linker">Linker, LTO, PGO</a></li>
+      <li><a href="#flagy">Flagy a co kompilátor neumí</a></li>
+      <li><a href="#profiling">Profiling</a></li>
+      <li><a href="#pojmy">Klíčové pojmy</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="ds">Bentley: datové struktury</h2>
+  <p><em>Writing Efficient Programs</em> (Jon Bentley, 1982), aktualizováno v MIT kurzu 6.172, je katalog
+  zdrojových optimalizačních vzorů. První rodina se týká volby a tvaru <strong>datových struktur</strong>.
+  Čtyři široké strategie, každá vyměňuje jeden zdroj za jiný:</p>
+  <ul>
+    <li><strong>Ubrat bity (packing)</strong> – vejít se víc dat do cache line (64 B). <em>Encoding</em> =
+      reprezentovat data méně bity (datum jako celé číslo místo řetězce). <em>Packing</em> = naskládat víc
+      malých hodnot do jednoho strojového slova.</li>
+    <li><strong>Obětovat paměť (augmentace)</strong> – přidat redundantní data pro zrychlení častých
+      operací. Např. pole <code>size</code> u spojového seznamu změní počítání z <em>O(N)</em> na
+      <em>O(1)</em>. Cena: víc paměti a složitější aktualizace.</li>
+    <li><strong>Obětovat čas (precomputace)</strong> – spočítat výsledky dopředu a uložit. Např. lookup
+      tabulky (LUT) pro goniometrii nebo počítání bitů. Cena: startovní čas a paměť.</li>
+    <li><strong>Vyhnout se práci (řídkost / caching)</strong> – neukládat to, co tam není; znovu použít, co
+      už máte. <em>Sparsity</em>: Compressed Row Storage (CSR) pro matice. <em>Caching</em>: ukládat
+      nedávné výsledky.</li>
+  </ul>
+
+  <h3>Packing a encoding: komprese dat v paměti</h3>
+  <p>Příklad – uložení <strong>data</strong>. Stejné datum ve čtyřech reprezentacích od největší po nejmenší:</p>
+  <table>
+    <thead><tr><th>Reprezentace</th><th>Velikost</th><th>Poznámka</th></tr></thead>
+    <tbody>
+      <tr><td>1. Řetězec <code>"February 23, 2026"</code></td><td>~18 B</td><td><code>F e b r u a r y   2 3 ,   2 0 2 6 \0</code></td></tr>
+      <tr><td>2. Struktura <code>{int y; int m; int d;}</code></td><td>12 B</td><td><code>y=2026, m=2, d=23</code></td></tr>
+      <tr><td>3a. Packed (těsně)</td><td>4 B</td><td><code>year:13 | m:4 | d:5</code> → 22 bitů, <strong>10 bitů nevyužito</strong></td></tr>
+      <tr><td>3b. Packed (zarovnaně)</td><td>4 B</td><td><code>year:16 | mon:8 | day:8</code> → plných 32 bitů</td></tr>
+    </tbody>
+  </table>
+  <p>Úvaha: celkový rozsah dní ≈ 3·10⁶ (±4096 let), <code>⌈log₂(3·10⁶)⌉ = 22 bitů</code> → vejde se do 4 bajtů.
+  Implementace pomocí bit-fieldů:</p>
+  <pre><code>typedef struct {
+  unsigned int year  : 13; // 0-8192
+  unsigned int month :  4; // 1-12
+  unsigned int day   :  5; // 1-31
+} date_t; // Uses 22 bits, fits in 4B</code></pre>
+
+  <h3>Zarovnání a padding: na pořadí záleží</h3>
+  <p>Hardware vyžaduje <strong>zarovnání</strong> (např. <code>int</code> na hranici 4 B). Kompilátor proto
+  vkládá neviditelné <strong>výplňové bajty (padding)</strong>, aby zarovnání splnil → plýtvání pamětí a
+  kapacitou cache. <strong>Pravidlo:</strong> řaď členy struktury podle velikosti <strong>od největšího
+  po nejmenší</strong>. Porovnání pro <code>char c; int i; char d;</code>:</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent">
+        <span class="db-title">Naivně (12 B)</span>
+        <span class="db-sub">0: <code>c</code> | pad</span>
+        <span class="db-sub">4: <code>i</code> (4 bytes)</span>
+        <span class="db-sub">8: <code>d</code> | pad</span>
+      </div>
+      <div class="diag-box accent">
+        <span class="db-title">Seřazeno (8 B)</span>
+        <span class="db-sub">0: <code>i</code> (4 bytes)</span>
+        <span class="db-sub">4: <code>c</code> | <code>d</code> | pad</span>
+      </div>
+    </div>
+    <div class="diag-cap">Řazení členů od největšího po nejmenší šetří padding.</div>
+  </div>
+  <p><strong>Úspora: 33 % (4 bajty).</strong></p>
+
+  <h3>Struct of Arrays (SoA): maximalizace cache a SIMD</h3>
+  <div class="box pisnicka" id="pisen-vektorizace">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Vektorizace</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s20">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <ul>
+    <li><strong>Array of Structs (AoS)</strong>: <code>[{x,y,z}, {x,y,z}]</code> – tradiční OOP. Rozložení:
+      <code>x1 y1 z1 x2 y2 z2</code>. Pokud saháte jen na jednu složku → <strong>33% efektivita cache</strong>.</li>
+    <li><strong>Struct of Arrays (SoA)</strong>: <code>[x,x], [y,y], [z,z]</code>. Rozložení:
+      <code>x1 x2 x3 x4 x5 x6</code> → <strong>100% efektivita + připraveno pro SIMD</strong>.</li>
+  </ul>
+  <p>Přínosy: plné cache line (každý načtený bajt se použije), SIMD (data jsou souvislá pro vektorové
+  jednotky), prefetching (hardwarový prefetcher miluje sekvenční proudy). <em>Cena:</em> přístup ke všem
+  polím entity <em>i</em> vyžaduje víc lookupů do různých polí.</p>
+
+  <h3>Augmentace: méně práce pro časté operace</h3>
+  <p>Přidáním informace do datové struktury umožníme častým operacím dělat <strong>méně práce</strong>.
+  Klasika: spojový seznam s ukazatelem <code>tail</code>.</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node muted"><span class="dn-title">head</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">A</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">B</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">C</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">D</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node muted"><span class="dn-title">null</span></div>
+    </div>
+    <div class="diag-cap">Standardní seznam: append <em>O(n)</em> – musí projít celý seznam.</div>
+  </div>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node muted"><span class="dn-title">head</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">A</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">B</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">C</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">D</span><span class="dn-sub">← tail</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node muted"><span class="dn-title">null</span></div>
+    </div>
+    <div class="diag-cap">Augmentovaný seznam: ukazatel <code>tail</code> skočí přímo na konec → append <em>O(1)</em>.</div>
+  </div>
+  <p><em>Cena:</em> paměť navíc na ukazatel a práce navíc na jeho údržbu při každé změně.</p>
+
+  <h3>Precomputace: binomické koeficienty</h3>
+  <p>Pro <code>C(n,k) = n! / (k!·(n-k)!)</code> přímý vzorec rychle přeteče (<code>13! &gt; 2³²</code>) a naivní
+  rekurze <code>C(n,k) = C(n-1,k-1) + C(n-1,k)</code> stojí <em>O(2ⁿ)</em> volání. <strong>Řešení:</strong>
+  předpočítat tabulku (Pascalův trojúhelník) v době inicializace nebo překladu → lookup <em>O(1)</em>.</p>
+  <pre><code>int choose[10][10] = {
+  {1, 0, ...}, {1, 1, ...},
+  {1, 2, 1, ...}, // ...
+};</code></pre>
+  <p>Pascalův trojúhelník v paměti (řádky <code>n</code>=0..9, sloupce <code>k</code>=0..9):</p>
+  <table>
+    <thead><tr><th>k→</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th></tr></thead>
+    <tbody>
+      <tr><th>0</th><td>1</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><th>1</th><td>1</td><td>1</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><th>2</th><td>1</td><td>2</td><td>1</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><th>3</th><td>1</td><td>3</td><td>3</td><td>1</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><th>4</th><td>1</td><td>4</td><td>6</td><td>4</td><td>1</td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><th>5</th><td>1</td><td>5</td><td>10</td><td>10</td><td>5</td><td>1</td><td></td><td></td><td></td><td></td></tr>
+      <tr><th>6</th><td>1</td><td>6</td><td>15</td><td>20</td><td>15</td><td>6</td><td>1</td><td></td><td></td><td></td></tr>
+      <tr><th>7</th><td>1</td><td>7</td><td>21</td><td>35</td><td>35</td><td>21</td><td>7</td><td>1</td><td></td><td></td></tr>
+      <tr><th>8</th><td>1</td><td>8</td><td>28</td><td>56</td><td>70</td><td>56</td><td>28</td><td>8</td><td>1</td><td></td></tr>
+      <tr><th>9</th><td>1</td><td>9</td><td>36</td><td>84</td><td>126</td><td>126</td><td>84</td><td>36</td><td>9</td><td>1</td></tr>
+    </tbody>
+  </table>
+  <p>Každá buňka vznikne součtem dvou buněk nad sebou (např. dvě <code>3</code> v řádku 3 dají <code>6</code> v řádku 4).</p>
+
+  <h3>Caching: nepřepočítávej nedávné výsledky</h3>
+  <pre><code>// Bez cache
+double hypotenuse(double A, double B) {
+  return sqrt(A*A + B*B);
+}
+
+// S cache
+double hypotenuse(double A, double B) {
+  if (A == cached_A && B == cached_B)
+    return cached_h;
+  cached_A = A; cached_B = B;
+  return cached_h = sqrt(A*A + B*B);
+}</code></pre>
+  <p>Tok: <strong>[MISS]</strong> <code>Call(3,4)</code> → zkontroluj → spočítej → ulož → vrať 5;
+  <strong>[HIT]</strong> <code>Call(3,4)</code> → zkontroluj → vrať 5. → <strong>30 % rychlejší při hit rate 2/3.</strong></p>
+
+  <h3>Řídkost (sparsity) a CSR</h3>
+  <p>„Nejrychlejší způsob, jak něco spočítat, je nepočítat to vůbec.“ Neukládat a nepočítat s nulami.
+  Příklad matice 4×4 (8 nenulových prvků):</p>
+  <table>
+    <tbody>
+      <tr><td>3</td><td>0</td><td>1</td><td>0</td></tr>
+      <tr><td>0</td><td>4</td><td>5</td><td>9</td></tr>
+      <tr><td>2</td><td>0</td><td>0</td><td>6</td></tr>
+      <tr><td>0</td><td>0</td><td>7</td><td>0</td></tr>
+    </tbody>
+  </table>
+  <p>Husté násobení potřebuje <code>n² = 16</code> operací. Nenulových prvků je jen <strong>8</strong> → řídké
+  násobení vystačí s 8 operacemi. <strong>Compressed Sparse Row (CSR)</strong> uloží tři pole
+  (<code>n=4</code>, nnz<code>=8</code>):</p>
+  <table>
+    <thead><tr><th>Pole</th><th>Hodnoty</th><th>Význam</th></tr></thead>
+    <tbody>
+      <tr><th><code>rows</code> (n+1)</th><td><code>[0, 2, 5, 7, 8]</code></td><td>start každého řádku ve <code>vals</code></td></tr>
+      <tr><th><code>cols</code> (nnz)</th><td><code>[0, 2, 1, 2, 3, 0, 3, 2]</code></td><td>sloupcový index každého nenul. prvku</td></tr>
+      <tr><th><code>vals</code> (nnz)</th><td><code>[3, 1, 4, 5, 9, 2, 6, 7]</code></td><td>samotné hodnoty</td></tr>
+    </tbody>
+  </table>
+  <p>Složitost úložiště <strong>O(n + nnz)</strong> místo <strong>O(n²)</strong>. Stejná myšlenka jde
+  použít i na <strong>statický řídký graf</strong> (sousednosti) – paměť <code>O(V + E)</code> a
+  cache-friendly. Sousedy vrcholu <em>i</em> najdeme jako <code>E[P[i] .. P[i+1]]</code>:</p>
+  <table>
+    <tbody>
+      <tr><th>Vertex IDs</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td></td><td></td></tr>
+      <tr><th>Offsets (P)</th><td>0</td><td>2</td><td>5</td><td>5</td><td>6</td><td>7</td><td></td></tr>
+      <tr><th>Edges (E)</th><td>1</td><td>3</td><td>2</td><td>3</td><td>4</td><td>2</td><td>2</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="logika">Bentley: logika</h2>
+
+  <h3>Constant folding: vyhodnoť výrazy při překladu</h3>
+  <p>Konstantní výrazy ve zdrojáku vyhodnotit už při překladu, aby se nepočítaly za běhu. Moderní
+  kompilátory to dělají automaticky pro literály; pomocí <code>constexpr</code> (C23) / <code>consteval</code>
+  (C++) to lze <strong>vynutit</strong>.</p>
+  <pre><code>// Before: Runtime Math
+double earth_circumference(void) {
+    double radius = 6371000.0;
+    double diameter = 2 * radius;
+    double circ = M_PI * diameter;
+    return circ;
+}
+
+// After: Compile-time Constant (constexpr)
+constexpr double radius = 6371000.0;
+constexpr double diameter = 2 * radius;
+constexpr double circ = M_PI * diameter;
+double earth_circumference(void) {
+    return circ;
+}</code></pre>
+
+  <h3>Eliminace společných podvýrazů (CSE)</h3>
+  <p>Stejný výraz spočítat jen jednou a výsledek znovu použít.</p>
+  <pre><code>// Before
+a = b + c;
+b = a - d;
+c = b + c;
+d = a - d; // <-- a - d spočítáno dvakrát!
+
+// After
+a = b + c;
+b = a - d;
+c = b + c;
+d = b;     // <-- znovu použije výsledek b</code></pre>
+  <p>Pozor: třetí řádek <strong>nelze</strong> nahradit <code>c = a</code>, protože hodnota <code>b</code>
+  se na druhém řádku změnila.</p>
+
+  <h3>Algebraické identity: nahraď drahou matematiku</h3>
+  <p>Přibližné relativní ceny instrukcí:</p>
+  <table>
+    <thead><tr><th>Operace</th><th>Cena</th></tr></thead>
+    <tbody>
+      <tr><td>Add/Sub</td><td>1 takt</td></tr>
+      <tr><td>Mul</td><td>~3–5 taktů</td></tr>
+      <tr><td>Div</td><td>~20–40 taktů</td></tr>
+      <tr><td><code>sqrt()</code></td><td>~50+ taktů</td></tr>
+    </tbody>
+  </table>
+  <p>Klíčová identita: <code>√u ≤ v ⟺ u ≤ v²</code> (pro <code>v ≥ 0</code>). Místo drahé odmocniny
+  porovnáme druhé mocniny:</p>
+  <pre><code>// After: Compare Squares
+bool collides(ball_t *b1, ball_t *b2) {
+  double d2 =
+    sq(b1->x - b2->x) +
+    sq(b1->y - b2->y);
+  return d2 <= sq(b1->r + b2->r);
+}</code></pre>
+
+  <h3>Short-circuiting: přestaň vyhodnocovat, jakmile znáš výsledek</h3>
+  <p>C zaručuje u <code>&amp;&amp;</code> a <code>||</code> vyhodnocení <strong>zleva doprava se zkrácením</strong>.
+  Místo sečíst všechny prvky a pak porovnat se zastavíme, jakmile součet překročí limit:</p>
+  <pre><code>// After — stop, jakmile překročíme limit
+bool sum_exceeds(int *A, int n, int limit) {
+  int sum = 0;
+  for (int i = 0; i < n; i++) {
+    sum += A[i];
+    if (sum > limit) return true;
+  }
+  return false;
+}</code></pre>
+
+  <h3>Řazení testů podle frekvence a ceny</h3>
+  <p>Nejpravděpodobnější / nejlevnější test dej dopředu. U <code>is_whitespace</code> je nejčastější
+  mezera, tak ji testuj první:</p>
+  <pre><code>// After: Frequent First
+bool is_whitespace(char c) {
+  if (c == ' '  || c == '\n' ||
+      c == '\t' || c == '\r')
+    return true;
+  return false;
+}</code></pre>
+
+  <h3>Rychlá cesta (fast path)</h3>
+  <p>Před drahý výpočet vlož <strong>levný test pro brzký výstup</strong>. Běžný případ (~90 %) – míče
+  daleko od sebe – odbavíme levným AABB testem (axis-aligned bounding box, 3 porovnání); jen vzácný
+  případ (~10 %) spouští drahý přesný výpočet vzdálenosti.</p>
+  <pre><code>bool collides(ball_t *b1, ball_t *b2) {
+  // 1. Fast path — AABB overlap? (levné porovnání)
+  if (abs(b1->x - b2->x) > b1->r + b2->r || abs(b1->y - b2->y) > b1->r + b2->r ||
+      abs(b1->z - b2->z) > b1->r + b2->r) {
+      return false; // 90 % vyskočí zde
+  }
+  // 2. Slow path — přesná vzdálenost (drahá násobení)
+  double d2 = square(b1->x - b2->x) + square(b1->y - b2->y) + square(b1->z - b2->z);
+  return d2 <= square(b1->r + b2->r);
+}</code></pre>
+
+  <h3>Slučování testů: nahraď logiku lookupem</h3>
+  <p>Několik vnořených větví nahradíme jedním spočítaným indexem a <code>switch</code> (krok k tabulkové /
+  DFA logice). Pro úplnou sčítačku (full adder) spočítáme index <code>(a&lt;&lt;2)|(b&lt;&lt;1)|c</code>:</p>
+  <table>
+    <thead><tr><th>a</th><th>b</th><th>c</th><th>carry</th><th>sum</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+      <tr><td>0</td><td>0</td><td>1</td><td>0</td><td>1</td></tr>
+      <tr><td>0</td><td>1</td><td>0</td><td>0</td><td>1</td></tr>
+      <tr><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td></tr>
+      <tr><td>1</td><td>0</td><td>0</td><td>0</td><td>1</td></tr>
+      <tr><td>1</td><td>0</td><td>1</td><td>1</td><td>0</td></tr>
+      <tr><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+      <tr><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td></tr>
+    </tbody>
+  </table>
+  <pre><code>void full_add(int a, int b, int c,
+              int *sum, int *carry) {
+  int test = (a<<2) | (b<<1) | c;
+  switch (test) {
+    case 0: *sum=0; *carry=0; break;
+    case 1: *sum=1; *carry=0; break;
+    case 2: *sum=1; *carry=0; break;
+    case 3: *sum=0; *carry=1; break;
+    case 4: *sum=1; *carry=0; break;
+    case 5: *sum=0; *carry=1; break;
+    case 6: *sum=0; *carry=1; break;
+    case 7: *sum=1; *carry=1; break;
+  }
+}</code></pre>
+
+  <h2 id="smycky">Bentley: smyčky</h2>
+
+  <h3>Hoisting (LICM): vytáhni invariantní práci ze smyčky</h3>
+  <p><strong>Loop Invariant Code Motion</strong> – co se v každé iteraci nemění, spočítej jednou před
+  smyčkou, ne pokaždé znovu.</p>
+  <pre><code>// Before
+void scale(double *X, double *Y, int N) {
+  for (int i = 0; i < N; i++)
+    Y[i] = X[i] * exp(sqrt(M_PI/2));
+}
+
+// After: Precomputed Once
+void scale(double *X, double *Y, int N) {
+  double factor = exp(sqrt(M_PI/2));
+  for (int i = 0; i < N; i++)
+    Y[i] = X[i] * factor;
+}</code></pre>
+  <p>Kompilátory to umí dobře, ale <strong>vedlejší efekty</strong> (např. <code>errno</code> u
+  <code>sqrt</code>) jim to často blokují – proto je jistější hoistovat ručně.</p>
+
+  <h3>Sentinely: zjednoduš podmínku smyčky</h3>
+  <p><strong>Sentinel</strong> je speciální zarážková hodnota na okraji dat, která zjednoduší test ukončení
+  a odstraní kontrolu mezí z každé iterace. Klasické hledání dělá <strong>2n kontrol</strong> (<code>i&lt;n?</code>
+  + test prvku); se sentinelem stačí <strong>n+1 kontrol</strong> (jen test prvku).</p>
+  <pre><code>// After: One Check (Sentinel)
+bool contains(int *a, int n, int key) {
+  if (n == 0) return false;
+  int last = a[n-1];
+  a[n-1] = key;
+  int i = 0;
+  while (a[i] != key) i++;
+  a[n-1] = last;
+  return (i < n-1) || (last == key);
+}</code></pre>
+
+  <h3>Loop unrolling: méně režie, víc ILP</h3>
+  <p><strong>Rozvinutí smyčky</strong> spojí víc iterací → méně skoků a víc instruction-level
+  parallelismu (ILP). Svinutá smyčka má vysoký poměr kontrol k práci (2:1 – jeden <code>i&lt;n?</code> na
+  jedno <code>sum += A[i]</code>); rozvinutí na čtyři iterace (4 jednotky práce na jednu kontrolu) tento poměr sníží.</p>
+  <pre><code>// After: Partial Unroll (4×)
+int sum = 0, j;
+for (j = 0; j < n-3; j += 4) {
+  sum += A[j] + A[j+1] +
+         A[j+2] + A[j+3];
+}
+for (int i = j; i < n; ++i)
+  sum += A[i];</code></pre>
+
+  <h3>Loop fusion: lepší časová lokalita</h3>
+  <p><strong>Fúze smyček</strong> spojí dvě smyčky přes stejný rozsah → menší režie a data zůstanou v cache.
+  U dvou oddělených smyček mohou být <code>A[i], B[i]</code> z první smyčky <strong>vyhozeny</strong> z cache,
+  než doběhne druhá → načítají se <strong>dvakrát</strong>. Sloučená smyčka je drží v L1 → <strong>jednou</strong>.</p>
+  <pre><code>// After: One Pass, Data Hot
+for (int i = 0; i < n; ++i) {
+  C[i] = (A[i] <= B[i]) ? A[i] : B[i];
+  D[i] = (A[i] <= B[i]) ? B[i] : A[i];
+}
+// A[i], B[i] načteno jednou, zůstává v L1.</code></pre>
+
+  <h3>Eliminace zbytečných iterací: zužování mezí</h3>
+  <p>Úpravou mezí smyčky se vyhneme prázdným iteracím (např. trojúhelníkové smyčky). Místo plného čtverce
+  s testem <code>if (i &gt; j)</code> iterujeme jen dolní trojúhelník:</p>
+  <pre><code>// After: O(n^2/2), bez kontroly
+for (int i = 1; i < n; ++i) {
+  for (int j = 0; j < i; ++j) {
+    swap(A[i][j], A[j][i]);
+  }
+}</code></pre>
+
+  <h2 id="funkce">Bentley: funkce</h2>
+
+  <h3>Inlining: odstraň režii volání funkce</h3>
+  <p><strong>Inlining</strong> nahradí volání funkce jejím tělem. Odpadne režie volání (push argumentů,
+  vytvoření a uvolnění zásobníkového rámce, skok a návrat) a kompilátor může optimalizovat <strong>napříč
+  hranicí</strong> funkce – což zase umožní vektorizaci a unrolling.</p>
+  <pre><code>// Before
+double square(double x) { return x*x; }
+double sum_of_squares(double *A, int n) {
+  double sum = 0.0;
+  for (int i = 0; i < n; ++i) {
+    sum += square(A[i]);
+  }
+  return sum;
+}
+
+// After
+double sum_of_squares(double *A, int n) {
+  double sum = 0.0;
+  for (int i = 0; i < n; ++i) {
+    double temp = A[i];
+    sum += temp*temp;
+  }
+  return sum;
+}</code></pre>
+  <p><em>Cena:</em> inlining zvětší kód → tlak na instrukční cache. Zablokovat lze
+  <code>__attribute__((noinline))</code>.</p>
+
+  <h3>Eliminace koncové rekurze (tail call)</h3>
+  <p><strong>Tail Call Optimization</strong> znovu použije současný zásobníkový rámec pro poslední rekurzivní
+  volání → rekurze se změní ve smyčku, zásobník neroste.</p>
+  <pre><code>// After: Jump (Loop)
+void quicksort(int *A, int n) {
+  while (n > 1) {
+    int r = partition(A, n);
+    quicksort(A, r);
+    A += r + 1;
+    n -= r + 1;
+  }
+}</code></pre>
+
+  <h3>Zhrubnutí rekurze (coarsening)</h3>
+  <p>Zvětšíme základní případ a pod prahem ho odbavíme efektivnějším kódem bez režie volání. Quicksort
+  rozděluje (partition) jen <strong>nad prahem THRESHOLD = 10</strong>, pod ním převezme práci insertion sort:</p>
+  <pre><code>// After
+#define THRESHOLD 10
+void quicksort(int *A, int n) {
+  while (n > THRESHOLD) { // <-- změněná podmínka
+    int r = partition(A, n);
+    quicksort(A, r);
+    A += r + 1;
+    n -= r + 1;
+  }
+  // base case: insertion sort
+  insertion_sort(A, n);   // <-- nový base case
+}</code></pre>
+
+  <h2 id="zaver-bentley">Redukce práce je jen heuristika</h2>
+  <p>Vykoná-li program méně instrukcí, je vždy rychlejší? <strong>Ne nutně.</strong> Algoritmický návrh
+  může práci dramaticky snížit (např. <code>Θ(n log n)</code> řazení místo <code>Θ(n²)</code>), ale redukce
+  práce <strong>automaticky nesnižuje dobu běhu</strong> kvůli složitosti hardwaru:</p>
+  <ul>
+    <li>instruction-level parallelism (ILP),</li>
+    <li>caching a paměťová hierarchie,</li>
+    <li>vektorizace (SIMD),</li>
+    <li>spekulace a predikce skoků.</li>
+  </ul>
+  <p>Přesto je <strong>redukce práce dobrá heuristika</strong> pro zkrácení celkové doby běhu.</p>
+
+  <h2 id="kompilator">Struktura kompilátoru</h2>
+  <div class="box pisnicka" id="pisen-lekser">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Lekser</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s12">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p><strong>CPU je hardwarový interpret strojového kódu.</strong> Opakovaně načítá z paměti, čte/zapisuje
+  registry, počítá v ALU a zapisuje zpět. Strojový kód = serializované instrukce (binární kódování opkódů a
+  operandů). Např. <code>mov eax, [0x100]</code> → bajty <code>A1 00 01 00 00</code>, kde <code>A1</code> je
+  opkód a displacement <code>00 01 00 00</code> je little-endian <code>0x100</code>.</p>
+  <table>
+    <thead><tr><th>Assembly</th><th>Strojový kód</th></tr></thead>
+    <tbody>
+      <tr><td><code>mov eax, [0x100]</code></td><td><code>A1 00 01 00 00</code></td></tr>
+      <tr><td><code>add eax, [0x104]</code></td><td><code>05 05 04 01 00 00</code></td></tr>
+      <tr><td><code>mov [0x108], eax</code></td><td><code>A3 08 01 00 00</code></td></tr>
+    </tbody>
+  </table>
+  <div class="box poznamka">
+    <p class="box-title">💬 Základní věta softwarového inženýrství (D. Wheeler)</p>
+    <p>„Všechny problémy v informatice lze vyřešit další <strong>úrovní nepřímosti</strong> (indirection)…
+    kromě problému příliš mnoha úrovní nepřímosti.“ Vrstvy abstrakce vznikaly postupně: těžko psatelný
+    binární kód → <strong>assembler</strong> (1:1 serializér) → makra, návěští → <strong>linker</strong>
+    (symbolické zástupce → adresy) → <strong>C</strong> („přenositelný assembler“: strukturované řízení toku,
+    typy, funkce) → <strong>moderní jazyky</strong> (C++, Rust, Go: výjimky, RAII, šablony – ale těžší
+    mapování na strojový kód).</p>
+  </div>
+  <p><strong>Kompilátor</strong> = program, který transformuje zdrojový kód na spustitelný kód. Naivní
+  kompilátor má dvě části:</p>
+  <table>
+    <thead><tr><th>Frontend – problémy jazyka</th><th>Backend – problémy hardwaru/CPU</th></tr></thead>
+    <tbody>
+      <tr><td>Parsuje syntaxi konkrétního jazyka (C, C++, Rust)</td><td>Generuje assembler/strojový kód pro konkrétní CPU (x86-64, ARM, RISC-V, MIPS)</td></tr>
+      <tr><td>Produkuje <strong>Abstract Syntax Tree (AST)</strong> – strukturovanou reprezentaci zdroje</td><td>Používá šablony pro řízení toku (smyčky, podmínky, volání)</td></tr>
+      <tr><td>Řeší symboly – jména → ukazatele na interní struktury kompilátoru</td><td>Mapuje operace na instrukce CPU (sčítání → <code>add</code>)</td></tr>
+      <tr><td>Řeší metaprogramování – šablony, makra, <code>constexpr</code>, reflexi</td><td></td></tr>
+      <tr><td>„Desugaruje“ do základních jazykových konstrukcí</td><td></td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="ast">Frontend a AST</h2>
+  <p>Frontend rozparsuje zdrojový kód do <strong>abstraktního syntaktického stromu (AST)</strong>. Parser
+  čte zdroj a staví strom – odstraní formátování, ale zachová strukturu. Každý uzel = jedna sémantická akce.
+  Zdrojový kód je vlastně jen <em>serializační formát</em> AST. Pro zdroj:</p>
+  <pre><code>int square(int x) {
+    return x * x;
+}</code></pre>
+  <p>vznikne AST:</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-title">FunctionDecl</span><span class="dn-sub">square : int(int)</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">ParmVarDecl</span><span class="dn-sub">x : int</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">ReturnStmt</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-title">BinaryOp '*'</span><span class="dn-sub">: int</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">DeclRefExpr 'x' : int</span><span class="dn-sub">DeclRefExpr 'x' : int</span></div>
+    </div>
+    <div class="diag-cap">AST funkce <code>square</code>: <code>ReturnStmt</code> → <code>BinaryOp '*'</code> má dva operandy <code>x</code>.</div>
+  </div>
+  <p>Uzel je v kompilátoru obyčejná datová struktura:</p>
+  <pre><code>struct BinaryOp {
+    Operator op;
+    Type type;
+    Expr* left;
+    Expr* right;
+}</code></pre>
+  <p>Clangův AST obsahuje i detailní sémantické informace (typy, kasty, odkazy na deklarace). Vypíše se
+  příkazem <code>clang -Xclang -ast-dump -fsyntax-only example.c</code>:</p>
+  <pre><code>TranslationUnitDecl
+|-FunctionDecl &lt;line:1:1, line:3:1&gt; line:1:5 square 'int (int)'
+| |-ParmVarDecl &lt;col:12, col:16&gt; col:16 used x 'int'
+| `-CompoundStmt &lt;col:19, line:3:1&gt;
+|   `-ReturnStmt &lt;line:2:5, col:16&gt;
+|     `-BinaryOperator &lt;col:12, col:16&gt; 'int' '*'
+|       |-ImplicitCastExpr &lt;col:12&gt; 'int' &lt;LValueToRValue&gt;
+|       | `-DeclRefExpr &lt;col:12&gt; 'int' lvalue ParmVar 0x3c677960 'x' 'int'
+|       `-ImplicitCastExpr &lt;col:16&gt; 'int' &lt;LValueToRValue&gt;
+|         `-DeclRefExpr &lt;col:16&gt; 'int' lvalue ParmVar 0x3c677960 'x' 'int'
+`-FunctionDecl &lt;line:4:1, col:63&gt; col:5 main 'int (void)'
+  `-CompoundStmt &lt;col:15, col:63&gt;
+    `-ReturnStmt &lt;col:16, col:23&gt;
+      `-IntegerLiteral &lt;col:23&gt; 'int' 0</code></pre>
+
+  <h2 id="backend">Naivní backend</h2>
+  <p>Naivní backend překládá uzly AST přímo na šablony instrukcí: <strong>alokuje stack sloty</strong>
+  (jeden na proměnnou a dočasnou hodnotu), <strong>překládá výrazy</strong> a <strong>používá šablony pro
+  řízení toku</strong>. Výraz <code>a + b</code> se přeloží na:</p>
+  <pre><code>mov eax, [rbp - 4]    ; load a
+mov ebx, [rbp - 8]    ; load b
+add eax, ebx          ; a + b
+mov [rbp - 12], eax   ; store result</code></pre>
+  <p>Problém: tento přístup je hloupý. Pro jediné násobení v <code>square</code> naivní backend vygeneruje
+  <strong>7 instrukcí a 2 přístupy do paměti</strong>, zatímco optimum jsou <strong>3 instrukce a 0 přístupů
+  do paměti</strong>:</p>
+  <pre><code>; Naive (template translation)       ; Optimal (what we want)
+square:                              square:
+    push   rbp                           mov    eax, edi
+    mov    rbp, rsp                      imul   eax, edi
+    mov    [rbp-4], edi                  ret
+    mov    eax, [rbp-4]              ; 3 instructions, 0 memory accesses
+    imul   eax, [rbp-4]
+    pop    rbp
+    ret
+; 7 instructions, 2 memory accesses</code></pre>
+  <p>Chceme přenositelné C, ale <strong>optimální</strong> assembler. Jak na to?</p>
+
+  <h2 id="ir">IR a middle-end (LLVM)</h2>
+  <p>Kde optimalizovat – v AST, nebo v assembleru? Ani jedno není ideální. AST je strukturovaný strom
+  (<code>ForStmt</code>, <code>IfStmt</code>…), assembler plochý seznam instrukcí se skoky. Řešením je
+  <strong>mezireprezentace (IR)</strong> a <strong>control-flow graph (CFG)</strong>.</p>
+
+  <h3>Control Flow Graph (CFG)</h3>
+  <p>CFG reprezentuje, <strong>jak se kód vykonává</strong>, ne jak byl napsán. Seskupí instrukce do
+  <strong>základních bloků</strong> (uvnitř žádný skok), bloky spojí <strong>hranami</strong> (skoky) a
+  odhalí smyčky i mrtvý kód. Uzly = bloky, hrany = tok řízení.</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-title">BB0 (entry)</span><span class="dn-sub">sum = 0; i = 0;</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">BB1 (loop header)</span><span class="dn-sub">if (i &lt; n) goto BB2</span></div>
+      <div class="diag-arrow"><span class="lbl">true</span></div>
+      <div class="diag-node c-amber"><span class="dn-title">BB2 (loop body)</span><span class="dn-sub">sum += a[i]; i++;</span></div>
+      <div class="diag-arrow dashed"><span class="lbl">false → BB3 (exit): return sum;</span></div>
+      <div class="diag-node c-green"><span class="dn-title">BB3 (exit)</span><span class="dn-sub">return sum;</span></div>
+    </div>
+    <div class="diag-loop">back edge BB2 → BB1 (smyčka)</div>
+  </div>
+
+  <h3>Problém M×N a LLVM IR</h3>
+  <p>Podporovat M jazyků a N architektur naivně znamená <strong>M×N</strong> kompilátorů (4 jazyky × 4 cíle
+  = 16 implementací). Sdílená <strong>mezireprezentace</strong> to změní na <strong>M+N</strong>: každý
+  jazyk se přeloží do IR, každý cíl z IR (4 + 4 = 8 implementací).</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-blue"><span class="dn-title">Jazyky</span><span class="dn-sub">C · C++ · Rust · Swift</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">LLVM IR</span><span class="dn-sub">sdílená mezireprezentace</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">Cíle</span><span class="dn-sub">x86-64 · ARM64 · RISC-V · WASM</span></div>
+    </div>
+    <div class="diag-cap">Sdílené IR mění M×N na M+N implementací.</div>
+  </div>
+  <p><strong>Middle-end</strong> = optimalizátor pro <em>virtuální CPU</em>: místo pro
+  <strong>machine-independent</strong> optimalizace sdílené napříč jazyky i architekturami. <strong>IR</strong>
+  je „assembler“ tohoto virtuálního CPU – příklady <strong>LLVM IR</strong>, <strong>GCC GIMPLE</strong>.
+  Celá pipeline:</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node muted"><span class="dn-title">Source</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">Frontend</span><span class="dn-sub">Clang, GCC, Rustc · AST / sémantika</span></div>
+      <div class="diag-arrow"><span class="lbl">IR</span></div>
+      <div class="diag-node c-purple"><span class="dn-title">Middle-end</span><span class="dn-sub">Optimizer · Inlining, CSE, LICM…</span></div>
+      <div class="diag-arrow"><span class="lbl">IR</span></div>
+      <div class="diag-node c-amber"><span class="dn-title">Backend</span><span class="dn-sub">Code gen · Regalloc, scheduling</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">Binary</span></div>
+    </div>
+    <div class="diag-cap">Frontend = jazykově specifický | Middle-end = machine-independent | Backend = machine-specific</div>
+  </div>
+  <p>Stejné IR se na každé architektuře přeloží do jiného assembleru (jiné registry, kódování, volací
+  konvence), ale optimalizace v middle-endu prospějí <strong>všem</strong> cílům:</p>
+  <pre><code>; LLVM IR (shared)
+define i32 @square(i32 %x) {
+  %1 = alloca i32
+  store i32 %x, ptr %1
+  %2 = load i32, ptr %1
+  %3 = load i32, ptr %1
+  %4 = mul nsw i32 %2, %3
+  ret i32 %4
+}</code></pre>
+
+  <h2 id="pasy">Optimalizační pasy</h2>
+  <div class="box insight">
+    <p class="box-title">💡 Optimalizace nejsou magie</p>
+    <p>Jsou to <strong>jednoduché vyhledávání vzorů a jejich nahrazování</strong> (pattern matching &amp;
+    replacement). Těžké je <em>rozhodnout, kdy</em> optimalizovat (heuristiky, většina problémů je NP-těžká,
+    heuristika se může mýlit) a <em>jak rychle</em> (chytré datové struktury a efektivní algoritmy). Napsat
+    rychlý kompilátor je samo o sobě cvičení v Efektivním softwaru.</p>
+  </div>
+
+  <h3>Která Bentleyho pravidla zvládne kompilátor sám?</h3>
+  <p>Kompilátor zvládne většinu pravidel automaticky; ta, která <strong>obecně nezvládne</strong> (vyžadují
+  lidskou/návrhovou znalost), jsou v pravém sloupci.</p>
+  <table>
+    <thead><tr><th>Rodina</th><th>Kompilátor dělá automaticky</th><th>Zůstává programátorovi</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Datové struktury</strong></td><td>—</td><td>Packing/encoding; augmentace; precomputace; init v době překladu; caching; líné vyhodnocení; sparsity</td></tr>
+      <tr><td><strong>Logika</strong></td><td>Constant folding a propagace; CSE; algebraické identity; short-circuiting; řazení testů; slučování testů</td><td>Vytvoření rychlé cesty (fast path)</td></tr>
+      <tr><td><strong>Smyčky</strong></td><td>Hoisting; loop unrolling; loop fusion; eliminace zbytečných iterací</td><td>Sentinely</td></tr>
+      <tr><td><strong>Funkce</strong></td><td>Inlining; eliminace koncové rekurze</td><td>Zhrubnutí rekurze</td></tr>
+    </tbody>
+  </table>
+  <p>Kompilátor jde i nad rámec Bentleyho pravidel: <strong>datové struktury</strong> – register allocation,
+  mem2reg, scalar replacement of aggregates (sroa), zarovnání; <strong>smyčky</strong> – vektorizace,
+  unswitching, idiom replacement, loop fission/fusion, tiling, interchange; <strong>logika</strong> –
+  strength reduction, dead-code elimination, branch reordering, global value numbering; <strong>funkce</strong>
+  – unswitching, argument elimination. Je to pohyblivý cíl – vývojáři přidávají nové optimalizace.</p>
+
+  <h3>Desítky specializovaných pasů</h3>
+  <p>Moderní kompilátory aplikují desítky pasů. <strong>High-level (machine-independent)</strong> – názvy
+  v LLVM <code>-passes=…</code>: constant propagation (<code>constprop</code>), dead code elimination
+  (<code>dce</code>), dead store elimination (<code>dse</code>), inlining (<code>inline</code>), LICM
+  (<code>licm</code>), loop unrolling (<code>loop-unroll</code>), loop deletion (<code>loop-deletion</code>),
+  memcpy opt (<code>memcpyopt</code>), tail call elimination (<code>tailcallelim</code>), vektorizace
+  (<code>loop-vectorize</code>), global value numbering (<code>gvn</code>), jump threading
+  (<code>jump-threading</code>), scalar replacement of aggregates (<code>sroa</code>), promote memory to
+  register (<code>mem2reg</code>), sparse conditional constant propagation (<code>sccp</code>), simplify CFG
+  (<code>simplifycfg</code>), merge duplicate constants (<code>constmerge</code>), reassociate
+  (<code>reassociate</code>).</p>
+  <p><strong>Low-level (machine-specific):</strong> instruction selection (DAG → MachineInstr), peephole,
+  register allocation (greedy), prologue/epilogue insertion, branch probability block placement, machine CSE,
+  machine LICM, machine InstCombiner, X86 LEA optimize, stack slot coloring, shrink wrapping, control flow
+  optimizer, tail duplication, copy propagation, instruction scheduling.</p>
+
+  <h3>Příklady jednotlivých pasů</h3>
+  <p><strong>Constant propagation + folding</strong> – nahradí proměnné známými konstantami a vyhodnotí
+  výrazy při překladu. Oba pasy se navzájem živí a běží iterativně:</p>
+  <pre><code>// Before                  // After (-O2)
+int x = 5;                 return 16;
+int y = x + 3;  // → 8
+return y * 2;   // → 16
+; LLVM IR: 10 instructions → 1 (ret i32 16)</code></pre>
+  <p><strong>Dead Store Elimination</strong> – odstraní zápisy do paměti, které se přepíšou dřív, než se
+  přečtou („nepočítej, co nepotřebuješ“):</p>
+  <pre><code>// Before          // After (-O2)
+int a = 1;  // dead  return 2;
+a = 2;
+return a;</code></pre>
+  <p><strong>Loop-Invariant Code Motion</strong> – vytáhne neměnný výpočet ze smyčky do bloku
+  <strong>preheader</strong>:</p>
+  <pre><code>// Before                       // After (-O2)
+for (int i = 0; i < n; i++) {    int tmp = x * y;  // hoisted
+    a[i] = x * y + i;            for (int i = 0; i < n; i++) {
+}                                    a[i] = tmp + i;
+                                 }</code></pre>
+  <p><strong>Function inlining</strong> – nahradí volání tělem a odemkne další pasy (zde constant folding):</p>
+  <pre><code>// Before                            // After (-O2)
+int square(int x){ return x*x; }      int main() {
+int main(){ return square(5); }           return 25;  // inline → 5*5 → fold → 25
+                                      }</code></pre>
+  <p><em>Cena:</em> <code>-O3</code> vkládá funkce inline příliš agresivně → nafouknutí instrukční cache → někdy
+  pomalejší než <code>-O2</code>.</p>
+
+  <div class="box insight">
+    <p class="box-title">💡 Pasy se skládají do dramatické transformace</p>
+    <p>Pasy se navzájem živí: <code>mem2reg</code> povýší allocy → <code>licm</code> vytáhne invarianty →
+    <strong>SCEV</strong> rozpozná uzavřenou formu smyčky → <code>instcombine</code> zjednoduší. U funkce
+    <code>square</code> se smyčka <strong>úplně eliminuje</strong> a výsledek se spočítá vzorcem
+    <code>select(x&gt;1, x*(x-1), 0) + x</code>. Vyzkoušejte: <code>clang -S -emit-llvm -O2 -o - square-for.c</code>.</p>
+  </div>
+
+  <h2 id="restrict">restrict, undefined behavior, volatile</h2>
+  <p><strong>Motivace:</strong> <code>-O2</code> dává až 300% zrychlení i na triviální smyčce.</p>
+  <pre><code>// veclib.c
+void vecadd(int *a, int *b, int *c, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        a[i] += c[i];
+        b[i] += c[i];
+    }
+}</code></pre>
+  <pre><code>gcc -O0 -o vecadd *.c && ./vecadd   # time = 0.37s
+gcc -O2 -o vecadd *.c && ./vecadd   # time = 0.12s  → ~300% speedup!</code></pre>
+  <p>Ale ani na <code>-O2</code> se assembler <strong>nevektorizuje</strong> a <code>c[i]</code> se načítá
+  <strong>dvakrát</strong> za iteraci:</p>
+  <pre><code>vecadd:
+    test   rcx, rcx
+    je     .exit
+    xor    eax, eax
+.loop:
+    mov    r8d, [rdx+rax*4]   ; load c[i]
+    add    [rdi+rax*4], r8d   ; a[i] += c[i]
+    mov    r8d, [rdx+rax*4]   ; load c[i] AGAIN!
+    add    [rsi+rax*4], r8d   ; b[i] += c[i]
+    add    rax, 1
+    cmp    rax, rcx
+    jne    .loop
+.exit:
+    ret</code></pre>
+
+  <h3>Pointer aliasing a restrict</h3>
+  <p>Proč dvakrát? Kompilátor neví, jestli se ukazatele nepřekrývají. <strong>Co když <code>a == c</code>?</strong>
+  Zápis do <code>a[i]</code> by změnil <code>c[i]</code>, takže ho musí znovu načíst. Slíbíme-li kompilátoru
+  pomocí <code>restrict</code>, že se ukazatele nikdy nepřekrývají, druhý <code>mov</code> zmizí a smyčka jde
+  <strong>vektorizovat</strong>.</p>
+  <pre><code>void vecadd(int *restrict a,
+            int *restrict b,
+            int *restrict c,
+            size_t n) { ... }</code></pre>
+  <div class="box pozor">
+    <p class="box-title">⚠️ restrict je smlouva</p>
+    <p><code>restrict</code> = váš <strong>slib</strong> kompilátoru, že se tyto ukazatele nikdy nepřekrývají.
+    Když slib porušíte, program má nedefinované chování.</p>
+  </div>
+
+  <h3>Undefined behavior (UB)</h3>
+  <p>Co udělá kompilátor s tímto kódem na <code>-O2</code>?</p>
+  <pre><code>if (x + 1 > x) {
+    do_fast_path();
+} else {
+    do_slow_path();  // Může tohle vůbec nastat?
+}</code></pre>
+  <p>Přetečení znaménkového <code>int</code> je v C <strong>undefined behavior</strong>. Kompilátor
+  předpokládá, že <em>nemůže nastat</em>, takže <code>x + 1 &gt; x</code> je <strong>vždy pravda</strong> –
+  větev <code>else</code> celá zmizí. Kompilátorův pohled: <code>if (true) do_fast_path();</code>.</p>
+
+  <h3>volatile</h3>
+  <p><code>volatile</code> nutí kompilátor vygenerovat <strong>každý</strong> load a store ze zdroje a
+  hodnotu <strong>nedržet v registru</strong> (necachovat ji). Nezbytné u memory-mapped hardwarových registrů:</p>
+  <pre><code>volatile int *status = (volatile int *)0x40021000;
+while (*status & 0x1) {  // Musí se číst znovu pokaždé!
+    // wait for hardware ready
+}</code></pre>
+  <p>Bez <code>volatile</code> by kompilátor hodnotu načetl jednou do registru → <strong>nekonečná
+  smyčka</strong>. Použití: memory-mapped registry, signal handlery, komunikace mezi vlákny (raději ale
+  atomiky).</p>
+
+  <h2 id="linker">Linker, LTO a PGO</h2>
+  <p>Soubory <code>math.c</code> a <code>main.c</code> se kompilují <strong>odděleně</strong>. Kompilátor
+  vidí volání <code>sqrt()</code>, ale nemá jeho kód → nechá <strong>symbolický zástupce</strong>.
+  <strong>Úkol linkeru:</strong></p>
+  <ol>
+    <li>Spojí všechny <code>.o</code> soubory.</li>
+    <li>Přiřadí finální paměťové adresy.</li>
+    <li>Doplní symboly → reálné adresy.</li>
+    <li>Odstraní nepoužité funkce (dead-code elimination) – vyžaduje <code>-ffunction-sections</code> +
+      <code>-Wl,--gc-sections</code>.</li>
+  </ol>
+  <p>Dynamické linkování přes <strong>PLT/GOT</strong> (lazy binding): první volání jde přes resolver
+  (pomalu, doplní GOT), další volání jsou přímý skok (rychle). <code>LD_BIND_NOW=1</code> vynutí eager
+  rozlišení a odstraní penalizaci prvního volání.</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-blue"><span class="dn-title">call printf@plt</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">PLT stub</span><span class="dn-sub">jmp *printf@got</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-title">GOT entry</span><span class="dn-sub">adresa printf</span></div>
+    </div>
+    <div class="diag-flow vert">
+      <div class="diag-node c-red"><span class="dn-num">1</span><span class="dn-title">První volání (pomalu)</span><span class="dn-sub">skok na resolver → Dynamic Linker (ld.so) rozliší symbol, opraví GOT</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-num">2</span><span class="dn-title">Další volání (rychle)</span><span class="dn-sub">přímý skok → libc.so: printf()</span></div>
+    </div>
+    <div class="diag-cap">PLT/GOT lazy binding: první volání přes resolver, další přímým skokem.</div>
+  </div>
+
+  <h3>Link-Time Optimization (LTO)</h3>
+  <p>LTO dá kompilátoru <strong>globální pohled</strong> tím, že do <code>.o</code> souborů zapíše IR.
+  Linker všechno IR načte → globální pohled → může <strong>inlinovat napříč soubory</strong> (odstraní
+  „zeď“ mezi <code>main.c</code> a <code>math.c</code>). Dvě varianty:</p>
+  <table>
+    <thead><tr><th>Full LTO</th><th>ThinLTO</th></tr></thead>
+    <tbody>
+      <tr><td>Všechna IR se sloučí do jednoho modulu a optimalizuje <strong>jednovláknově</strong> → sekvenční úzké hrdlo.</td><td>Ke každému <code>.bc</code> se přidá <strong>summary</strong>, vznikne kombinovaný index a optimalizace běží <strong>vysoce paralelně</strong> po jednotlivých modulech.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Profile-Guided Optimization (PGO)</h3>
+  <p>PGO nahradí kompilátorovo hádání <strong>naměřenými daty o běhu</strong>:</p>
+  <ol>
+    <li>Zkompiluj s instrumentací (<code>-fprofile-generate</code>).</li>
+    <li>Spusť s reprezentativní zátěží.</li>
+    <li>Překompiluj s profilovými daty (<code>-fprofile-use</code>).</li>
+  </ol>
+  <p><strong>Přínosy:</strong> lepší predikce skoků; inlining podle skutečně horkých cest; optimalizace
+  rozložení kódu. PGO pomáhá tam, kde kompilátor jinak jen hádá, které větve a volání jsou časté – tedy u
+  reálných programů se složitým, daty řízeným tokem řízení. Optimalizace se dají vrstvit (kumulativní
+  zrychlení nad <code>-O2</code>):</p>
+  <table>
+    <thead><tr><th>Fáze</th><th>Přidává</th><th>Zisk</th></tr></thead>
+    <tbody>
+      <tr><td><strong>-O2</strong></td><td>Baseline (jeden soubor)</td><td>—</td></tr>
+      <tr><td><strong>+ ThinLTO</strong></td><td>Celý program (inlining napříč soubory)</td><td>+5–10 %</td></tr>
+      <tr><td><strong>+ AutoFDO</strong></td><td>Profile-guided (pravděpodobnosti větví)</td><td>+10–20 %</td></tr>
+      <tr><td><strong>+ BOLT</strong></td><td>Post-link (rozložení v I-cache)</td><td>+5–15 %</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Celkové zrychlení ~30–60 % nad <code>-O2</code>.</strong></p>
+
+  <h2 id="flagy">Flagy a co kompilátor neumí</h2>
+  <p>Flagy jsou <strong>přednastavené sady</strong> – vždy změřte jejich skutečný dopad.</p>
+  <table>
+    <thead><tr><th>Flag</th><th>Efekt</th></tr></thead>
+    <tbody>
+      <tr><td><code>-g</code></td><td>Generuje debug info. <strong>Nutné</strong> pro profiling a ladění. Kombinuj <code>-O2 -g</code>.</td></tr>
+      <tr><td><code>-O0</code></td><td>Žádná optimalizace. Rychlý překlad, mizerný výkon. Jen pro ladění.</td></tr>
+      <tr><td><code>-O2</code></td><td>Standardní release. Dobrý poměr doby překladu a výkonu.</td></tr>
+      <tr><td><code>-O3</code></td><td>Agresivní. Auto-vektorizace, silný inlining. Může být <em>pomalejší</em> (nafouknutí I-cache).</td></tr>
+      <tr><td><code>-Og</code></td><td>Optimalizace pro ladění – jen ty, které nepřekáží krokování.</td></tr>
+      <tr><td><code>-Os</code> / <code>-Oz</code></td><td>Optimalizace na velikost binárky. Dobré, když jsou úzkým hrdlem I-cache miss.</td></tr>
+      <tr><td><code>-march=native</code></td><td>Kód pro <em>tento konkrétní CPU</em>. Odemkne AVX2/AVX-512. <strong>Nepřenositelné!</strong></td></tr>
+      <tr><td><code>-mtune=native</code></td><td>Optimalizuje plánování pro tento CPU, ale generická instrukční sada. <strong>Přenositelné!</strong></td></tr>
+      <tr><td><code>-flto</code></td><td>Zapne Link-Time Optimization.</td></tr>
+      <tr><td><code>-ffast-math</code></td><td>Poruší striktní IEEE 754 kvůli rychlosti. <strong>Pozor: může změnit výsledky!</strong></td></tr>
+      <tr><td><code>-fprofile-generate</code></td><td>Instrumentuje binárku pro PGO (krok 1). Pak <code>-fprofile-use</code>.</td></tr>
+    </tbody>
+  </table>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Co kompilátor NEUMÍ</p>
+    <p>Kompilátor <strong>umí</strong>: register allocation, inlining, loop unrolling &amp; hoisting,
+    constant folding, dead code elimination. <strong>Neumí</strong>: změnit vaše datové struktury (hustá
+    matice → řídká, 99 % nul), změnit algoritmickou složitost (O(n²) → O(n·log n)), využít vaši znalost
+    rozložení dat, opravit cache-nepřátelské rozložení (AoS → SoA), paralelizovat složitou logiku. Tohle
+    zůstává na programátorovi. Pravidlo: <strong>nikdy nehádejte, co kompilátor dělá – podívejte se</strong>
+    (godbolt.org / Compiler Explorer).</p>
+  </div>
+
+  <h2 id="profiling">Profiling</h2>
+  <div class="box poznamka">
+    <p class="box-title">💬 Donald Knuth</p>
+    <p>„Předčasná optimalizace je kořen všeho zla.“ Kompilátor optimalizuje, <strong>jak</strong> kód běží;
+    profiling řekne, <strong>kde</strong> je pomalý. Reálný SW je příliš složitý na „mentální vykonání“;
+    platí <strong>Paretovo pravidlo</strong> (80 % času v 20 % kódu). Chceme optimalizovat úzká hrdla, ne
+    všechen kód.</p>
+  </div>
+  <p>Úzká hrdla se mohou skrývat kdekoli v zásobníku: aplikační kód, knihovny třetích stran, jádro OS,
+  vzory přístupu do paměti, latence sítě, disk I/O. Najít skutečný zdroj bývá těžké.</p>
+
+  <h3>Které nástroje na co</h3>
+  <table>
+    <thead><tr><th>Technika</th><th>Nástroje</th></tr></thead>
+    <tbody>
+      <tr><td>Manuální instrumentace</td><td><code>printf()</code>, časová razítka, vlastní čítače</td></tr>
+      <tr><td>Statická instrumentace</td><td><code>gprof</code> – kompilátor vloží sondy</td></tr>
+      <tr><td>Dynamická instrumentace</td><td><code>callgrind</code>, <code>cachegrind</code> (Valgrind)</td></tr>
+      <tr><td>Event sampling (HW čítače)</td><td><code>perf</code>, VTune, <code>samply</code></td></tr>
+      <tr><td>Heap profiling</td><td><code>massif</code>, <code>heaptrack</code>, google-perftools</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Instrumentace</strong> = úprava kódu (při překladu nebo za běhu) tak, aby prováděl měření.</p>
+
+  <h3>Instrumentace vs. sampling</h3>
+  <table>
+    <thead><tr><th>Instrumentace</th><th>Event sampling</th></tr></thead>
+    <tbody>
+      <tr><td>Přidá profilovací kód do každé funkce</td><td>HW čítač vyvolá přerušení každých N událostí</td></tr>
+      <tr><td>Sleduje každé volání + časování</td><td>OS zaznamená instruction pointer → histogram</td></tr>
+      <tr><td>Režie <strong>20–100 %</strong></td><td>Režie <strong>&lt; 2 %</strong>, bez úpravy binárky</td></tr>
+      <tr><td><strong>Observer effect</strong>: mění, co měříte</td><td>Statisticky přesné pro horké cesty</td></tr>
+    </tbody>
+  </table>
+  <pre><code># Instrumentation (gprof)
+gcc -pg -o program *.c
+./program        # → gmon.out
+gprof program    # → flat profile
+
+# Event Sampling (perf)
+perf record ./program
+perf report</code></pre>
+
+  <h3>Performance counters a perf</h3>
+  <p>Většina moderních procesorů má <strong>hardwarové performance counters</strong>, které počítají
+  hardwarové události (takty, vykonané instrukce, cache reads/hits/misses, branch misses, memory references…).
+  <strong>Linux perf</strong> tyto čítače čte – program se kvůli profilování nemusí nijak upravovat (na rozdíl
+  od instrumentace). Čítač je nastaven tak, aby každých N událostí vyvolal přerušení; jádro při něm uloží
+  instruction pointer, takže vznikne histogram, kde se čas tráví. perf umí sledovat <strong>HW události</strong>
+  (cycles, cache misses, branch misses) i <strong>SW události</strong> (page faults, context switches,
+  tracepoints), analyzovat jednu aplikaci (proces + jádro) i celý systém, a při přepnutí kontextu čítače
+  ukládá a obnovuje (count „per-thread“).</p>
+  <p><code>perf stat</code> sečte čítače přes celý běh (rychlý přehled):</p>
+  <pre><code>perf stat -e cycles,branch-misses,branches,cache-misses,cache-references ./vecadd
+
+ Performance counter stats for './vecadd':
+     1,898,543,656      cycles                                     (79.98%)
+           267,572      branch-misses       #  0.08% of all branches
+       348,090,074      branches                                   (79.95%)
+        20,232,628      cache-misses        # 75.6% of all cache refs
+        26,767,103      cache-references                           (80.09%)
+       0.619 seconds time elapsed</code></pre>
+  <p><strong>75% cache-miss → program je memory-bound.</strong> <code>perf list</code> vypíše dostupné
+  události. <code>perf record</code> + <code>perf report</code> ukáže, <strong>kde</strong> se čas tráví:</p>
+  <pre><code>perf record -e cycles ./program     # → samples IP → perf.data
+perf report                          # → interaktivní TUI: které funkce jsou horké?
+perf record --call-graph dwarf ./program  # → také zaznamená call stacky</code></pre>
+  <p><strong>Kompilujte s <code>-g</code>!</strong> Bez debug info perf neumí přiřadit samply jménům funkcí.
+  Vždy <code>-O2 -g</code>. Call graph lze získat třemi způsoby: <code>--call-graph=fp</code> (frame pointer,
+  vyžaduje <code>-fno-omit-frame-pointer</code>), <code>--call-graph=dwarf</code> (z debug info, vyžaduje
+  <code>-g</code>), <code>--call-graph=lbr</code> (hardwarový Last Branch Record na moderních Intel CPU, bez
+  flagů, ale omezený hloubkou bufferu).</p>
+  <div class="box poznamka">
+    <p class="box-title">💬 Z praxe (lab)</p>
+    <p>Čtení čítačů standardně vyžaduje práva (proto perf nejde spustit na školních počítačích bez root).
+    Lze povolit: <code>echo 1 | sudo tee /proc/sys/kernel/perf_event_paranoid</code> (na Ritchie je hodnota 0).
+    Čítače jde číst i přímo z C/C++ přes <code>perf_event_open</code>, případně knihovny <strong>libpfm</strong>
+    nebo <strong>PAPI</strong> – nevýhoda přímého přístupu je, že není jasné, kdo událost způsobil; perf to ví,
+    protože běží v jádře a „context switchuje“ čítače per-thread.</p>
+  </div>
+
+  <h3>Flamegraphy: čtěte osy správně</h3>
+  <ul>
+    <li><strong>Šířka</strong> = strávený čas (<strong>jediná osa, na které záleží</strong>).</li>
+    <li><strong>Výška</strong> = hloubka volání (<strong>ne</strong> pomalost!).</li>
+    <li><strong>X-osa</strong> = abecedně, <strong>ne</strong> čas.</li>
+    <li><strong>Barva</strong> = náhodná (žádný význam).</li>
+  </ul>
+  <p>Časté chyby: myslet si, že vysoký zásobník = pomalý; že zleva doprava = pořadí v čase; ignorovat
+  off-CPU čas (I/O, zámky). Nástroje: <code>perf</code> (Linux), <code>samply</code> (web UI), Hotspot (GUI
+  nad perf daty). Pro krátké měření času lze použít C <code>clock()</code>, C++ <code>high_resolution_clock</code>
+  (chrono) nebo Linux <code>clock_gettime</code> (přes rychlý virtual syscall).</p>
+
+  <div class="box pojmy" id="pojmy">
+    <p class="box-title">🔑 Klíčové pojmy</p>
+    <dl class="pojmy-list">
+      <dt>Bentleyho pravidla</dt><dd>Katalog zdrojových optimalizací ve čtyřech rodinách (datové struktury, logika, smyčky, funkce) snižujících množství práce.</dd>
+      <dt>AoS vs SoA</dt><dd>Array of Structs (33 % efektivita cache) vs Struct of Arrays (100 % + připraveno pro SIMD).</dd>
+      <dt>CSR</dt><dd>Compressed Sparse Row – řídká matice/graf ve třech polích (rows, cols, vals); paměť O(n + nnz) místo O(n²).</dd>
+      <dt>AST</dt><dd>Abstract Syntax Tree – strukturovaná reprezentace zdroje; každý uzel = sémantická akce; výstup frontendu.</dd>
+      <dt>IR</dt><dd>Intermediate Representation (LLVM IR, GIMPLE) – „assembler“ virtuálního CPU; mění M×N na M+N.</dd>
+      <dt>Frontend / Middle-end / Backend</dt><dd>Jazykově specifický / machine-independent optimalizátor / machine-specific generátor kódu.</dd>
+      <dt>CFG</dt><dd>Control Flow Graph – základní bloky spojené hranami; ukazuje, jak se kód vykonává.</dd>
+      <dt>Optimalizační pas</dt><dd>Pattern match &amp; replace nad IR (mem2reg, licm, dce, dse, inline, gvn, sroa…); pasy se skládají.</dd>
+      <dt>restrict</dt><dd>Slib, že se ukazatele nepřekrývají → odstraní opětovné načítání → umožní vektorizaci.</dd>
+      <dt>Undefined behavior</dt><dd>Kompilátor předpokládá, že nenastane (např. znaménkové přetečení) → smí mazat větve.</dd>
+      <dt>volatile</dt><dd>Vynutí každý load/store, zakáže cachování v registru (MMIO, signal handlery).</dd>
+      <dt>LTO / PGO</dt><dd>Link-Time Optimization (inlining napříč soubory; Full vs ThinLTO) / Profile-Guided Optimization (optimalizace podle naměřeného běhu).</dd>
+      <dt>Instrumentace vs sampling</dt><dd>Sondy v každé funkci (20–100 %, observer effect) vs HW čítače s přerušením (&lt; 2 %, statisticky přesné).</dd>
+      <dt>Performance counters</dt><dd>HW čítače událostí (cycles, cache/branch misses); perf je čte bez úpravy programu.</dd>
+      <dt>Flamegraph</dt><dd>Šířka = čas, výška = hloubka volání, x = abecedně (ne čas), barva = náhodná.</dd>
+    </dl>
+  </div>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Popiš fáze kompilace C/C++ – vstup a výstup každé fáze, co se děje uvnitř. Vysvětli několik optimalizací. Co je PGO a kdy pomáhá? (4 b)</summary>
+    <div class="odpoved">
+      <p><strong>Fáze:</strong></p>
+      <ul>
+        <li><strong>Frontend</strong> – <em>vstup:</em> zdrojový kód; <em>výstup:</em> AST a posléze IR.
+          Parsuje syntaxi, řeší symboly a metaprogramování (šablony, makra, <code>constexpr</code>),
+          desugaruje do základních konstrukcí, vytvoří AST.</li>
+        <li><strong>Middle-end (optimalizátor)</strong> – <em>vstup i výstup:</em> IR (LLVM IR / GIMPLE).
+          Machine-independent optimalizace nad CFG (inlining, CSE, LICM, constant folding, DCE/DSE…).</li>
+        <li><strong>Backend (code generator)</strong> – <em>vstup:</em> IR; <em>výstup:</em> assembler /
+          strojový kód. Instruction selection, register allocation, instruction scheduling, vektorizace.</li>
+        <li><strong>Linker</strong> – <em>vstup:</em> <code>.o</code> soubory; <em>výstup:</em> spustitelný
+          soubor. Spojí objekty, přiřadí adresy, doplní symboly, odstraní mrtvý kód.</li>
+      </ul>
+      <p><strong>Optimalizace:</strong> constant folding/propagation (vyhodnocení konstant při překladu),
+      dead store elimination (smaž zápisy, které se nepřečtou), LICM (vytáhni invariant ze smyčky), inlining
+      (nahraď volání tělem a odemkni další pasy).</p>
+      <p><strong>PGO (Profile-Guided Optimization):</strong> 1) zkompiluj s instrumentací, 2) spusť na
+      reprezentativní zátěži, 3) překompiluj s profilem. Zlepší predikci skoků, inlining horkých cest a
+      rozložení kódu. <strong>Pomáhá</strong> tam, kde kompilátor jinak jen hádá, které větve/volání jsou
+      časté – tj. u reálných programů s daty řízeným tokem řízení (~10–20 % nad <code>-O2</code>).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Daný kód dvou funkcí: 3 optimalizace kompilátoru (jméno + popis), 1 manuální, kterou kompilátor neudělá, a proč.</summary>
+    <div class="odpoved">
+      <p><strong>3 optimalizace kompilátoru:</strong></p>
+      <ul>
+        <li><strong>Inlining</strong> – nahradí volání druhé funkce jejím tělem, odpadne režie volání a
+          umožní optimalizace napříč hranicí.</li>
+        <li><strong>Constant folding / propagation</strong> – konstantní výrazy vyhodnotí už při překladu.</li>
+        <li><strong>Strength reduction</strong> – nahradí drahou operaci levnější, např. násobení mocninou
+          dvou (<code>x * 2</code>) za <strong>bitový posun</strong> (<code>x &lt;&lt; 1</code>), nebo dělení
+          za posun; dále CSE, LICM, dead store elimination.</li>
+      </ul>
+      <p><strong>1 manuální optimalizace, kterou kompilátor neudělá:</strong> změna datové struktury nebo
+      algoritmu – např. AoS → SoA, hustá matice → řídká (CSR), nebo O(n²) → O(n·log n). Kompilátor to
+      <strong>neudělá</strong>, protože nezná sémantiku ani rozložení dat – garantuje zachování pozorovatelného
+      chování a nesmí měnit datové struktury ani algoritmickou složitost. (Stejně tak ručně přidaná rychlá
+      cesta nebo využití znalosti, že většina hodnot je nulová.)</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Napiš AST z úryvku (funkce s ifem). K čemu slouží AST při kompilaci?</summary>
+    <div class="odpoved">
+      <p>AST je strom, kde každý uzel = jedna sémantická konstrukce. Pro funkci s podmínkou typicky:</p>
+      <div class="diag">
+        <div class="diag-flow vert">
+          <div class="diag-node c-blue"><span class="dn-title">FunctionDecl</span><span class="dn-sub">f : …</span></div>
+          <div class="diag-arrow"></div>
+          <div class="diag-node c-purple"><span class="dn-title">ParmVarDecl</span><span class="dn-sub">…</span></div>
+          <div class="diag-arrow"></div>
+          <div class="diag-node c-purple"><span class="dn-title">CompoundStmt → IfStmt</span></div>
+          <div class="diag-arrow"></div>
+          <div class="diag-node c-amber"><span class="dn-title">podmínka</span><span class="dn-sub">BinaryOp '&gt;' / '==' … → DeclRefExpr …</span></div>
+          <div class="diag-arrow"></div>
+          <div class="diag-node c-green"><span class="dn-title">then / else</span><span class="dn-sub">then: CompoundStmt → ReturnStmt / … · else: CompoundStmt → …</span></div>
+        </div>
+        <div class="diag-cap">AST funkce s podmínkou: <code>IfStmt</code> má podmínku, větev <em>then</em> a <em>else</em>.</div>
+      </div>
+      <p><strong>K čemu slouží:</strong> je to <strong>výstup frontendu</strong> – strukturovaná
+      reprezentace zdroje, ze které se odstraní formátování, ale zachová struktura a sémantika (typy, odkazy
+      na deklarace). Slouží jako základ pro sémantickou analýzu (typová kontrola, řešení symbolů) a pro
+      generování mezireprezentace (IR), nad níž pak běží optimalizace. Zdrojový kód je vlastně jen
+      serializační formát AST.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Performance counters – jak fungují a jak se používají při profilování.</summary>
+    <div class="odpoved">
+      <p><strong>Jak fungují:</strong> jsou to hardwarové čítače v CPU, které počítají hardwarové události –
+      takty (cycles), vykonané instrukce, cache reads/hits/misses, branch misses, memory references atd.
+      Čítač lze nastavit tak, aby každých N událostí vyvolal <strong>přerušení</strong>; jádro při něm uloží
+      instruction pointer (a volitelně call stack). Z mnoha vzorků vznikne <strong>histogram</strong>, kde se
+      čas/události tráví.</p>
+      <p><strong>Jak se používají:</strong> přes <strong>Linux perf</strong>, který program nijak neupravuje
+      (na rozdíl od instrumentace). <code>perf list</code> vypíše dostupné události; <code>perf stat -e ...</code>
+      sečte čítače přes celý běh (rychlý přehled, např. 75% cache-miss → memory-bound); <code>perf record</code>
+      + <code>perf report</code> ukáže horké funkce (vzorkuje IP do <code>perf.data</code>);
+      <code>--call-graph dwarf</code> přidá call stacky. Kompilovat je nutné s <code>-g</code> (mapování na
+      jména funkcí). Čítače jde číst i přímo přes <code>perf_event_open</code> / libpfm / PAPI; výhoda perf je,
+      že běží v jádře a počítá události per-thread. Režie samplingu je &lt; 2 %.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P2</span> Co je IR a jaký problém řeší (M×N)?</summary>
+    <div class="odpoved">
+      <p>Intermediate Representation (LLVM IR, GCC GIMPLE) je „assembler“ virtuálního CPU mezi frontendem a
+      backendem. Bez IR potřebuje M jazyků × N architektur <strong>M×N</strong> kompilátorů; se sdíleným IR
+      stačí <strong>M+N</strong> (každý jazyk se do IR přeloží, každý cíl z IR). Machine-independent
+      optimalizace v middle-endu pak prospějí všem cílům najednou.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P2</span> Proč může <code>restrict</code> zrychlit kód a co znamená?</summary>
+    <div class="odpoved">
+      <p>Bez <code>restrict</code> kompilátor předpokládá možný <strong>aliasing</strong> ukazatelů – zápis
+      přes jeden ukazatel může změnit data za jiným, takže je musí znovu načítat a nemůže vektorizovat
+      (klasické dvojí načtení <code>c[i]</code> ve <code>vecadd</code>). <code>restrict</code> je <strong>slib
+      kompilátoru</strong>, že se ukazatele nepřekrývají → odstraní opětovné načtení → umožní vektorizaci.
+      Porušení slibu = undefined behavior.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P2</span> Jaký je rozdíl mezi instrumentací a samplingem?</summary>
+    <div class="odpoved">
+      <p><strong>Instrumentace</strong> (gprof, <code>-pg</code>) přidá sondy do každé funkce, sleduje každé
+      volání i časování, má režii 20–100 % a trpí <strong>observer effectem</strong> (mění to, co měříte).
+      <strong>Sampling</strong> (perf, HW čítače) periodicky přeruší běh a zaznamená instruction pointer –
+      režie &lt; 2 %, bez úpravy binárky, statisticky přesné pro horké cesty.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li><strong>Bentleyho pravidla</strong> ve 4 rodinách snižují <em>práci</em>: datové struktury
+        (packing/bit-fieldy, zarovnání velký→malý, AoS→SoA, augmentace, precomputace, caching, sparsity/CSR),
+        logika (constant folding, CSE, porovnání mocnin místo <code>sqrt</code>, short-circuit, řazení testů,
+        fast path, lookup), smyčky (hoisting/LICM, sentinely, unrolling, fúze, zúžení mezí), funkce (inlining,
+        koncová rekurze → iterace, zhrubnutí rekurze).</li>
+      <li>Redukce práce je <strong>jen heuristika</strong> – kvůli ILP, cache, SIMD a predikci nemusí méně
+        instrukcí znamenat rychleji.</li>
+      <li>Kompilátor = <strong>frontend</strong> (parse → AST, symboly, desugar) + <strong>middle-end</strong>
+        (machine-independent optimalizátor nad <strong>IR</strong> / virtuálním CPU, CFG) + <strong>backend</strong>
+        (machine-specific: instruction selection, register allocation, scheduling).</li>
+      <li><strong>IR</strong> mění problém <strong>M×N</strong> jazyků/cílů na <strong>M+N</strong>. Naivní
+        backend dá pro <code>square</code> 7 instrukcí; <strong>register allocation</strong> je největší výhra
+        (→ 3 instrukce, 0 přístupů do paměti).</li>
+      <li>Optimalizace = <strong>pattern match &amp; replace</strong> řízené NP-těžkými heuristikami; pasy se
+        <strong>skládají</strong> (mem2reg → licm → SCEV → instcombine smaže celou smyčku).</li>
+      <li>Páky programátora: <code>restrict</code> (ukazatele nealiasují → vektorizace), nespoléhat na
+        <strong>UB</strong> (znaménkové přetečení smaže větve), <code>volatile</code> (každý load/store pro
+        MMIO/signal handlery).</li>
+      <li>Kompilátor <strong>nezmění</strong> datové struktury, algoritmickou složitost, rozložení (AoS→SoA)
+        ani nevyužije znalost dat – to zůstává programátorovi.</li>
+      <li>Flagy jsou presety – <strong>vždy měř</strong>. <code>-O2 -g</code> je praktický default;
+        <code>-O3</code> může být pomalejší (I-cache); <code>-march=native</code> odemkne AVX, ale není
+        přenositelné; <code>-ffast-math</code> mění výsledky. <strong>LTO</strong> (Full vs Thin) = inlining
+        napříč soubory; <strong>PGO/AutoFDO/BOLT</strong> se vrství na ~30–60 % nad <code>-O2</code>.</li>
+      <li>Profiling: <strong>nehádej, měř</strong> (80/20). <strong>Instrumentace</strong> (gprof, 20–100 %,
+        observer effect) vs <strong>sampling</strong> (perf, HW čítače, &lt; 2 %). <code>perf stat</code> pro
+        přehled (75% cache-miss → memory-bound), <code>perf record/report</code> + <code>--call-graph dwarf</code>
+        na horké funkce, vždy <code>-O2 -g</code>. <strong>Flamegraph</strong>: šířka = čas (jediná podstatná
+        osa), výška = hloubka, x = abecedně, barva náhodná.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="index.html">← Zpět na obsah</a></span>
+    <span><a href="03-benchmarking-statistika-wcet.html">Další: Benchmarking, statistika, WCET →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Lokalita — Proč paměť brzdí — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#0a0a2e; --bg-bot:#1a0a2e; --grid:#3a1a6e; --panel:#160a32; --text:#eafaff; --muted:#9a8fc7;
+    --accent:#5BE0FF; --accent2:#FF4FD8; --core:#5BE0FF; --l2:#3FE0C8; --l3:#FF9E3D; --ram:#FF4FD8;
+    --hit:#5BE08A; --miss:#FF5A5A; --ink:#120a24; --border:#2a1a52;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(91,224,255,.16);border:1px solid rgba(91,224,255,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#06061f;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(6,4,30,.80),rgba(6,4,30,.36) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(91,224,255,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 16px rgba(91,224,255,.95)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#c9bdf0;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(30,16,70,.85),rgba(6,6,31,.94));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#5BE0FF,#FF4FD8);color:#06061f;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(255,79,216,.5)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#e6e0ff} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#2a1a52 var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">Lokalita — Proč paměť brzdí</span>
+    <span class="badge">IMMERSIVE VIDEO 🛣️</span>
+    <span class="hints">space = play/pauza · ←/→ = ±5s · R = restart</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">Proč paměť brzdí — výuková lyric-video k B4M36ESW. CPU jádro uhání po neonové dálnici k daleké RAM: lokalita, cache, hierarchie pater a TLB. O výkonu rozhoduje, jak moc čekáš na paměť — ne počet instrukcí.<small>~2 min 25 s · zpívaná videolekce · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="145.464" step="0.01" value="0">
+    <span class="time" id="tDur">2:25</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-lokalita.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){ showErr('pixi-filters not loaded after pixi (PIXI.filters.* empty)'); }
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/Lokalita.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:135980,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=145.464;            // MP3 / stage length (fallback when audio.duration unavailable)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (§2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};            // quadratic out
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // deterministic value-noise (so seek reproduces exact value)
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  // Beat (128 BPM, driving synthwave) + arpeggio (4x)
+  const BPM=128;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  const arp=t=>0.5+0.5*Math.sin(t*TAU*BPM/60*4);
+  // GLOBAL groove gates (default 1.0; S15 ramps to 0 over 135.98 -> 138.5)
+  function beatAmp(t){ return 1-easeInOut(ph(t,135.98,138.5)); }
+  function gateWaveAmp(t){ return 1-easeInOut(ph(t,135.98,138.5)); }
+
+  // ============================================================
+  //  2) PALETTE
+  // ============================================================
+  const C={
+    bgTop:0x0a0a2e, bgBot:0x1a0a2e, bgTopCold:0x0a0a22, bgBotCold:0x140518,
+    grid:0x3a1a6e, panel:0x160a32, accent:0x5be0ff, accent2:0xff4fd8,
+    core:0x5be0ff, l1:0x7fe9ff, l2:0x3fe0c8, l3:0xff9e3d, ram:0xff4fd8,
+    hit:0x5be08a, miss:0xff5a5a, text:0xeafaff, muted:0x9a8fc7, ink:0x120a24, white:0xffffff
+  };
+  // Canonical world coords
+  const W=1280,H=720;
+  const NEAR=[220,520], FAR=[900,250];
+  const CORE=[220,430];
+  const VANISH=[900,250];
+  // road perspective: roadPt(d) maps d in [0..1] (0=core, 1=RAM) to centerline point
+  function roadPt(d){ d=clamp01(d); return lerp2(NEAR,FAR,easeIn(d)); }
+  function roadWidth(d){ d=clamp01(d); return lerp(260,24,easeIn(d)); }
+  // five hierarchy tier-gates (exact cycle labels = CS truth, FACT 3)
+  const TIERS=[
+    {name:'registry', cyc:'~1',        d:0.06, tone:C.core},
+    {name:'L1',       cyc:'~4',        d:0.18, tone:C.l1},
+    {name:'L2',       cyc:'~12',       d:0.34, tone:C.l2},
+    {name:'L3',       cyc:'~40',       d:0.56, tone:C.l3},
+    {name:'RAM',      cyc:'~100–300',  d:1.0,  tone:C.ram}
+  ];
+  const N_SLABS=24;
+  function slabTone(d){ return lerpColor(C.accent,C.ram,easeIn(d)); }
+  // car position at road progress prog
+  function carPos(prog){ return roadPt(prog); }
+  function carScale(prog){ return lerp(1.0,0.4,clamp01(prog)); }
+  // booth / kiosk offsets
+  function boothPos(){ const p=roadPt(0.10); return [p[0]+90,p[1]]; }
+  function kioskPos(){ const p=roadPt(0.04); return [p[0]-90,p[1]]; }
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list
+  const _ofx=[]; // {name, filter}
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §7)
+  //  Optional keyed PNGs in videos/assets/img/<slug>.png layer ON TOP of the
+  //  always-drawn vector actors. With NO images present (window.ASSETS undefined)
+  //  the video is a COMPLETE, visually-unchanged vector masterpiece. The loader is
+  //  fire-and-forget; sprites are STATIC decoration so __seek / the GOLDEN RULE are
+  //  unaffected. NOTE: no assets-lokalita.js tag is shipped → window.ASSETS is
+  //  undefined → tryLoad returns null for every slug → pure vector.
+  // ============================================================
+  const IMG={};
+  const IMG_SPRITES={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,contain){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1;
+    let sc=targetW/tw;
+    if(contain){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc);
+    s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s);
+    return s;
+  }
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    const SLUGS=['cpu-core','ram-monolith','cache-booth','tlb-kiosk','synthwave-bg','access-car'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{
+      if(!tex) return; IMG[slug]=tex;
+      try{
+        if(slug==='synthwave-bg'){
+          const s=heroSprite(bgLayer,'synthwave-bg',W/2,H/2,W,0.25,true);
+          if(s){ bgLayer.setChildIndex(s,0); IMG_SPRITES['synthwave-bg']=s; }
+        } else if(slug==='cpu-core'){
+          const s=heroSprite(coreCont,'cpu-core',0,0,120,1.0,false); if(s) IMG_SPRITES['cpu-core']=s;
+        } else if(slug==='ram-monolith'){
+          const s=heroSprite(ramCont,'ram-monolith',0,0,140,0.95,false); if(s) IMG_SPRITES['ram-monolith']=s;
+        }
+        // cache-booth / tlb-kiosk / access-car attached by their scene builders
+      }catch(e){ showErr('img '+slug+': '+e.message); }
+    }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={cyan:radialTex(0x5be0ff),teal:radialTex(0x3fe0c8),amber:radialTex(0xff9e3d),magenta:radialTex(0xff4fd8),green:radialTex(0x5be08a),white:radialTex(0xffffff),red:radialTex(0xff8a8a)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  // thin line tex for SimpleRope trails
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={cyan:lineTex(0x5be0ff),green:lineTex(0x5be08a),red:lineTex(0xff6a6a),magenta:lineTex(0xff4fd8)};
+  // baked dot + cell for particle swarms
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  const _cellG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,12,12,3).endFill();
+  const CELL_TEX=app.renderer.generateTexture(_cellG,{resolution:2}); _cellG.destroy();
+  // baked radial-noise sprite for DisplacementFilter fallback
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const img=g.createImageData(256,256);for(let i=0;i<img.data.length;i+=4){img.data[i]=Math.random()*255;img.data[i+1]=Math.random()*255;img.data[i+2]=128;img.data[i+3]=255;}
+    g.putImageData(img,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+  // scanline strip tex (faint horizontal lines) for upper band TilingSprite
+  function scanTex(){const c=document.createElement('canvas');c.width=8;c.height=6;const g=c.getContext('2d');
+    g.fillStyle='rgba(91,224,255,0.0)';g.fillRect(0,0,8,6);g.fillStyle='rgba(120,170,255,0.10)';g.fillRect(0,0,8,1);return PIXI.Texture.from(c);}
+  const SCAN_TEX=scanTex();
+  // perspective ground-grid tile (toward-viewer scroll)
+  function gridTex(){const c=document.createElement('canvas');c.width=128;c.height=128;const g=c.getContext('2d');
+    g.clearRect(0,0,128,128); g.strokeStyle='rgba(120,70,210,0.55)'; g.lineWidth=1.4;
+    for(let x=0;x<=128;x+=32){ g.beginPath(); g.moveTo(x+0.5,0); g.lineTo(x+0.5,128); g.stroke(); }
+    for(let y=0;y<=128;y+=32){ g.beginPath(); g.moveTo(0,y+0.5); g.lineTo(128,y+0.5); g.stroke(); }
+    return PIXI.Texture.from(c);}
+  const GRID_TEX=gridTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (sky gradient + horizon sun + ground grid + scanline + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  // ColorMatrix grade on bgLayer (per-section)
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:false,kawase:false,crtDeep:false,motion:false};
+
+  // synthwave horizon sun (cacheAsBitmap): half-disc with scanline cuts + magenta->orange gradient
+  const sun=new PIXI.Graphics();
+  (function buildSun(){
+    const cx=VANISH[0],cy=VANISH[1],R=120, N=26;
+    for(let i=0;i<N;i++){
+      const f=i/(N-1);
+      const col=lerpColor(0xffb24d,0xff4fd8,f);
+      const yy=cy-R+f*R; const dy=yy-cy; if(dy>2) continue;
+      const half=Math.sqrt(Math.max(0,R*R-dy*dy));
+      sun.beginFill(col,0.95).drawRect(cx-half,yy,half*2,(R/N)+1.5).endFill();
+    }
+    for(let i=0;i<6;i++){ const yy=cy-R*0.62+i*(R*0.62)/6; sun.beginFill(0x140518,0.92).drawRect(cx-R,yy,R*2,4).endFill(); }
+  })();
+  bgLayer.addChild(sun); sun.cacheAsBitmap=true;
+  let sunBloom=null;
+  if(hasF('AdvancedBloomFilter')){ sunBloom=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); sun.filters=[sunBloom]; }
+  else if(hasF('GlowFilter')){ sunBloom=new F.GlowFilter({distance:24,outerStrength:1.5,color:0xff4fd8,quality:0.3}); sun.filters=[sunBloom]; }
+
+  // neon ground grid (TilingSprite) below horizon, scrolling toward viewer
+  const grid=new PIXI.TilingSprite(GRID_TEX,W,H-260);
+  grid.position.set(0,260); grid.tileScale.set(1.4,2.4); grid.alpha=0.5; grid.tint=C.grid;
+  bgLayer.addChild(grid);
+  let gridScrollSpeed=90;
+
+  // road slabs (cache-line paving) — redrawn each frame
+  const roadG=new PIXI.Graphics(); bgLayer.addChild(roadG);
+  const slabLit=new Float32Array(N_SLABS);  // per-slab "lit" boost set by scenes (pure f(t))
+  function slabTrapezoid(g,j){
+    const d0=j/N_SLABS, d1=(j+1)/N_SLABS;
+    const p0=roadPt(d0), p1=roadPt(d1);
+    const w0=roadWidth(d0)/2, w1=roadWidth(d1)/2;
+    const tone=slabTone((d0+d1)/2);
+    const baseA=(j<=3?0.5:0.32)*(0.7+0.3*beat(RT-d0*0.5));
+    const a=lerp(baseA,Math.min(0.95,baseA+0.5),clamp01(slabLit[j]||0));
+    g.beginFill(C.ink,0.5).lineStyle(2,tone,a)
+     .moveTo(p0[0]-w0,p0[1]).lineTo(p0[0]+w0,p0[1]).lineTo(p1[0]+w1,p1[1]).lineTo(p1[0]-w1,p1[1]).closePath().endFill();
+  }
+  function drawRoad(){ roadG.clear(); for(let j=N_SLABS-1;j>=0;j--){ slabTrapezoid(roadG,j); } }
+
+  // upper scanline band (synthwave screen texture)
+  const scanBand=new PIXI.TilingSprite(SCAN_TEX,W,260);
+  scanBand.position.set(0,0); scanBand.alpha=0.5; scanBand.blendMode=PIXI.BLEND_MODES.ADD;
+  bgLayer.addChild(scanBand);
+  // mild persistent CRT on bgLayer (composed via intent)
+  let crtF=null;
+  if(hasF('CRTFilter')){ crtF=new F.CRTFilter({curvature:1.0,lineWidth:1.0,lineContrast:0.25,vignetting:0.25,vignettingAlpha:0.6,noise:0.04,time:0}); }
+
+  // reflection band (bottom) — ReflectionFilter on a thin strip
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x1a0a2e,0.22).drawRect(0,648,W,72).endFill();
+  bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,5],waveLength:[40,120],alpha:[0.3,0.3],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,648,W,72); }
+
+  // persistent godray (warm magenta horizon shafts)
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:30,gain:0.4,lacunarity:2.2,time:0,parallel:true}); }
+
+  // ============================================================
+  //  6) AMBIENT MOTES (persistent ParticleContainer) + spark bursts
+  // ============================================================
+  const MOTE_COUNT=200;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:true},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const magenta=(i%6===0);const s=new PIXI.Sprite(magenta?GLOW.magenta:GLOW.cyan);s.anchor.set(0.5);s.tint=magenta?0xff8fe8:0x9af0ff;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.05+Math.random()*0.15);s.alpha=0;motePC.addChild(s);
+    motes.push({s,vx:(Math.random()-.5)*10,vy:-(6+Math.random()*18),phs:Math.random()*TAU,sp:0.6+Math.random()*1.1,baseScale:s.scale.x});}
+  let RT=0;             // current audio time (s), set at top of render(t)
+  let moteEnvelope=0;   // 0..1 global mote brightness
+  let moteVisibleRatio=1; // S15 thinning
+
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:-Math.abs(Math.sin(a)*v)-v*0.4,life:0,max:0.8+Math.random()*1.0});}
+  }
+  // arpeggio scanline shimmer sprite (sweeps up the road, additive)
+  const shimmer=glow('cyan',roadPt(0.5)[0],roadPt(0.5)[1],2.0,0.0,0x9af0ff); fxLayer.addChild(shimmer);
+
+  // ============================================================
+  //  7) PERSISTENT HIGHWAY ACTORS (roadRoot) + per-scene host (sceneRoot)
+  // ============================================================
+  const roadRoot=new PIXI.Container(); sceneLayer.addChild(roadRoot);
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot);
+
+  // ----- RAM monolith (far, magenta) at vanishing point -----
+  const ramCont=new PIXI.Container(); roadRoot.addChild(ramCont); ramCont.position.set(VANISH[0],VANISH[1]-18);
+  const ramG=new PIXI.Graphics(); ramCont.addChild(ramG);
+  function drawRam(g,bright){ g.clear();
+    g.beginFill(lerpColor(0x3a1052,0xff4fd8,bright*0.5),0.92).lineStyle(2.5,C.ram,0.9).drawRoundedRect(-46,-70,92,86,7).endFill();
+    g.lineStyle(1.5,C.ram,0.5); for(let i=-2;i<=2;i++){ g.moveTo(-40,i*14).lineTo(40,i*14); }
+    g.beginFill(C.ram,0.18).drawRoundedRect(-46,-70,92,86,7).endFill();
+  }
+  let ramGlow=null;
+  if(hasF('GlowFilter')){ ramGlow=new F.GlowFilter({distance:18,outerStrength:2,color:C.ram,quality:0.3}); ramCont.filters=[ramGlow]; }
+  const ramFlag=txt('RAM',15,C.ram,'800'); ramFlag.position.set(0,-86); ramCont.addChild(ramFlag);
+
+  // ----- CPU core hexagon (near, cyan) -----
+  const coreCont=new PIXI.Container(); roadRoot.addChild(coreCont); coreCont.position.set(CORE[0],CORE[1]);
+  const coreGlowSpr=glow('cyan',0,0,1.5,0.7,0x9af0ff); coreCont.addChild(coreGlowSpr);
+  const coreG=new PIXI.Graphics(); coreCont.addChild(coreG);
+  function drawCore(g){ g.clear();
+    const R=42;
+    g.beginFill(0x0a2a40,0.95).lineStyle(3,C.core,1);
+    g.moveTo(R,0); for(let i=1;i<=6;i++){ const a=i/6*TAU; g.lineTo(Math.cos(a)*R,Math.sin(a)*R);} g.closePath().endFill();
+    g.lineStyle(2.5,C.accent,0.95).drawCircle(0,0,20);
+    g.lineStyle(2.5,C.white,0.95).moveTo(0,0).lineTo(0,-13); g.moveTo(0,0).lineTo(9,5);
+    g.beginFill(C.core,0.8); for(let i=0;i<6;i++){ const a=i/6*TAU; g.drawCircle(Math.cos(a)*R,Math.sin(a)*R,2.5);} g.endFill();
+  }
+  drawCore(coreG);
+  let coreBloom=null;
+  if(hasF('AdvancedBloomFilter')){ coreBloom=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:6,quality:4}); coreCont.filters=[coreBloom]; }
+  const coreLbl=txt('CPU',14,C.core,'800'); coreLbl.position.set(0,58); coreCont.addChild(coreLbl);
+  const spinner=new PIXI.Graphics(); coreCont.addChild(spinner);
+  // WAIT counter over the core
+  const waitLbl=txt('',26,C.accent,'900'); waitLbl.position.set(300,360); waitLbl.alpha=0; legible(waitLbl); roadRoot.addChild(waitLbl);
+  if(hasF('GlowFilter')){ waitLbl._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); waitLbl.filters=(waitLbl.filters||[]).concat([waitLbl._g]); }
+  const coreState={stalled:false, waitText:'', waitAlpha:0};
+
+  // ----- five tier-gates along the road -----
+  const gates=[];
+  TIERS.forEach((T,i)=>{
+    const g=new PIXI.Container(); roadRoot.addChild(g);
+    const p=roadPt(T.d); g.position.set(p[0],p[1]);
+    const sc=lerp(0.5,1.8,T.d);
+    const gg=new PIXI.Graphics(); g.addChild(gg);
+    const lbl=txt(T.name+' '+T.cyc,16,T.tone,'800'); lbl.position.set(0,-lerp(36,80,T.d)-12); legible(lbl); g.addChild(lbl);
+    let gGlow=null;
+    if(hasF('GlowFilter')){ gGlow=new F.GlowFilter({distance:12,outerStrength:0,color:T.tone,quality:0.3}); g.filters=[gGlow]; }
+    gates.push({i,T,cont:g,gg,lbl,gGlow,sc,lit:0});
+  });
+  function gateWaveWave(i){ const T=TIERS[i]; return gateWaveAmp(RT)*beat(RT - T.d*0.5); }
+  function drawGate(G){
+    const T=G.T, gg=G.gg, lit=G.lit;
+    const wBot=roadWidth(T.d)*0.55, hGate=lerp(36,80,T.d);
+    gg.clear();
+    const a=lerp(0.18,0.95,lit);
+    gg.lineStyle(lerp(2,5,T.d), T.tone, a*(0.55+gateWaveWave(G.i)*0.45));
+    gg.moveTo(-wBot,8).lineTo(-wBot,-hGate).lineTo(wBot,-hGate).lineTo(wBot,8);
+    gg.lineStyle(0).beginFill(T.tone,0.10*lit).drawRect(-wBot,-hGate,wBot*2,hGate+8).endFill();
+    if(G.gGlow) G.gGlow.outerStrength=lerp(0,2.4,lit)*(0.6+0.4*beat(RT-T.d*0.5));
+    G.lbl.alpha=lerp(0,1,lit);
+  }
+
+  // ----- cache booth (cyan box beside near road) -----
+  const booth=new PIXI.Container(); roadRoot.addChild(booth);
+  (function(){ const p=boothPos(); booth.position.set(p[0],p[1]); })();
+  const boothG=new PIXI.Graphics(); booth.addChild(boothG);
+  function drawBooth(g,a){ g.clear();
+    g.beginFill(0x07303f,0.92).lineStyle(2.5,C.accent,a).drawRoundedRect(-34,-30,68,56,7).endFill();
+    g.lineStyle(1.5,C.accent,a*0.6); for(let i=-1;i<=1;i++){ g.moveTo(-26,i*12).lineTo(26,i*12);}
+    g.beginFill(C.accent,0.10*a).drawRoundedRect(-34,-30,68,56,7).endFill();
+  }
+  const boothLbl=txt('cache',13,C.accent,'800'); boothLbl.position.set(0,-42); booth.addChild(boothLbl);
+  let boothGlow=null;
+  if(hasF('GlowFilter')){ boothGlow=new F.GlowFilter({distance:10,outerStrength:1.6,color:C.accent,quality:0.3}); booth.filters=[boothGlow]; }
+  booth.alpha=0; booth._on=0;
+
+  // ----- TLB kiosk (teal box before the drive) -----
+  const kiosk=new PIXI.Container(); roadRoot.addChild(kiosk);
+  (function(){ const p=kioskPos(); kiosk.position.set(p[0],p[1]); })();
+  const kioskG=new PIXI.Graphics(); kiosk.addChild(kioskG);
+  function drawKiosk(g,a){ g.clear();
+    g.beginFill(0x07332e,0.92).lineStyle(2.5,C.l2,a).drawRoundedRect(-30,-28,60,52,6).endFill();
+    g.lineStyle(2,C.l2,a*0.7).moveTo(-18,-10).lineTo(18,-10); g.moveTo(-18,2).lineTo(18,2);
+    g.beginFill(C.l2,0.10*a).drawRoundedRect(-30,-28,60,52,6).endFill();
+  }
+  const kioskLbl=txt('TLB',12,C.l2,'800'); kioskLbl.position.set(0,-38); kiosk.addChild(kioskLbl);
+  let kioskGlow=null;
+  if(hasF('GlowFilter')){ kioskGlow=new F.GlowFilter({distance:9,outerStrength:1.4,color:C.l2,quality:0.3}); kiosk.filters=[kioskGlow]; }
+  kiosk.alpha=0; kiosk._on=0; kiosk._hero=0;
+
+  // ----- dual HUD counters (top-right) -----
+  const hud=new PIXI.Container(); roadRoot.addChild(hud); hud.alpha=0;
+  const hudG=new PIXI.Graphics(); hud.addChild(hudG);
+  const instrLbl=txt('instrukce',14,C.muted,'700'); instrLbl.anchor.set(0,0.5); instrLbl.position.set(1040,80); legible(instrLbl); hud.addChild(instrLbl);
+  const instrVal=txt('0',16,C.muted,'800'); instrVal.anchor.set(1,0.5); instrVal.position.set(1200,80); legible(instrVal); hud.addChild(instrVal);
+  const missLbl=txt('cache misy',14,C.accent,'800'); missLbl.anchor.set(0,0.5); missLbl.position.set(1040,110); legible(missLbl); hud.addChild(missLbl);
+  const missVal=txt('0',16,C.accent,'800'); missVal.anchor.set(1,0.5); missVal.position.set(1200,110); legible(missVal); hud.addChild(missVal);
+  const needle=new PIXI.Graphics(); hud.addChild(needle);
+  const speedLbl=txt('rychlost',12,C.muted,'700'); speedLbl.position.set(1120,212); legible(speedLbl); hud.addChild(speedLbl);
+  const hudState={instr:0, miss:0, instrStruck:false, needle:0.5};
+  function drawHud(){
+    hudG.clear();
+    hudG.beginFill(C.ink,0.55).lineStyle(1,C.border,0.8).drawRoundedRect(1030,64,180,158,8).endFill();
+    needle.clear();
+    const cx=1120,cy=180,R=26;
+    needle.lineStyle(3,0x44306e,0.9).arc(cx,cy,R,Math.PI*0.78,Math.PI*2.22);
+    const ang=lerp(Math.PI*0.78,Math.PI*2.22,clamp01(hudState.needle));
+    const col=hudState.needle>0.6?C.hit:hudState.needle>0.3?C.accent:C.miss;
+    needle.lineStyle(3,col,1).moveTo(cx,cy).lineTo(cx+Math.cos(ang)*R,cy+Math.sin(ang)*R);
+    needle.beginFill(col,1).drawCircle(cx,cy,3).endFill();
+    instrVal.text=String(hudState.instr|0);
+    missVal.text=String(hudState.miss|0);
+    instrVal.style.fill=hudState.instrStruck?0x6a5e96:C.muted;
+    if(hudState.instrStruck){ hudG.lineStyle(2,C.muted,0.7).moveTo(1035,80).lineTo(1205,80); }
+  }
+
+  // ============================================================
+  //  8) ACCESS-CAR (vector chevron) + SimpleRope trail builders
+  // ============================================================
+  function makeCar(){ const c=new PIXI.Container(); const g=new PIXI.Graphics(); c.addChild(g); c._g=g; return c; }
+  function drawCar(c,tone){ const g=c._g; g.clear();
+    g.beginFill(tone,0.95).lineStyle(2,C.white,0.7);
+    g.moveTo(0,-14).lineTo(12,10).lineTo(0,3).lineTo(-12,10).closePath().endFill();
+  }
+  function makeRope(texKey,n){
+    const pts=[]; for(let i=0;i<(n||12);i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(TRAIL[texKey]||TRAIL.cyan,pts); r.blendMode=PIXI.BLEND_MODES.ADD; r.alpha=0;
+    r._pts=pts; return r;
+  }
+  function setRopeAlongPath(rope,path){
+    const p=rope._pts; const segs=path.length-1;
+    for(let i=0;i<p.length;i++){
+      const f=i/(p.length-1)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si;
+      p[i].x=lerp(path[si][0],path[si+1][0],lf); p[i].y=lerp(path[si][1],path[si+1][1],lf);
+    }
+  }
+
+  // ============================================================
+  //  9) TIER-GATE IGNITION SCHEDULE (S5, exact word triggers; pure f(t))
+  //  registry @34.68, L1 @37.53, L2 @38.00, L3 @38.57, RAM @40.30
+  // ============================================================
+  const GATE_IGNITE=[34.68,37.53,38.00,38.57,40.30];
+  function gateLit(i,t){ return easeOutBack(ph(t,GATE_IGNITE[i],GATE_IGNITE[i]+0.6)); }
+
+  // ============================================================
+  //  10) CAMERA RIG (GOLDEN RULE: all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  function shakeAmp(t){
+    let a=0;
+    a+=shakeEnv(t,104.64,4);   // S11 TLB MISS jolt
+    // S9b continuous unease over 87.68..94.10, ramping out 92.5..94.10
+    if(t>=87.68 && t<94.10){ a=Math.max(a,2*(1-ph(t,92.5,94.10))); }
+    return a<0.05?0:a;
+  }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function updateCamera(t){
+    const bAmp=beatAmp(t);
+    const sc=(1+bAmp*0.010*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  11) SCENE MANAGER
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy) prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c); prev.inst.c.destroy({children:true}); }catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ============================================================
+  //  12) SHARED FILTER INSTANCES (built once)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:24,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flash=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashGreen=new F.ColorOverlayFilter(C.hit,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashRed=new F.ColorOverlayFilter(C.miss,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashCyan=new F.ColorOverlayFilter(C.accent,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,360],innerRadius:0});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('MotionBlurFilter')) FILT.motion=new F.MotionBlurFilter([0,0],15,0);
+  if(hasF('TiltShiftFilter')) FILT.tilt=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,430),end:new PIXI.Point(W,430)});
+  if(hasF('RGBSplitFilter')) FILT.rgb=new F.RGBSplitFilter({red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('GlitchFilter')) FILT.glitch=new F.GlitchFilter({slices:6,offset:14,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('BulgePinchFilter')) FILT.bulge=new F.BulgePinchFilter({center:[0.5,0.5],radius:220,strength:0});
+  else FILT.bulgeDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  let _sceneFlashName=null;
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0)return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);}
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+
+  // ============================================================
+  //  13) RENDER HELPERS for persistent highway elements
+  // ============================================================
+  // tier-gate lit-levels: from S5 onward gates are lit (S5 ignites; after S5 stay lit)
+  function gateLitAt(i,t){
+    if(t>=42.0) return 1;                  // fully lit & held after the staircase reveal
+    if(t>=GATE_IGNITE[i]) return gateLit(i,t);
+    // pre-S5 low foreshadow flicker (S2/S3 mention)
+    if(t>=9.77) return 0.12;
+    return 0.06;
+  }
+  function renderHighway(t,sec){
+    // sun bloom
+    if(sunBloom){ if(sunBloom.bloomScale!==undefined) sunBloom.bloomScale=1.0+0.25*beat(t); else if(sunBloom.outerStrength!==undefined) sunBloom.outerStrength=1.2+0.6*beat(t); }
+    // core: pulse on beat (1 beat/instruction) unless stalled
+    const stalled=coreState.stalled;
+    const cs=stalled?1.0:(1+0.06*beat(t));
+    coreCont.scale.set(cs);
+    coreGlowSpr.scale.set(1.4+0.18*beat(t));
+    coreGlowSpr.alpha=0.55+0.25*beat(t);
+    if(coreBloom){ coreBloom.bloomScale=1.0+(stalled?0.1:0.3)*beat(t); }
+    // spinner ring while stalled
+    spinner.clear();
+    if(stalled){ const rr=54; spinner.lineStyle(3,C.accent,0.7); const a0=t*1.2; spinner.arc(0,0,rr,a0,a0+TAU*0.7); }
+    // RAM brightness ramp (S1 looms @3.28)
+    const ramBright=clamp01(ph(t,3.28,5.0))*0.6 + (t>=40.30?0.4:0) + 0.2;
+    drawRam(ramG,clamp01(ramBright));
+    if(ramGlow) ramGlow.outerStrength=1.6+0.6*beat(t);
+    // WAIT counter
+    waitLbl.text=coreState.waitText;
+    waitLbl.alpha=clamp01(coreState.waitAlpha);
+    if(waitLbl._g) waitLbl._g.outerStrength=2+1.2*beat(t);
+    // tier gates
+    for(const G of gates){ G.lit=gateLitAt(G.i,t); drawGate(G); }
+    // cache booth ignition (S4 @27.46)
+    const boothOn=easeOutBack(ph(t,27.46,28.2));
+    booth.alpha=clamp01(boothOn);
+    drawBooth(boothG,clamp01(boothOn));
+    if(boothGlow) boothGlow.outerStrength=1.4+0.5*beat(t);
+    // TLB kiosk: dim from start, hero in bridge (S10 @95.06)
+    let kioskOn=0.0, kioskHeroX=kioskPos()[0], kioskHeroY=kioskPos()[1], kioskSc=1.0;
+    if(t>=94.10){ kioskOn=easeOut(ph(t,94.10,95.0)); }
+    if(t>=95.06){ const hp=easeOutBack(ph(t,95.06,96.2)); kioskHeroX=lerp(kioskPos()[0],430,hp); kioskHeroY=lerp(kioskPos()[1],420,hp); kioskSc=lerp(1.0,1.7,hp); }
+    if(t>=108.90){ const rel=ph(t,108.90,109.5); kioskOn*= (1-rel); } // recede after bridge
+    kiosk.alpha=clamp01(kioskOn);
+    kiosk.position.set(kioskHeroX,kioskHeroY); kiosk.scale.set(kioskSc);
+    drawKiosk(kioskG,1);
+    if(kioskGlow) kioskGlow.outerStrength=1.2+0.5*beat(t);
+    // HUD counters: visible during chorus (S6, S12, S12b) + outro. PURE f(t) (frozen on pause).
+    // S9b (87.68-94.10) explicitly hides it. Fades are time-windowed, not frame-rate lerps.
+    let hudOn=0;
+    if(t>=47.52&&t<61.18) hudOn=easeOut(ph(t,47.52,48.0))*(1-ph(t,60.6,61.18));
+    else if(t>=108.90&&t<145.464) hudOn=easeOut(ph(t,108.90,109.4));
+    hud.alpha=clamp01(hudOn);
+    drawHud();
+    // arpeggio shimmer sweep up the road
+    const sp=arp(t);
+    const sd=(t*0.35)%1;
+    const spt=roadPt(sd); shimmer.position.set(spt[0],spt[1]); shimmer.scale.set(lerp(2.4,0.6,sd)); shimmer.alpha=0.18*sp;
+    // mild CRT deepen in bridge
+    bgIntent.crtDeep=(sec==='bridge' && t<108.90);
+  }
+
+  // ============================================================
+  //  14) reset per-frame transient state (scenes set it; pure f(t))
+  // ============================================================
+  function resetSlabLit(){ for(let j=0;j<N_SLABS;j++) slabLit[j]=0; }
+
+  // ============================================================
+  //  SCENES S0 .. S15
+  // ============================================================
+
+  // ---------- S0 : COLD OPEN 0.00-0.08 ----------
+  scene(0,0.08,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      moteEnvelope=0.3; coreState.stalled=false; coreState.waitAlpha=0;
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    }};
+  });
+
+  // ---------- S1 : INTRO 0.08-9.77 (the memory wall) ----------
+  scene(0.08,9.77,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    const title=txt('PROČ PAMĚŤ BRZDÍ',60,C.accent,'900'); title.position.set(640,150); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('lokalita · cache · TLB',24,C.muted,'700'); sub.position.set(640,200); legible(sub);
+    c.addChild(title,sub);
+    // request pulse running the road
+    const req=glow('cyan',CORE[0],CORE[1],0.9,0,0x9af0ff); c.addChild(req);
+    // 100-300 cycles label
+    const lat=txt('100–300 cyklů',22,C.ram,'800'); lat.position.set(640,300); lat.alpha=0; legible(lat); c.addChild(lat);
+    // latency ruler
+    const ruler=new PIXI.Graphics(); c.addChild(ruler);
+    const r1=txt('1',13,C.core,'800'); r1.position.set(200,600); legible(r1); c.addChild(r1);
+    const r2=txt('100–300',13,C.ram,'800'); r2.position.set(920,600); legible(r2); c.addChild(r2);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.3;
+      const tin=easeOut(ph(t,0.3,2.0));
+      title.alpha=tin*(1-ph(t,7.6,9.6)); title.y=160-tin*10; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // 1-cyc flash @2.79
+      if(t>=2.79 && !S.fired.has('onecyc')){ S.fired.add('onecyc'); if(FILT.flashGreen){ FILT.flashGreen.alpha=0.4; sceneFlash(FILT.flashGreen,true);} }
+      if(FILT.flashGreen && S.fired.has('onecyc')){ FILT.flashGreen.alpha=0.4*(1-ph(t,2.79,2.94)); if(t>2.95) sceneFlash(FILT.flashGreen,false); }
+      // request fires down the road @3.28 -> reaches RAM @6.0
+      const prog=easeIn(ph(t,3.28,6.0));
+      const rp=carPos(prog); req.position.set(rp[0],rp[1]); req.scale.set(lerp(1.0,0.45,prog)); req.alpha=(t>=3.28&&t<6.6)?0.85:0;
+      // light slabs the request has passed
+      for(let j=0;j<N_SLABS;j++){ if(prog*N_SLABS>=j) slabLit[j]=Math.max(slabLit[j], (t>=3.28&&t<7.5)?0.6:0); }
+      // core freezes mid-pulse @6.0+
+      coreState.stalled=(t>=6.0);
+      // WAIT counter ticks 1 -> ~200
+      const n=Math.round(lerp(1,200,ph(t,3.28,6.9)));
+      coreState.waitText=String(n); coreState.waitAlpha=(t>=3.28)?easeOut(ph(t,3.28,3.6)):0;
+      if(t>=6.90) coreState.waitText='~200';
+      if(t>=8.16) coreState.waitText='~300';
+      lat.alpha=easeOut(ph(t,6.90,7.4))*(1-ph(t,9.2,9.6));
+      // ruler grows
+      ruler.clear();
+      const rg=easeOut(ph(t,4,7));
+      ruler.lineStyle(3,C.muted,0.5).moveTo(200,620).lineTo(lerp(200,920,rg),620);
+      ruler.lineStyle(2,C.core,0.9).moveTo(200,612).lineTo(200,628);
+      ruler.lineStyle(2,C.ram,0.9).moveTo(920,612).lineTo(920,628);
+      r1.alpha=rg; r2.alpha=rg;
+    }};
+  });
+
+  // ---------- S2 : VERSE 1a 9.77-23.50 (the stall held) ----------
+  scene(9.77,23.50,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const bub1=txt('nečeká na výpočet,',20,C.text,'700'); bub1.position.set(360,300); bub1.alpha=0; legible(bub1); c.addChild(bub1);
+    const bub2=txt('čeká na paměť',20,C.ram,'800'); bub2.position.set(360,330); bub2.alpha=0; legible(bub2); c.addChild(bub2);
+    const retbeam=glow('magenta',VANISH[0],VANISH[1],1.2,0,0xff8fe8); c.addChild(retbeam);
+    let tiltOn=false;
+    return {c,update(lt,t){
+      camDollyScale=1+0.02*easeInOut(triWave(t,9.77,23.50)); camPivotX=lerp(W/2,CORE[0]+120,easeInOut(ph(t,9.77,12.0))); camPivotY=lerp(H/2,CORE[1],easeInOut(ph(t,9.77,12.0)));
+      moteEnvelope=0.32;
+      coreState.stalled=true;
+      coreState.waitText='~200'; coreState.waitAlpha=1;
+      // tilt-shift focus to core band y~430
+      if(FILT.tilt){ const band=easeOut(ph(t,9.77,11.0)); FILT.tilt.blur=70*band; FILT.tilt.start.y=430; FILT.tilt.end.y=430;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(FILT.tilt)<0)){ sceneRoot.filters=[FILT.tilt]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);} }
+      // thought-bubble gag @15.70
+      bub1.alpha=easeOut(ph(t,15.70,16.2))*(1-ph(t,21.6,22.0));
+      bub2.alpha=easeOut(ph(t,16.10,16.6))*(1-ph(t,21.6,22.0));
+      // request parked at RAM + slow return beam
+      retbeam.alpha=0.5+0.3*beat(t*0.5);
+      // road glows whole hold (parked at RAM)
+      for(let j=0;j<N_SLABS;j++) slabLit[j]=0.4*(0.6+0.4*beat(t-j*0.04));
+    },destroy(){ if(sceneRoot.filters && FILT.tilt && sceneRoot.filters.indexOf(FILT.tilt)>=0) sceneRoot.filters=null; }};
+  });
+
+  // ---------- S3 : VERSE 1b 23.50-26.68 (distance = latency) ----------
+  scene(23.50,26.68,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const packet=glow('cyan',roadPt(0.92)[0],roadPt(0.92)[1],0.5,0,0x9af0ff); c.addChild(packet);
+    const measure=new PIXI.Graphics(); c.addChild(measure);
+    const cap=txt('cesta je moc dlouhá',20,C.ram,'800'); cap.position.set(640,300); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      // camera dolly along the road
+      camPivotX=lerp(640,760,easeInOut(ph(t,23.50,26.09))); camPivotY=360; camDollyScale=1;
+      moteEnvelope=0.32; coreState.stalled=true; coreState.waitText='~200'; coreState.waitAlpha=0.8;
+      // MotionBlur on bg (intent)
+      if(FILT.motion){ const mv=easeInOut(ph(t,23.50,25.0))*(1-ph(t,25.5,26.09)); FILT.motion.velocity.x=6*mv; bgIntent.motion=(mv>0.02); }
+      // far packet + measuring line
+      const pp=roadPt(0.92); packet.position.set(pp[0],pp[1]); packet.alpha=easeOut(ph(t,24.10,24.6))*(0.7+0.3*beat(t));
+      measure.clear();
+      const mg=easeOut(ph(t,23.50,26.09));
+      measure.lineStyle(2,C.ram,0.7*mg);
+      const a=CORE, b=pp;
+      // dashed measuring line
+      const segs=14; for(let i=0;i<segs;i+=2){ const x0=lerp(a[0],b[0],i/segs),y0=lerp(a[1],b[1]*1+0,i/segs); const x1=lerp(a[0],b[0],(i+1)/segs),y1=lerp(a[1],b[1],(i+1)/segs); if((i/segs)<mg){ measure.moveTo(lerp(a[0],b[0],i/segs),lerp(a[1],b[1],i/segs)).lineTo(lerp(a[0],b[0],Math.min(mg,(i+1)/segs)),lerp(a[1],b[1],Math.min(mg,(i+1)/segs))); } }
+      cap.alpha=easeOut(ph(t,24.10,24.7))*(1-ph(t,26.2,26.6)); cap.y=300; cap.x=lerp(360,640,mg);
+      for(let j=0;j<N_SLABS;j++) slabLit[j]=0.35*(0.6+0.4*beat(t-j*0.04));
+    },destroy(){ bgIntent.motion=false; }};
+  });
+
+  // ---------- S4 : VERSE 1c 26.68-34.68 (cache exists) ----------
+  scene(26.68,34.68,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const offramp=new PIXI.Graphics(); c.addChild(offramp);
+    const pulse=glow('cyan',CORE[0],CORE[1],0.7,0,0x9af0ff); c.addChild(pulse);
+    const cap=txt('malá rychlá kopie u jádra',20,C.accent,'800'); cap.position.set(420,300); cap.alpha=0; legible(cap); c.addChild(cap);
+    const cap2=txt('procesor nestojí',18,C.hit,'800'); cap2.position.set(300,360); cap2.alpha=0; legible(cap2); c.addChild(cap2);
+    return {c,update(lt,t){
+      camDollyScale=1; const rc4=easeInOut(ph(t,26.68,27.9)); camPivotX=lerp(760,W/2,rc4); camPivotY=360;
+      moteEnvelope=0.33;
+      // off-ramp draws @27.46
+      offramp.clear();
+      const op=ph(t,27.46,29.0);
+      if(op>0.01){ const bp=boothPos(); const np=roadPt(0.05);
+        offramp.lineStyle(4,C.accent,0.7*op).moveTo(np[0],np[1]).quadraticCurveTo((np[0]+bp[0])/2,bp[1]-20,bp[0],bp[1]); }
+      // round-trip pulse core->booth->core (only to booth, NOT RAM)
+      const rt=(t-27.6)%2.0; const rp=clamp01(rt/2.0);
+      const bp=boothPos(); let pq=rp<0.5? rp/0.5 : 1-(rp-0.5)/0.5;
+      const px=lerp(CORE[0],bp[0],pq), py=lerp(CORE[1],bp[1],pq);
+      pulse.position.set(px,py); pulse.alpha=(t>=28.5&&t<32.5)?0.8*(0.6+0.4*beat(t)):0;
+      // WAIT drops ~200 -> ~6 @30.41
+      if(t>=30.41){ coreState.stalled=(t<33.06); const n=Math.round(lerp(200,6,easeOut(ph(t,30.41,32.0)))); coreState.waitText='~'+n; coreState.waitAlpha=1-ph(t,33.5,34.2); }
+      else { coreState.stalled=true; coreState.waitText='~200'; coreState.waitAlpha=1; }
+      // core resumes the beat @33.06
+      if(t>=33.06){ coreState.stalled=false;
+        if(!S.fired.has('resume')){ S.fired.add('resume'); if(FILT.flashGreen){ FILT.flashGreen.alpha=0.4; sceneFlash(FILT.flashGreen,true);} }
+      }
+      if(FILT.flashGreen && S.fired.has('resume')){ FILT.flashGreen.alpha=0.4*(1-ph(t,33.06,33.26)); if(t>33.27) sceneFlash(FILT.flashGreen,false); }
+      cap.alpha=easeOut(ph(t,29.26,29.8))*(1-ph(t,33.8,34.4));
+      cap2.alpha=easeOut(ph(t,32.30,32.8))*(1-ph(t,34.2,34.6));
+      // near slabs light (cache-resident)
+      for(let j=0;j<4;j++) slabLit[j]=0.7*(0.6+0.4*beat(t-j*0.05));
+    }};
+  });
+
+  // ---------- S5 : PRE-CHORUS 34.68-47.52 (hierarchy staircase) ----------
+  scene(34.68,47.52,'PRE-CHORUS','verse',(S)=>{
+    const c=new PIXI.Container();
+    const cap=txt('každé patro: pomalejší, ale větší',20,C.muted,'700'); cap.position.set(640,300); cap.alpha=0; legible(cap); c.addChild(cap);
+    // capacity/speed seesaw gauges per gate
+    const gauges=new PIXI.Graphics(); c.addChild(gauges);
+    const reach=new PIXI.Graphics(); c.addChild(reach);
+    return {c,update(lt,t){
+      camDollyScale=1+0.015*easeInOut(triWave(t,34.68,47.52)); camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.34; coreState.stalled=false; coreState.waitAlpha=0;
+      // gates ignite via gateLitAt() in renderHighway; trigger ColorOverlay micro-flash on each ignition
+      const igniteWords=[34.68,37.53,38.00,38.57,40.30];
+      igniteWords.forEach((iw,i)=>{ const key='ig'+i;
+        if(t>=iw && !S.fired.has(key)){ S.fired.add(key); if(FILT.flashCyan){ FILT.flashCyan.color=TIERS[i].tone; FILT.flashCyan.alpha=0.3; sceneFlash(FILT.flashCyan,true);} S._lastIg=iw; }
+      });
+      if(FILT.flashCyan && S._lastIg!=null){ FILT.flashCyan.alpha=0.3*(1-ph(t,S._lastIg,S._lastIg+0.18)); if(t>S._lastIg+0.2) sceneFlash(FILT.flashCyan,false); }
+      // staircase pulse + caption @41.15
+      cap.alpha=easeOut(ph(t,41.15,41.7))*(1-ph(t,46.0,46.5));
+      // capacity-vs-speed seesaw per gate @43.18
+      gauges.clear();
+      const gp=easeOut(ph(t,43.18,46.0));
+      if(gp>0.01){ gates.forEach((G,i)=>{ const p=roadPt(G.T.d); const speedF=lerp(1,0.15,G.T.d), capF=lerp(0.2,1,G.T.d);
+        gauges.beginFill(C.accent,0.7*gp).drawRect(p[0]-16,p[1]+14,12,-22*speedF*gp).endFill();
+        gauges.beginFill(C.ram,0.7*gp).drawRect(p[0]+4,p[1]+14,12,-22*capF*gp).endFill(); }); }
+      // reach-arrow @44.62 + wait bar @45.70
+      reach.clear();
+      const ra=ph(t,44.62,45.6);
+      if(ra>0.01){ const dd=lerp(0.3,0.8,ra); const rp=roadPt(dd);
+        reach.lineStyle(3,C.accent2,0.8*ra).moveTo(CORE[0],CORE[1]).lineTo(rp[0],rp[1]);
+        reach.beginFill(C.accent2,0.8*ra).drawCircle(rp[0],rp[1],5).endFill();
+        const wb=ph(t,45.70,46.6); if(wb>0.01){ reach.beginFill(C.miss,0.7*wb).drawRect(rp[0]-6,rp[1]+8,12,-18*wb).endFill(); } }
+    }};
+  });
+
+  // ============================================================
+  //  REUSABLE CHORUS SCENE (§4) — built once, driven by lineStarts
+  // ============================================================
+  function buildChorus(occ){
+    const c=new PIXI.Container();
+    const bloomGain={1:0.5,2:0.7}[occ]||0.5;
+    let bloomF=null;
+    if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // L1 headline callout
+    const head=txt('výkon = počet cache misů',18,C.accent,'800'); head.position.set(1000,238); head.alpha=0; legible(head); c.addChild(head);
+    // L3 crown + contiguous row
+    const crown=new PIXI.Graphics(); c.addChild(crown);
+    const row=new PIXI.Graphics(); c.addChild(row);
+    const scatter=new PIXI.Graphics(); c.addChild(scatter);
+    const localityLbl=txt('lokalita je král',20,C.accent,'900'); localityLbl.position.set(640,300); localityLbl.alpha=0; legible(localityLbl); c.addChild(localityLbl);
+    // L4 green sweep car + red scatter
+    const car=makeCar(); c.addChild(car); car.alpha=0;
+    const greenTrail=makeRope('green',14); c.addChild(greenTrail);
+    const redTrail=makeRope('red',14); c.addChild(redTrail);
+    c._chorus={occ,bloomGain,bloomF,head,crown,row,scatter,localityLbl,car,greenTrail,redTrail};
+    return c;
+  }
+  function updateChorus(c,t,LS,occ,S){
+    const X=c._chorus; const {bloomGain,bloomF,head,crown,row,scatter,localityLbl,car,greenTrail,redTrail}=X;
+    const L1=LS.L1,L2=LS.L2,L3=LS.L3,L4=LS.L4;
+    camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    moteEnvelope=(occ>=2?0.40:0.33);
+    coreState.stalled=false; coreState.waitAlpha=0;
+    if(bloomF) bloomF.bloomScale=1.0+bloomGain*beat(t);
+    if(sunBloom && sunBloom.bloomScale!==undefined) sunBloom.bloomScale=1.0+bloomGain*beat(t);
+
+    // ---- L1: ZoomBlur drop on first word, needle binds to cache-miss/WAIT ----
+    if(L1!=null && t>=L1 && (L2==null||t<L2)){
+      if(!S.fired.has('drop'+occ)){ S.fired.add('drop'+occ);
+        if(FILT.zoom){ const rp=roadPt(0.4); FILT.zoom.center=[rp[0],rp[1]]; FILT.zoom.strength=0.28; addOverlayFx('chDrop'+occ,FILT.zoom); }
+      }
+    }
+    if(FILT.zoom && hasOverlayFx('chDrop'+occ)){ FILT.zoom.strength=0.28*(1-ph(t,L1,L1+0.25)); if(t>L1+0.26) removeOverlayFx('chDrop'+occ); }
+    // needle wired to cache misy (NOT instrukce). On "čekáš" locks to wait meter.
+    const cekasT={1:49.68,2:112.41}[occ];
+    if(L1!=null && t>=L1){
+      hudState.instr=Math.round(lerp(0,120,ph(t,L1,L4||(L1+10))));
+      // miss counter: occ2 shown resetting low (locality fix) mid-chorus
+      hudState.miss=(occ>=2)? Math.round(lerp(40,4,ph(t,L1,L2||(L1+5)))) : Math.round(lerp(2,14,ph(t,L1,L4||(L1+10))));
+      hudState.needle=(occ>=2)? lerp(0.5,0.85,ph(t,L1,L3||(L1+6))) : lerp(0.7,0.5,ph(t,cekasT,cekasT+1.0));
+    }
+
+    // ---- L2: counter swap — instrukce struck, cache misy lights gold ----
+    const instrT={1:52.28,2:115.17}[occ];
+    const cacheT={1:53.18,2:116.30}[occ];
+    if(instrT!=null){ hudState.instrStruck=(t>=instrT); }
+    head.alpha=(cacheT!=null)? easeOut(ph(t,cacheT,cacheT+0.4))*(1-ph(t,cacheT+1.2,cacheT+1.6)) : 0;
+
+    // ---- L3: locality crown + contiguous cyan row ----
+    crown.clear(); row.clear(); localityLbl.alpha=0;
+    if(L3!=null && t>=L3-0.1){
+      const kralT={1:54.84,'2l':117.56}[occ===2?'2l':1];
+      const blizkoT={1:56.26,'2l':118.73}[occ===2?'2l':1];
+      const cp=easeOutBack(ph(t,kralT,kralT+0.5));
+      localityLbl.alpha=easeOut(ph(t,L3,L3+0.4))*(1-ph(t,L4!=null?L4:L3+5,(L4!=null?L4:L3+5)+0.4));
+      // crown drop onto (640,360)
+      if(cp>0.01){ const cy=lerp(280,338,cp);
+        crown.beginFill(C.accent,0.95*Math.min(1,cp)).lineStyle(2,C.white,0.7);
+        crown.moveTo(610,cy).lineTo(618,cy-22).lineTo(628,cy-6).lineTo(640,cy-26).lineTo(652,cy-6).lineTo(662,cy-22).lineTo(670,cy).closePath().endFill();
+      }
+      // contiguous cyan data row — tightens on "blízko/sobě"
+      const tighten=easeInOut(ph(t,blizkoT,blizkoT+1.2));
+      const gap=lerp(7,1,tighten); const cw=18; const n=10; const total=n*cw+(n-1)*gap;
+      const x0=640-total/2;
+      for(let i=0;i<n;i++){ const x=x0+i*(cw+gap); row.beginFill(C.accent,0.85*(0.7+0.3*beat(t-i*0.04))).lineStyle(1.5,C.white,0.5).drawRoundedRect(x,352,cw,22,3).endFill(); }
+    }
+
+    // ---- L4: green sequential sweep vs red random scatter ----
+    car.alpha=0; greenTrail.alpha=0; redTrail.alpha=0; scatter.clear();
+    if(L4!=null && t>=L4-0.1){
+      const sekvT={1:58.26,'2l':120.54}[occ===2?'2l':1];
+      const nahodT={1:59.57,'2l':122.08}[occ===2?'2l':1];
+      // green sweep along the contiguous row
+      const sweep=easeInOut(ph(t,sekvT,sekvT+1.0));
+      const n=10; const cw=18; const gap=1; const total=n*cw+(n-1)*gap; const x0=640-total/2;
+      const path=[]; for(let i=0;i<n;i++){ path.push([x0+i*(cw+gap)+cw/2,363]); }
+      if(sweep>0.01){ const upto=Math.max(1,Math.round(sweep*(n-1)));
+        const sub=path.slice(0,upto+1); if(sub.length>=2){ setRopeAlongPath(greenTrail,sub); greenTrail.alpha=0.8; }
+        const cx=path[Math.min(n-1,upto)]; drawCar(car,C.hit); car.position.set(cx[0],cx[1]); car.alpha=1;
+        // cheap hit flash on touched cells via slabLit-equivalent (just glow)
+      }
+      // red random scatter on "náhodně/paměti."
+      const sc=ph(t,nahodT,nahodT+1.0);
+      if(sc>0.01){
+        scatter.lineStyle(2,C.miss,0.7*sc);
+        let px=640,py=420; scatter.moveTo(px,py);
+        for(let i=0;i<6;i++){ const rx=200+hash01(i*9.13+occ)*880; const ry=300+hash01(i*4.7+occ)*180; scatter.lineTo(rx,ry); scatter.beginFill(C.miss,0.7*sc).drawCircle(rx,ry,4).endFill(); scatter.moveTo(rx,ry); }
+        if(!S.fired.has('rscatter'+occ)){ S.fired.add('rscatter'+occ); if(FILT.flashRed){ FILT.flashRed.alpha=0.3; sceneFlash(FILT.flashRed,true);} }
+        if(FILT.flashRed && S.fired.has('rscatter'+occ)){ FILT.flashRed.alpha=0.3*(1-ph(t,nahodT,nahodT+0.4)); if(t>nahodT+0.42) sceneFlash(FILT.flashRed,false); }
+      }
+    }
+  }
+  function chorusScene(occ,LS){
+    return (S)=>{ const c=buildChorus(occ); return {c,update(lt,t){ updateChorus(c,t,LS,occ,S); }}; };
+  }
+
+  // ---------- S6 : CHORUS 1 47.52-61.18 ----------
+  scene(47.52,61.18,'CHORUS','chorus',chorusScene(1,{L1:47.52,L2:51.28,L3:53.90,L4:57.72}));
+
+  // ---------- S8b : INSTRUMENTAL gap-hold 61.18-67.58 ----------
+  scene(61.18,67.58,'CHORUS','chorus',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      moteEnvelope=0.34; coreState.stalled=false; coreState.waitAlpha=0;
+      // camera dolly to near road slabs (preview 64B)
+      camPivotX=lerp(640,roadPt(0.10)[0],easeInOut(ph(t,61.18,65.0))); camPivotY=lerp(360,roadPt(0.10)[1]+40,easeInOut(ph(t,61.18,65.0)));
+      camDollyScale=1+0.02*easeInOut(triWave(t,61.18,67.58));
+      // KawaseBlur depth drop on far road
+      if(FILT.kawase){ const k=3*ph(t,61.18,62.5)*(1-ph(t,65.5,67.0)); FILT.kawase.strength=k; bgIntent.kawase=(k>0.05); }
+      // near slabs pulse (teasing one slab = one cache line)
+      for(let j=0;j<4;j++) slabLit[j]=0.6*(0.6+0.4*beat(t-j*0.06));
+    },destroy(){ bgIntent.kawase=false; }};
+  });
+
+  // ---------- S7 : VERSE 2a 67.58-74.56 (64 B cache line) ----------
+  scene(67.58,74.56,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    // hero slab close-up: 64-cell strip at booth-ish region
+    const strip=new PIXI.Graphics(); c.addChild(strip);
+    const lblLine=txt('cache line',18,C.accent,'800'); lblLine.position.set(420,300); lblLine.alpha=0; legible(lblLine); c.addChild(lblLine);
+    const big64=txt('64 B',30,C.accent,'900'); big64.position.set(640,250); big64.alpha=0; legible(big64); c.addChild(big64);
+    if(hasF('GlowFilter')){ big64._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); big64.filters=(big64.filters||[]).concat([big64._g]); }
+    const cap=txt('sáhneš na 1 bajt → přitáhne celý řádek',20,C.hit,'800'); cap.position.set(640,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    // strip geometry (8x8 grid)
+    const SX=470,SY=360,CW=22,GAP=3;
+    return {c,update(lt,t){
+      camDollyScale=1; const rc7=easeInOut(ph(t,67.58,68.8)); camPivotX=lerp(roadPt(0.10)[0],W/2,rc7); camPivotY=lerp(roadPt(0.10)[1]+40,H/2,rc7);
+      moteEnvelope=0.34; coreState.stalled=false; coreState.waitAlpha=0;
+      // 64-cell strip; one byte tap @72.59; all light @73.67; slide into booth @73.67-74.4
+      strip.clear();
+      const slideP=easeInOut(ph(t,73.67,74.4));
+      const bp=boothPos();
+      const allLit=ph(t,73.67,73.9);
+      const tap=ph(t,72.59,72.8);
+      const ox=lerp(SX,bp[0]-88,slideP), oy=lerp(SY,bp[1]-44,slideP);
+      const scl=lerp(1.0,0.5,slideP);
+      for(let i=0;i<64;i++){ const cx=i%8, cy=(i/8)|0;
+        const x=ox+cx*(CW*scl+GAP*scl), y=oy+cy*(CW*scl+GAP*scl);
+        let on= allLit;
+        if(i===0 && tap>0) on=Math.max(on,tap);
+        const col=on>0.5? C.hit : lerpColor(0x244055,C.accent,0.3);
+        strip.beginFill(C.ink,0.85).lineStyle(1,lerpColor(C.accent,C.hit,on),0.6+0.4*on).drawRoundedRect(x,y,CW*scl,CW*scl,2).endFill();
+        if(on>0.5){ strip.beginFill(col,0.5*on).drawRoundedRect(x,y,CW*scl,CW*scl,2).endFill(); }
+      }
+      lblLine.alpha=easeOut(ph(t,68.85,69.4))*(1-ph(t,73.0,73.6));
+      big64.alpha=easeOutBack(ph(t,69.92,70.5))*(1-ph(t,73.2,73.8)); big64.y=250-6*easeOut(ph(t,69.92,70.3));
+      if(big64._g) big64._g.outerStrength=2+1.5*beat(t);
+      // green hit flash @73.67
+      if(t>=73.67 && !S.fired.has('linehit')){ S.fired.add('linehit'); if(FILT.flashGreen){ FILT.flashGreen.alpha=0.35; sceneFlash(FILT.flashGreen,true);} }
+      if(FILT.flashGreen && S.fired.has('linehit')){ FILT.flashGreen.alpha=0.35*(1-ph(t,73.67,73.9)); if(t>73.91) sceneFlash(FILT.flashGreen,false); }
+      cap.alpha=easeOut(ph(t,72.59,73.1))*(1-ph(t,74.2,74.5));
+      // booth glow swells on the load
+      slabLit[2]=Math.max(0.4,allLit);
+    }};
+  });
+
+  // ---------- S8 : VERSE 2b 74.56-81.08 (two localities) ----------
+  scene(74.56,81.08,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const boomTrail=makeRope('cyan',16); c.addChild(boomTrail);
+    const cell=glow('amber',0,0,0.6,0,0xffd08a); c.addChild(cell);
+    const hot=new PIXI.Graphics(); c.addChild(hot);
+    const tempLbl=txt('časová: použiju zas',18,C.accent,'800'); tempLbl.position.set(420,300); tempLbl.alpha=0; legible(tempLbl); c.addChild(tempLbl);
+    const spatLbl=txt('prostorová: sousedi taky',18,C.hit,'800'); spatLbl.position.set(640,560); spatLbl.alpha=0; legible(spatLbl); c.addChild(spatLbl);
+    const neigh=new PIXI.Graphics(); c.addChild(neigh);
+    const SX=470,SY=360,CW=22,GAP=3; const bp=boothPos();
+    return {c,update(lt,t){
+      camDollyScale=1+0.012*Math.sin(t*0.7); camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.34; coreState.stalled=false; coreState.waitAlpha=0;
+      // TEMPORAL: cell boomerangs out of booth and back @74.56 -> 77.48
+      const bp2=boothPos();
+      const out=ph(t,74.56,76.24), back=ph(t,76.24,77.48);
+      let cp;
+      if(t<76.24){ cp=easeOut(out); const ex=lerp(bp2[0],bp2[0]-160,cp), ey=lerp(bp2[1],bp2[1]-120,cp); cell.position.set(ex,ey); }
+      else { cp=easeIn(back); const ex=lerp(bp2[0]-160,bp2[0],cp), ey=lerp(bp2[1]-120,bp2[1],cp); cell.position.set(ex,ey); }
+      cell.alpha=(t>=74.56&&t<78.0)?0.9*(0.7+0.3*beat(t)):0;
+      // boomerang arc trail
+      boomTrail.alpha=(t>=74.56&&t<78.0)?0.6:0;
+      setRopeAlongPath(boomTrail,[[bp2[0],bp2[1]],[bp2[0]-160,bp2[1]-120],[cell.position.x,cell.position.y]]);
+      // hot slot halo
+      hot.clear();
+      if(t>=76.24 && t<79.0){ const ha=(1-ph(t,76.24,79.0)); hot.lineStyle(2,0xffd08a,0.7*ha*(0.6+0.4*beat(t))).drawCircle(bp2[0],bp2[1],26+6*beat(t)); }
+      tempLbl.alpha=easeOut(ph(t,74.56,75.1))*(1-ph(t,78.4,79.0));
+      // SPATIAL: neighbor cells pre-glow @77.68 -> 80.66
+      neigh.clear();
+      const sp=ph(t,77.68,80.8);
+      if(sp>0.01){ const tapped=27; // center cell
+        for(let i=0;i<64;i++){ const cx=i%8, cy=(i/8)|0; const tcx=tapped%8, tcy=(tapped/8)|0;
+          const dist=Math.abs(cx-tcx)+Math.abs(cy-tcy);
+          const lit=clamp01(sp*5 - dist*0.6);
+          const x=SX+cx*(CW+GAP), y=SY+cy*(CW+GAP);
+          const col=dist===0?C.accent:lerpColor(0x244055,C.hit,lit);
+          neigh.beginFill(C.ink,0.7).lineStyle(1,col,0.5+0.5*lit).drawRoundedRect(x,y,CW,CW,2).endFill();
+          if(lit>0.1){ neigh.beginFill(col,0.4*lit).drawRoundedRect(x,y,CW,CW,2).endFill(); }
+        }
+      }
+      spatLbl.alpha=easeOut(ph(t,77.68,78.2))*(1-ph(t,80.7,81.05));
+    }};
+  });
+
+  // ---------- S9 : VERSE 3a 81.08-87.68 (prefetch + the win) ----------
+  scene(81.08,87.68,'VERSE 3','verse',(S)=>{
+    const c=new PIXI.Container();
+    const car=makeCar(); c.addChild(car); car.alpha=0;
+    const trail=makeRope('green',16); c.addChild(trail);
+    const arrow=new PIXI.Graphics(); c.addChild(arrow);
+    const pflabel=txt('prefetch táhne dopředu',18,C.hit,'800'); pflabel.position.set(640,300); pflabel.alpha=0; legible(pflabel); c.addChild(pflabel);
+    const hitStamp=txt('HIT ✓',30,C.hit,'900'); hitStamp.position.set(640,250); hitStamp.alpha=0; legible(hitStamp); c.addChild(hitStamp);
+    if(hasF('GlowFilter')){ hitStamp._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.hit,quality:0.4}); hitStamp.filters=(hitStamp.filters||[]).concat([hitStamp._g]); }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.35; coreState.stalled=false; coreState.waitAlpha=0;
+      // green sequential sweep @81.08
+      const prog=easeInOut(ph(t,81.08,86.0));
+      const cp=carPos(prog); drawCar(car,C.hit); car.position.set(cp[0],cp[1]); car.scale.set(carScale(prog)); car.alpha=(t>=81.08&&t<87.0)?1:0;
+      // green trail along travelled road
+      const pts=[]; const steps=14; for(let i=0;i<=steps;i++){ const pp=roadPt(prog*i/steps); pts.push([pp[0],pp[1]]); }
+      setRopeAlongPath(trail,pts.length>=2?pts:[[CORE[0],CORE[1]],[CORE[0],CORE[1]]]); trail.alpha=(t>=81.08&&t<87.0)?0.8:0;
+      // slabs the car touched flash green
+      for(let j=0;j<N_SLABS;j++){ if(prog*N_SLABS>=j) slabLit[j]=Math.max(slabLit[j],0.7); }
+      // prefetch arrow pulls next 2 slabs @82.40
+      arrow.clear();
+      if(t>=82.40 && t<85.0){ const ahead=clamp01(prog+0.12); const a0=roadPt(prog),a1=roadPt(ahead);
+        arrow.lineStyle(3,C.hit,0.8*(0.6+0.4*beat(t))).moveTo(a0[0],a0[1]).lineTo(a1[0],a1[1]);
+        arrow.beginFill(C.hit,0.8).drawCircle(a1[0],a1[1],4).endFill();
+        const ai=Math.floor(ahead*N_SLABS); if(ai<N_SLABS) slabLit[ai]=Math.max(slabLit[ai],0.5); if(ai+1<N_SLABS) slabLit[ai+1]=Math.max(slabLit[ai+1],0.4);
+      }
+      pflabel.alpha=easeOut(ph(t,82.40,82.9))*(1-ph(t,85.5,86.0));
+      // HIT stamp @87.20
+      if(t>=87.20 && !S.fired.has('hit')){ S.fired.add('hit');
+        if(FILT.shock){ FILT.shock.center=[cp[0],cp[1]]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s9shock',FILT.shock); }
+      }
+      if(FILT.shock && hasOverlayFx('s9shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s9shock'); }
+      hitStamp.alpha=easeOutBack(ph(t,87.20,87.6)); if(hitStamp._g) hitStamp._g.outerStrength=2+1.5*beat(t);
+    }};
+  });
+
+  // ---------- S9b : VERSE 3b 87.68-94.10 (hostile pattern) ----------
+  scene(87.68,94.10,'VERSE 3','verse',(S)=>{
+    const c=new PIXI.Container();
+    const car=makeCar(); c.addChild(car); car.alpha=0;
+    const zig=makeRope('red',16); c.addChild(zig);
+    const colgrid=new PIXI.Graphics(); c.addChild(colgrid);
+    const cap=txt('samé cache misy → čteš z pomalého patra',20,C.miss,'800'); cap.position.set(640,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    const redReq=glow('magenta',CORE[0],CORE[1],0.8,0,0xff8fe8); c.addChild(redReq);
+    // jump targets (random d positions)
+    const jumps=[]; for(let i=0;i<8;i++){ jumps.push(0.1+hash01(i*7.3)*0.85); }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.35; coreState.stalled=false; coreState.waitAlpha=0;
+      // red pinball pointer-chase @88.05
+      const cp=ph(t,88.05,92.0);
+      const ji=Math.min(jumps.length-1,Math.floor(cp*jumps.length));
+      const d=jumps[ji]; const pos=carPos(d); drawCar(car,C.miss); car.position.set(pos[0],pos[1]); car.scale.set(carScale(d)); car.alpha=(t>=88.05&&t<93.0)?1:0;
+      // zigzag trail through visited jumps
+      const pts=[]; for(let i=0;i<=ji;i++){ const pp=carPos(jumps[i]); pts.push([pp[0],pp[1]]); }
+      if(pts.length>=2){ setRopeAlongPath(zig,pts); zig.alpha=(t>=88.05&&t<93.0)?0.8:0; } else zig.alpha=0;
+      // each jump loads a far slab (miss)
+      jumps.forEach((jd,i)=>{ if(i<=ji){ const sj=Math.floor(jd*N_SLABS); if(sj<N_SLABS) slabLit[sj]=0.6; } });
+      // column-jump grid overlay (right block 8x8) @89.40
+      colgrid.clear();
+      const colp=ph(t,89.40,93.0);
+      if(colp>0.01){ const GX=900,GY=300,CW=18,GAP=4;
+        for(let i=0;i<64;i++){ const cx=i%8, cy=(i/8)|0; const x=GX+cx*(CW+GAP), y=GY+cy*(CW+GAP);
+          // cursor jumps DOWN columns
+          const stepIdx=Math.floor(colp*16); const curCol=stepIdx%8; const curRow=(stepIdx*3)%8;
+          const onCur=(cx===curCol && cy<=curRow);
+          colgrid.beginFill(C.ink,0.6).lineStyle(1,onCur?C.miss:0x335066,onCur?0.9:0.4).drawRoundedRect(x,y,CW,CW,2).endFill();
+          if(onCur){ colgrid.beginFill(C.miss,0.4).drawRoundedRect(x,y,CW,CW,2).endFill(); }
+        }
+      }
+      // miss counter spikes @92.005 + RGBSplit jolts
+      // HUD hidden this verse — its alpha is owned purely by renderHighway (f(t)).
+      if(t>=89.40){ const spikes=Math.floor(ph(t,89.40,93.0)*8);
+        if(spikes>(S._lastSpike||0)){ S._lastSpike=spikes;
+          if(FILT.rgb){ FILT.rgb.red=[5,0]; FILT.rgb.blue=[-5,0]; addOverlayFx('s9bRgb',FILT.rgb); S._rgbFire=t; }
+        }
+      }
+      if(FILT.rgb && hasOverlayFx('s9bRgb')){ const k=(1-ph(t,S._rgbFire||t,(S._rgbFire||t)+0.25)); FILT.rgb.red=[5*k,0]; FILT.rgb.blue=[-5*k,0]; if(t-(S._rgbFire||t)>0.3) removeOverlayFx('s9bRgb'); }
+      // fall back to slow tier @92.90: red pulse to RAM
+      const fb=ph(t,92.90,93.8); if(fb>0.01){ const rp=carPos(fb); redReq.position.set(rp[0],rp[1]); redReq.scale.set(lerp(0.9,0.4,fb)); redReq.alpha=0.85*(0.7+0.3*beat(t)); for(let j=0;j<N_SLABS;j++){ if(fb*N_SLABS>=j) slabLit[j]=Math.max(slabLit[j],0.4);} } else redReq.alpha=0;
+      cap.alpha=easeOut(ph(t,90.80,91.3))*(1-ph(t,93.6,94.0));
+    },destroy(){ removeOverlayFx('s9bRgb'); }};
+  });
+
+  // ---------- S10 : BRIDGE 1 94.10-101.06 (TLB = translation cache) ----------
+  scene(94.10,101.06,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const cap=txt('TLB: cache překladu adres',20,C.l2,'800'); cap.position.set(640,300); cap.alpha=0; legible(cap); c.addChild(cap);
+    const card=new PIXI.Graphics(); c.addChild(card);
+    const stamp=txt('virt → fyz',18,C.hit,'800'); stamp.position.set(430,420); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    const pageTbl=new PIXI.Graphics(); c.addChild(pageTbl);
+    const ptLbl=txt('nemusíš číst tabulku',18,C.muted,'700'); ptLbl.position.set(820,560); ptLbl.alpha=0; legible(ptLbl); c.addChild(ptLbl);
+    const note=txt('druhá cache: jen překlad adres',16,C.muted,'700'); note.position.set(640,150); note.alpha=0; legible(note); c.addChild(note);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=lerp(640,430,easeInOut(ph(t,95.06,96.5))); camPivotY=lerp(360,420,easeInOut(ph(t,95.06,96.5)));
+      moteEnvelope=0.30; coreState.stalled=false; coreState.waitAlpha=0;
+      cap.alpha=easeOut(ph(t,96.18,96.7))*(1-ph(t,100.0,100.6));
+      note.alpha=easeOut(ph(t,94.10,94.7))*(1-ph(t,97.0,97.6));
+      // address card slides into kiosk + green stamp @97.46
+      card.clear();
+      const cardP=easeOut(ph(t,97.46,98.4));
+      if(cardP>0.01){ const x=lerp(620,460,cardP), y=420;
+        card.beginFill(0x0a2a40,0.9).lineStyle(2,C.l2,0.9).drawRoundedRect(x,y-14,90,28,5).endFill();
+        card.lineStyle(1.5,C.accent,0.6).moveTo(x+8,y).lineTo(x+82,y);
+      }
+      if(t>=98.50 && !S.fired.has('stamp')){ S.fired.add('stamp'); if(FILT.flashGreen){ FILT.flashGreen.alpha=0.3; sceneFlash(FILT.flashGreen,true);} }
+      if(FILT.flashGreen && S.fired.has('stamp')){ FILT.flashGreen.alpha=0.3*(1-ph(t,98.50,98.7)); if(t>98.72) sceneFlash(FILT.flashGreen,false); }
+      stamp.alpha=easeOutBack(ph(t,98.50,98.9))*(1-ph(t,100.4,101.0));
+      // dim page table in corner
+      pageTbl.clear();
+      const pa=easeOut(ph(t,100.15,100.8))*(1-ph(t,100.9,101.05))+0.25*ph(t,98.5,99.5);
+      pageTbl.lineStyle(1.5,C.muted,0.5*clamp01(pa));
+      for(let i=0;i<6;i++){ pageTbl.drawRect(740,440+i*18,140,14); }
+      ptLbl.alpha=easeOut(ph(t,100.15,100.6))*(1-ph(t,100.9,101.05));
+    }};
+  });
+
+  // ---------- S11 : BRIDGE 2 101.06-108.90 (the miss path: page walk) ----------
+  scene(101.06,108.90,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const field=new PIXI.Graphics(); c.addChild(field);
+    const missStamp=txt('TLB MISS',24,C.miss,'900'); missStamp.position.set(430,360); missStamp.alpha=0; legible(missStamp); c.addChild(missStamp);
+    const stairs=new PIXI.Graphics(); c.addChild(stairs);
+    const hop=glow('red',0,0,0.6,0,0xff8a8a); c.addChild(hop);
+    const cap=txt('drahá chůze po tabulce stránek',20,C.miss,'800'); cap.position.set(640,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    const note=txt('velká data + náhodný přístup = TLB misy',16,C.muted,'700'); note.position.set(640,150); note.alpha=0; legible(note); c.addChild(note);
+    // staircase steps: from kiosk down to page table
+    const STEPS=[[470,400],[560,450],[650,500],[740,550]];
+    return {c,update(lt,t){
+      camDollyScale=1; const rc11=easeInOut(ph(t,101.06,102.6)); camPivotX=lerp(430,W/2+40,rc11); camPivotY=lerp(420,400,rc11);
+      moteEnvelope=0.28; coreState.stalled=false; coreState.waitAlpha=0;
+      note.alpha=easeOut(ph(t,101.06,101.6))*(1-ph(t,104.6,105.2));
+      // big-data random spray @101.06
+      field.clear();
+      const fp=ph(t,101.06,104.0);
+      for(let i=0;i<40;i++){ const a=i/40; if(a>fp) break; const x=860+hash01(i*3.1)*320, y=170+hash01(i*5.7)*150;
+        field.beginFill(0x335066,0.6).drawCircle(x,y,2.5).endFill();
+        if(hash01(i*9.9)>0.6){ field.beginFill(C.miss,0.7).drawCircle(x,y,3).endFill(); }
+      }
+      // TLB MISS @104.64
+      if(t>=104.64 && !S.fired.has('miss')){ S.fired.add('miss');
+        if(FILT.flashRed){ FILT.flashRed.alpha=0.4; sceneFlash(FILT.flashRed,true);}
+        if(FILT.rgb){ FILT.rgb.red=[6,0]; FILT.rgb.blue=[-6,0]; addOverlayFx('s11rgb',FILT.rgb); S._rgbFire=t; }
+        if(FILT.glitch){ FILT.glitch.seed=Math.random(); FILT.glitch.offset=14; addOverlayFx('s11glitch',FILT.glitch); S._glitchFire=t; }
+      }
+      if(FILT.flashRed && S.fired.has('miss')){ FILT.flashRed.alpha=0.4*(1-ph(t,104.64,104.9)); if(t>104.91) sceneFlash(FILT.flashRed,false); }
+      if(FILT.rgb && hasOverlayFx('s11rgb')){ const k=(1-ph(t,S._rgbFire,S._rgbFire+0.4)); FILT.rgb.red=[6*k,0]; FILT.rgb.blue=[-6*k,0]; if(t-S._rgbFire>0.42) removeOverlayFx('s11rgb'); }
+      if(FILT.glitch && hasOverlayFx('s11glitch')){ FILT.glitch.seed=hash01(Math.floor(t*30)); FILT.glitch.offset=14*(1-ph(t,S._glitchFire,S._glitchFire+0.4)); if(t-S._glitchFire>0.42) removeOverlayFx('s11glitch'); }
+      missStamp.alpha=easeOutBack(ph(t,104.64,105.0))*(1-ph(t,107.5,108.2));
+      // page-walk staircase @105.75
+      stairs.clear();
+      const sp=ph(t,105.75,108.5);
+      if(sp>0.01){ stairs.lineStyle(3,C.miss,0.7);
+        for(let i=0;i<STEPS.length-1;i++){ stairs.moveTo(STEPS[i][0],STEPS[i][1]).lineTo(STEPS[i+1][0],STEPS[i][1]).lineTo(STEPS[i+1][0],STEPS[i+1][1]); }
+        // request hops step-by-step
+        const hi=Math.min(STEPS.length-1,Math.floor(sp*STEPS.length));
+        const localp=clamp01(sp*STEPS.length-hi); const a=STEPS[Math.max(0,hi-0)]||STEPS[0]; const b=STEPS[Math.min(STEPS.length-1,hi)]||STEPS[STEPS.length-1];
+        const hx=lerp(STEPS[Math.max(0,hi-1)][0],b[0],easeIn(localp)), hy=lerp(STEPS[Math.max(0,hi-1)][1],b[1],easeIn(localp));
+        hop.position.set(hx,hy); hop.alpha=0.85*(0.7+0.3*beat(t));
+        // WAIT counter climbs each hop
+        coreState.waitText='~'+(50+hi*40); coreState.waitAlpha=easeOut(ph(t,105.75,106.2))*(1-ph(t,108.3,108.8));
+      } else hop.alpha=0;
+      cap.alpha=easeOut(ph(t,106.46,107.0))*(1-ph(t,108.4,108.8));
+    },destroy(){ removeOverlayFx('s11rgb'); removeOverlayFx('s11glitch'); if(FILT.flashRed) sceneFlash(FILT.flashRed,false); }};
+  });
+
+  // ---------- S12 : CHORUS 2 headline half 108.90-116.78 (L1-L2) ----------
+  scene(108.90,116.78,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(2);
+    return {c,update(lt,t){
+      // warm cut-back from bridge @108.90
+      if(t>=108.90 && !S.fired.has('warm')){ S.fired.add('warm'); if(FILT.flashCyan){ FILT.flashCyan.color=C.accent; FILT.flashCyan.alpha=0.4; sceneFlash(FILT.flashCyan,true);} }
+      if(FILT.flashCyan && S.fired.has('warm')){ FILT.flashCyan.alpha=0.4*(1-ph(t,108.90,109.15)); if(t>109.16) sceneFlash(FILT.flashCyan,false); }
+      updateChorus(c,t,{L1:108.90,L2:113.56,L3:null,L4:null},2,S);
+    },destroy(){ if(FILT.flashCyan) sceneFlash(FILT.flashCyan,false); }};
+  });
+
+  // ---------- S12b : CHORUS 2 locality half 116.78-123.38 (L3-L4) ----------
+  scene(116.78,123.38,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(2);
+    return {c,update(lt,t){
+      updateChorus(c,t,{L1:null,L2:null,L3:116.78,L4:119.98},2,S);
+    }};
+  });
+
+  // ---------- S13 : OUTRO 1 123.38-130.04 (same ops, different speed) ----------
+  scene(123.38,130.04,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    // two identical op-stacks
+    const lStack=new PIXI.Graphics(); c.addChild(lStack);
+    const rStack=new PIXI.Graphics(); c.addChild(rStack);
+    const lLbl=txt('stejný počet operací',14,C.muted,'700'); lLbl.position.set(320,220); lLbl.alpha=0; legible(lLbl); c.addChild(lLbl);
+    const rLbl=txt('stejný počet operací',14,C.muted,'700'); rLbl.position.set(960,220); rLbl.alpha=0; legible(rLbl); c.addChild(rLbl);
+    // two roads/cars
+    const lCar=makeCar(); c.addChild(lCar); lCar.alpha=0;
+    const rCar=makeCar(); c.addChild(rCar); rCar.alpha=0;
+    const lTrail=makeRope('green',14); c.addChild(lTrail);
+    const rTrail=makeRope('red',14); c.addChild(rTrail);
+    const verdict=txt('řádově jinak',28,C.text,'900'); verdict.position.set(640,150); verdict.alpha=0; legible(verdict); c.addChild(verdict);
+    if(hasF('GlowFilter')){ verdict._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.accent,quality:0.4}); verdict.filters=(verdict.filters||[]).concat([verdict._g]); }
+    // two diagonal mini-roads
+    const LR0=[230,470], LR1=[470,300], RR0=[810,470], RR1=[1050,300];
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.35; coreState.stalled=false; coreState.waitAlpha=0;
+      // equal op-stacks
+      lStack.clear(); rStack.clear();
+      const stk=easeOut(ph(t,123.38,125.0));
+      for(let i=0;i<8;i++){ if(i/8>stk) break; const y=300-i*16;
+        lStack.beginFill(C.muted,0.7).lineStyle(1,C.accent,0.4).drawRoundedRect(290,y,60,12,3).endFill();
+        rStack.beginFill(C.muted,0.7).lineStyle(1,C.accent,0.4).drawRoundedRect(930,y,60,12,3).endFill();
+      }
+      lLbl.alpha=easeOut(ph(t,123.38,124.0))*(1-ph(t,129.0,129.6)); rLbl.alpha=lLbl.alpha;
+      // race @127.02: left flies green, right crawls red
+      lTrail.clear&&0;
+      const lp=easeOut(ph(t,127.02,129.0)); const rp=easeIn(ph(t,127.02,129.0))*0.35;
+      const lpos=lerp2(LR0,LR1,lp), rpos=lerp2(RR0,RR1,rp);
+      drawCar(lCar,C.hit); lCar.position.set(lpos[0],lpos[1]); lCar.scale.set(lerp(1,0.55,lp)); lCar.alpha=(t>=127.02)?1:0;
+      drawCar(rCar,C.miss); rCar.position.set(rpos[0],rpos[1]); rCar.scale.set(lerp(1,0.7,rp)); rCar.alpha=(t>=127.02)?1:0;
+      setRopeAlongPath(lTrail,[LR0,lpos]); lTrail.alpha=(t>=127.02&&lp>0.02)?0.8:0;
+      setRopeAlongPath(rTrail,[RR0,rpos]); rTrail.alpha=(t>=127.02&&rp>0.02)?0.8:0;
+      // draw the two roads faint
+      lStack.lineStyle(2,C.hit,0.25).moveTo(LR0[0],LR0[1]).lineTo(LR1[0],LR1[1]);
+      rStack.lineStyle(2,C.miss,0.25).moveTo(RR0[0],RR0[1]).lineTo(RR1[0],RR1[1]);
+      // verdict @128.00
+      verdict.alpha=easeOutBack(ph(t,128.00,128.6))*(1-ph(t,129.6,130.0)); if(verdict._g) verdict._g.outerStrength=2+1.5*beat(t);
+      // HUD: green low miss
+      hudState.miss=3; hudState.instr=120; hudState.instrStruck=true; hudState.needle=lerp(0.5,0.85,ph(t,127.02,129.0));
+    }};
+  });
+
+  // ---------- S14 : OUTRO 2 130.04-135.98 (verdict) ----------
+  scene(130.04,135.98,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    const v1=txt('jak saháš do paměti,',22,C.text,'800'); v1.position.set(640,300); v1.alpha=0; legible(v1); c.addChild(v1);
+    const v2=txt('tak rychle to jede',22,C.accent,'900'); v2.position.set(640,335); v2.alpha=0; legible(v2); c.addChild(v2);
+    const car=makeCar(); c.addChild(car); car.alpha=0;
+    const trail=makeRope('green',14); c.addChild(trail);
+    const title=txt('LOKALITA JE KRÁL',44,C.accent,'900'); title.position.set(640,150); title.alpha=0; legible(title); c.addChild(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('perf = kolik čekáš na paměť',22,C.muted,'700'); sub.position.set(640,200); sub.alpha=0; legible(sub); c.addChild(sub);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.0,1.0,1); camPivotX=W/2; camPivotY=H/2;
+      moteEnvelope=0.36; coreState.stalled=false; coreState.waitAlpha=0;
+      v1.alpha=easeOut(ph(t,130.04,130.6))*(1-ph(t,134.6,135.2));
+      v2.alpha=easeOut(ph(t,131.0,131.6))*(1-ph(t,134.6,135.2));
+      // green car finishes at the booth @133.74
+      const prog=easeOut(ph(t,130.5,133.74));
+      const cp=carPos(prog*0.12+0.0); const bp=boothPos();
+      const fx=lerp(CORE[0],bp[0],easeOut(ph(t,130.5,133.74))), fy=lerp(CORE[1],bp[1],easeOut(ph(t,130.5,133.74)));
+      drawCar(car,C.hit); car.position.set(fx,fy); car.alpha=(t>=130.5&&t<135.0)?1:0;
+      setRopeAlongPath(trail,[[CORE[0],CORE[1]],[fx,fy]]); trail.alpha=(t>=130.5&&t<135.0)?0.8:0;
+      if(t>=133.74 && !S.fired.has('finish')){ S.fired.add('finish');
+        if(FILT.shock){ FILT.shock.center=[bp[0],bp[1]]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s14shock',FILT.shock); }
+      }
+      if(FILT.shock && hasOverlayFx('s14shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s14shock'); }
+      // title return @135.21
+      title.alpha=easeOut(ph(t,135.21,135.98)); if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      sub.alpha=easeOut(ph(t,135.4,135.98));
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      if(sunBloom && sunBloom.bloomScale!==undefined) sunBloom.bloomScale=1.0+0.5*beat(t);
+      // HUD: low miss, calm, needle high
+      hudState.miss=3; hudState.instr=120; hudState.instrStruck=true; hudState.needle=0.85;
+    }};
+  });
+
+  // ---------- S15 : END-CARD 135.98-145.464 ----------
+  scene(135.98,145.464,'END','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const title=txt('LOKALITA JE KRÁL',44,C.accent,'900'); title.position.set(640,150); legible(title); c.addChild(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:1.5,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('perf = kolik čekáš na paměť',22,C.muted,'700'); sub.position.set(640,200); legible(sub); c.addChild(sub);
+    const badge=txt('🛣️  Proč paměť brzdí · ESW B4M36ESW',20,C.muted,'700'); badge.position.set(640,560); legible(badge); c.addChild(badge);
+    return {c,update(lt,t){
+      const q=ph(t,135.98,144.0);
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      coreState.stalled=false; coreState.waitAlpha=0;
+      // ground-grid scroll eases to a stop
+      gridScrollSpeed=lerp(90,0,easeInOut(q));
+      // motes thin out
+      moteVisibleRatio=lerp(1.0,0.2,easeInOut(q));
+      moteEnvelope=lerp(0.34,0.12,easeInOut(q));
+      hudState.miss=3; hudState.instr=120; hudState.instrStruck=true; hudState.needle=0.85;
+      if(title._g) title._g.outerStrength=lerp(1.5,0.2,easeInOut(q));
+      if(bloomF) bloomF.bloomScale=1.0+0.25*Math.exp(-Math.pow((t-143.0),2)/0.3);
+    },destroy(){ moteVisibleRatio=1; gridScrollSpeed=90; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='verse' && t>=9.77 && t<26.68){ bgGrade.saturate(-0.25*ph(t,9.77,12.0),false); bgGrade.brightness(1-0.08*ph(t,9.77,12.0),true); } // S2/S3 stall is cold
+    else if(sec==='bridge'){ bgGrade.saturate(-0.3,false); bgGrade.brightness(0.92,true); }
+    else if(sec==='chorus'){ bgGrade.saturate(0.18,false); }
+    else if(sec==='outro'){ bgGrade.saturate(0.1,false); if(t>=135.98){ const q=easeInOut(ph(t,135.98,144.0)); bgGrade.brightness(1-0.12*q,true);} }
+    else { bgGrade.saturate(0.1,false); }
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM) — exact final picker (§5)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=80, LAST_WORD_END=135980;
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;   // GLOBAL GATE first
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; }
+    return null;                                               // FALLBACK REMOVED — gaps show no line
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    // reset transient per-frame intents/state (only owning scene re-sets them)
+    bgIntent.kawase=false; bgIntent.motion=false; bgIntent.godray=false; bgIntent.crtDeep=false;
+    resetSlabLit();
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='bridge'){ const cold=ph(t,94.10,95.5); top=lerpColor(C.bgTop,C.bgTopCold,cold); bot=lerpColor(C.bgBot,C.bgBotCold,cold); }
+    else if(t>=108.90 && t<109.5){ const warm=ph(t,108.90,109.3); top=lerpColor(C.bgTopCold,C.bgTop,warm); bot=lerpColor(C.bgBotCold,C.bgBot,warm); }
+    if(t>=135.98){ const q=easeInOut(ph(t,135.98,144.0)); top=lerpColor(top,0x06061f,q); bot=lerpColor(bot,0x120420,q); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // grid scroll (driving motion) + scanline shimmer + reflection time
+    grid.tilePosition.y=(t*gridScrollSpeed)%256;
+    scanBand.tilePosition.y=(-(t*30))%6;
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time=t; }
+    bgIntent.godray=(sec==='intro'||sec==='chorus'||sec==='outro'||(sec==='verse'&&t<9.77));
+    // draw road slabs (after slabLit set below by scene; we draw at end)
+
+    // ----- scene manager (with backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.12);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame from intent flags -----
+    { const arr=[bgGrade];
+      if(bgIntent.motion && FILT.motion) arr.push(FILT.motion);
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(crtF){ crtF.time=t; crtF.lineWidth=bgIntent.crtDeep?1.3:1.0; crtF.vignetting=bgIntent.crtDeep?0.4:0.25; arr.push(crtF); }
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+
+    // ----- persistent highway -----
+    renderHighway(t,sec);
+    // ----- draw road slabs (slabLit set by the active scene's update) -----
+    drawRoad();
+    // ----- camera -----
+    updateCamera(t);
+    // ----- karaoke -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — motes + sparks (non-load-bearing). Frozen on pause.
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    const playing = !player.paused && !player.ended;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y<-20){ m.s.y=H+20; m.s.x=Math.random()*W; } }
+      const visible=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      m.s.alpha=visible? moteEnvelope*(0.7+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>

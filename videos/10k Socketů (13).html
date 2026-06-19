@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Deset tisíc spojení (C10k) — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#070d1c; --bg-bot:#02060d; --panel:#0d1b33; --text:#eaf6ff; --muted:#7f9bc0;
+    --accent:#39E6FF; --accent2:#8A5BFF; --ok:#5be08a; --danger:#FF4D5E; --warn:#FFB23D;
+    --thread:#c9d4ff; --vthread:#9affc9; --fibre:#1f6f8f; --ink:#04101e; --border:#16304f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(57,230,255,.14);border:1px solid rgba(57,230,255,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#01040a;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.80),rgba(0,0,0,.36) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(57,230,255,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 18px rgba(57,230,255,.98)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#9fe6ff;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(10,22,45,.86),rgba(1,4,10,.95));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#39E6FF,#8A5BFF);color:#02060d;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(57,230,255,.45)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#dbeeff} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#1a3350 var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">Deset tisíc spojení</span>
+    <span class="badge">IMMERSIVE VIDEO 🔌</span>
+    <span class="hints">space = play/pauza · ←/→ = ±5s · R = restart</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">C10k: jak na jednom serveru obsloužit 10 000 souběžných spojení — thread-per-connection vs. neblokující I/O + event loop (epoll), Java NIO a virtuální vlákna (Loom). Výuková lyric-video k B4M36ESW; každé slovo je synchronní se zpěvem.<small>~4 min 15 s · zpívaná videolekce · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="254.952" step="0.01" value="0">
+    <span class="time" id="tDur">4:15</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-10k-socketu.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){showErr('pixi-filters not loaded after pixi (degrading to vectors)');}
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/10k Socketů (13).mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:254900,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=254.952;            // MP3 / stage length (fallback when audio.duration unavailable)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (§2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};            // quadratic out
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // Beat (DnB 174 BPM)
+  const BPM=174;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  const beatPhase=t=>(t*BPM/60)%1;
+  const snare=t=>0.5+0.5*Math.sin(t*TAU*BPM/120 + Math.PI);
+  // GLOBAL beat gates (default 1.0; S29 ramps both to 0 over 249.66->252.0)
+  function beatAmp(t){ return 1-easeInOut(ph(t,249.66,252.0)); }
+  function jackWaveAmp(t){ return 1-easeInOut(ph(t,249.66,252.0)); }
+
+  // ============================================================
+  //  2) PALETTE + CANONICAL COORDS
+  // ============================================================
+  const C={
+    bgTop:0x070d1c, bgBot:0x02060d,
+    bgTopRed:0x1a0610, bgBotRed:0x02060d,
+    bgTopGreen:0x06121c, bgBotGreen:0x02060d,
+    bgTopViolet:0x0c0a26, bgBotViolet:0x02060d,
+    panel:0x0d1b33, accent:0x39e6ff, accent2:0x8a5bff, ok:0x5be08a, danger:0xff4d5e,
+    warn:0xffb23d, thread:0xc9d4ff, vthread:0x9affc9, fibre:0x1f6f8f,
+    text:0xeaf6ff, muted:0x7f9bc0, ink:0x04101e, white:0xffffff, grey:0x5a6378
+  };
+  const W=1280,H=720;
+  const SERVER=[980,360];
+  const CAROUSEL=[420,360];
+  const LOOP=[420,360];
+  const EPOLL=[420,300];
+  const WORKER=[420,440];
+  const OS_DESK=[980,560];
+  const N_CONN=10000, N_JACKS=256, N_LANES=8, N_BOTS=1200, N_CELLS=N_JACKS;
+  // jack wall: 16x16 grid, origin (760,90), pitch x=28 y=24
+  const JCOLS=16, JROWS=16;
+  const jackPos=j=>[760+(j%JCOLS)*28, 90+((j/JCOLS)|0)*24];
+  const laneY=L=>120+L*70;
+  const carrier=c=>[180+c*120,640];
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list
+  const _ofx=[]; // {name, filter}
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §7)
+  //  Optional keyed PNGs (window.ASSETS) layer additively/low-alpha OVER the always-drawn
+  //  vector actors. With NO assets file present (window.ASSETS undefined) the video is a
+  //  COMPLETE, visually-unchanged vector masterpiece. The loader is fire-and-forget; every
+  //  use is guarded by if(IMG[slug]). Sprites are STATIC decoration — never time-dependent.
+  // ============================================================
+  const IMG={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,cover){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1;
+    let sc=targetW/tw;
+    if(cover){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc); s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s); return s;
+  }
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    const SLUGS=['server-core','socket-wall','worker-bot','vthread-bot','noc-bg','epoll-board'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{
+      if(!tex) return; IMG[slug]=tex;
+      try{
+        if(slug==='noc-bg'){ const s=heroSprite(bgLayer,'noc-bg',W/2,H/2,W,0.25,true); if(s) bgLayer.setChildIndex(s,0); }
+        else if(slug==='socket-wall'){ const s=heroSprite(bgLayer,'socket-wall',980,280,460,0.30,false); if(s) IMG._wall=s; }
+        else if(slug==='server-core'){ const s=heroSprite(serverCore,'server-core',0,0,150,0.95,false); if(s) IMG._core=s; }
+      }catch(e){ showErr('img '+slug+': '+e.message); }
+    }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={cyan:radialTex(0x39e6ff),violet:radialTex(0x8a5bff),green:radialTex(0x5be08a),red:radialTex(0xff4d5e),warn:radialTex(0xffb23d),white:radialTex(0xffffff),mint:radialTex(0x9affc9)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={cyan:lineTex(0x39e6ff),green:lineTex(0x5be08a),violet:lineTex(0x8a5bff)};
+  // baked dot + jack cell + bot capsule + slab
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  const _jackG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,14,14,3).endFill();
+  const JACK_TEX=app.renderer.generateTexture(_jackG,{resolution:2}); _jackG.destroy();
+  const _botG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,16,22,5).endFill();
+  const BOT_TEX=app.renderer.generateTexture(_botG,{resolution:2}); _botG.destroy();
+  const _slabG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,20,8,2).endFill();
+  const SLAB_TEX=app.renderer.generateTexture(_slabG,{resolution:2}); _slabG.destroy();
+  // baked radial-noise sprite for DisplacementFilter fallback
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const img=g.createImageData(256,256);for(let i=0;i<img.data.length;i+=4){img.data[i]=Math.random()*255;img.data[i+1]=Math.random()*255;img.data[i+2]=128;img.data[i+3]=255;}
+    g.putImageData(img,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+  // scanline tile texture (downward data-rain band)
+  function scanTex(){const c=document.createElement('canvas');c.width=8;c.height=64;const g=c.getContext('2d');
+    g.fillStyle='rgba(57,230,255,0)';g.fillRect(0,0,8,64);
+    g.fillStyle='rgba(57,230,255,0.5)';g.fillRect(0,0,8,2);
+    g.fillStyle='rgba(57,230,255,0.18)';g.fillRect(0,24,8,1);
+    return PIXI.Texture.from(c);}
+  const SCAN_TEX=scanTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (room gradient + rack/wall silhouette + scanline + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  const bgGrade=new PIXI.ColorMatrixFilter();
+  const bgIntent={godray:false,kawase:false,hsl:false};
+
+  // static rack + jack-wall + fibre-lane-trough silhouette (cacheAsBitmap)
+  const rack=new PIXI.Graphics();
+  rack.lineStyle(2,0x0d1b33,0.55);
+  for(let x=760;x<=1200;x+=44){ rack.moveTo(x,80); rack.lineTo(x,480); }   // rack uprights
+  // jack-wall frame
+  rack.lineStyle(1.5,0x123a5a,0.5).drawRect(752,82,460,392);
+  // fibre lane troughs
+  rack.lineStyle(0);
+  for(let L=0;L<N_LANES;L++){ rack.beginFill(C.fibre,0.10).drawRect(120,laneY(L)-5,600,10).endFill(); }
+  // floor line
+  rack.lineStyle(2,0x0d1b33,0.5).moveTo(0,628).lineTo(W,628);
+  bgLayer.addChild(rack); rack.cacheAsBitmap=true;
+
+  // scanline / data-rain tiling band (slow downward)
+  const scanTile=new PIXI.TilingSprite(SCAN_TEX,W,H);
+  scanTile.alpha=0.10; scanTile.blendMode=PIXI.BLEND_MODES.ADD; scanTile.tileScale.set(3,2.4);
+  bgLayer.addChild(scanTile);
+
+  // reflection band (bottom)
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x081428,0.20).drawRect(0,640,W,80).endFill();
+  bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,4],waveLength:[40,120],alpha:[0.3,0.3],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,640,W,80); }
+
+  // ============================================================
+  //  6) AMBIENT DATA-MOTES (persistent ParticleContainer, drifting DOWN)
+  // ============================================================
+  const MOTE_COUNT=200;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:false},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const s=new PIXI.Sprite(GLOW.cyan);s.anchor.set(0.5);s.tint=0x39e6ff;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.05+Math.random()*0.13);s.alpha=0;motePC.addChild(s);
+    motes.push({s,vx:(Math.random()-.5)*7,vy:(6+Math.random()*16),phs:Math.random()*TAU,sp:0.5+Math.random()});}
+  let RT=0;
+  let moteEnvelope=0;
+  let moteVisibleRatio=1;
+
+  // spark bursts (recycled pool)
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:0,max:0.7+Math.random()*1.0});}
+  }
+
+  // ============================================================
+  //  7) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  // server core (switchboard tower)
+  function buildServerCore(){
+    const c=new PIXI.Container(); c.position.set(SERVER[0],SERVER[1]);
+    const g=new PIXI.Graphics(); c.addChild(g);
+    g.beginFill(C.panel,1).lineStyle(3,C.accent2,1).drawRoundedRect(-46,-150,92,300,12).endFill();
+    g.lineStyle(2,C.accent2,0.5);
+    for(let i=0;i<8;i++){ g.moveTo(-38,-130+i*32).lineTo(38,-130+i*32); }
+    g.beginFill(C.accent,0.85).lineStyle(0);
+    for(let i=0;i<8;i++){ for(let jx=0;jx<3;jx++){ g.drawCircle(-26+jx*26,-116+i*32,3); } }
+    g.endFill();
+    // top lamp
+    g.beginFill(0xc9b6ff,1).drawCircle(0,-150,9).endFill();
+    const gl=glow('violet',0,-150,1.2,0.9); c.addChild(gl);
+    c._g=g; c._glow=gl;
+    return c;
+  }
+  // OS-thread bot capsule + stack slab (vector, for hero shots; the swarm uses sprites)
+  function drawBot(g,tone,withSlab){
+    g.clear();
+    if(withSlab){ g.beginFill(tone,0.30).lineStyle(0).drawRoundedRect(-22,-2,18,30,3).endFill(); }
+    g.beginFill(tone,1).lineStyle(1.5,C.ink,0.6).drawRoundedRect(-9,-14,18,28,6).endFill();
+    g.beginFill(C.ink,0.8).drawCircle(0,-6,3.5).endFill();
+  }
+  // hourglass vector
+  function drawHourglass(g,sc,fill){
+    g.clear(); const w=22*sc,h=34*sc;
+    g.lineStyle(3,C.warn,1).beginFill(0x07111c,0.4);
+    g.moveTo(-w,-h).lineTo(w,-h).lineTo(2,0).lineTo(w,h).lineTo(-w,h).lineTo(-2,0).closePath().endFill();
+    g.lineStyle(0).beginFill(C.warn,0.9);
+    const tf=clamp01(1-fill); g.moveTo(-w*0.85*tf,-h*0.9).lineTo(w*0.85*tf,-h*0.9).lineTo(1,-h*0.05*tf).lineTo(-1,-h*0.05*tf).closePath(); g.endFill();
+    g.beginFill(C.warn,0.9);
+    const bf=clamp01(fill); g.moveTo(-w*0.85*bf,h*0.9).lineTo(w*0.85*bf,h*0.9).lineTo(1,h*0.1).lineTo(-1,h*0.1).closePath(); g.endFill();
+    g.lineStyle(4,0xb98a3a,1).moveTo(-w-2,-h-3).lineTo(w+2,-h-3); g.moveTo(-w-2,h+3).lineTo(w+2,h+3);
+  }
+  // SimpleRope multi-point trail/channel
+  function makeRope(tex,tint,n){
+    const pts=[]; for(let i=0;i<(n||10);i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(tex,pts); r.blendMode=PIXI.BLEND_MODES.ADD; r.tint=tint; r.alpha=0;
+    r._pts=pts; return r;
+  }
+  function setRopeLine(rope,from,to){
+    const p=rope._pts; for(let i=0;i<p.length;i++){const f=i/(p.length-1);p[i].x=lerp(from[0],to[0],f);p[i].y=lerp(from[1],to[1],f);}
+  }
+  function setRopeAlongPath(rope,path){
+    const p=rope._pts; const segs=path.length-1;
+    for(let i=0;i<p.length;i++){
+      const f=i/(p.length-1)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si;
+      p[i].x=lerp(path[si][0],path[si+1][0],lf); p[i].y=lerp(path[si][1],path[si+1][1],lf);
+    }
+  }
+
+  // ============================================================
+  //  8) PERSISTENT NOC SET (bg-of-scene group below per-scene actors)
+  // ============================================================
+  const nocRoot=new PIXI.Container(); sceneLayer.addChild(nocRoot);
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot); // per-scene actors host
+
+  // persistent server core
+  const serverCore=buildServerCore(); nocRoot.addChild(serverCore);
+  if(hasF('AdvancedBloomFilter')){ serverCore._bloom=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:6,quality:4}); serverCore.filters=[serverCore._bloom]; }
+
+  // persistent jack wall (256 jacks in a ParticleContainer)
+  const jackPC=new PIXI.ParticleContainer(N_JACKS,{position:true,scale:true,alpha:true,tint:true},N_JACKS,true);
+  nocRoot.addChild(jackPC);
+  const jacks=[];
+  for(let j=0;j<N_JACKS;j++){ const s=new PIXI.Sprite(JACK_TEX); s.anchor.set(0.5);
+    const p=jackPos(j); s.x=p[0]; s.y=p[1]; s.scale.set(0.9); s.alpha=0; s.tint=C.fibre; s.blendMode=PIXI.BLEND_MODES.NORMAL;
+    jackPC.addChild(s); jacks.push({s,j,state:0,glow:0}); }
+  // jackState(j,t): returns {tint,alpha} — driven per-scene via global jack control vars
+  let jackLit=0;           // number of jacks lit cyan (0..256) — set by scenes
+  let jackGreen=new Set(); // indices currently green (epoll ready) — managed by scenes
+  let jackAmberCursor=-1;  // cursor index (S12 clerk) or -1
+  let jackWallAlpha=0;     // overall wall alpha
+  let jackStrobe=true;     // whether to apply snare strobe
+
+  // persistent packets on fibre lanes (one ParticleContainer)
+  const PKT_PER_LANE=10;
+  const packetPC=new PIXI.ParticleContainer(N_LANES*PKT_PER_LANE,{position:true,scale:true,alpha:true,tint:true},N_LANES*PKT_PER_LANE,true);
+  nocRoot.addChild(packetPC);
+  const packets=[];
+  for(let L=0;L<N_LANES;L++){ for(let i=0;i<PKT_PER_LANE;i++){ const s=new PIXI.Sprite(DOT_TEX); s.anchor.set(0.5);
+    s.tint=C.accent; s.blendMode=PIXI.BLEND_MODES.ADD; s.scale.set(0.22); s.alpha=0; packetPC.addChild(s);
+    packets.push({s,L,i,phase:(i/PKT_PER_LANE)}); } }
+  let packetRate=0;        // 0..1 spawn density (scenes set)
+  let packetVisibleRatio=1;
+
+  // live connection counter (top, near server)
+  const counterTxt=txt('0',40,C.accent,'900'); counterTxt.position.set(980,60); legible(counterTxt);
+  if(hasF('GlowFilter')){ counterTxt._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); counterTxt.filters=(counterTxt.filters||[]).concat([counterTxt._g]); }
+  nocRoot.addChild(counterTxt);
+  let connCount=0;         // scenes set 0..10000
+
+  // persistent godray on bg
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:30,gain:0.35,lacunarity:2.2,time:0,parallel:true}); }
+
+  // ---- jack-wall renderer (pure function of t via scene-set globals) ----
+  function renderJackWall(t){
+    const jwAmp=jackWaveAmp(t);
+    for(let j=0;j<N_JACKS;j++){ const J=jacks[j]; const s=J.s;
+      let tint=C.fibre, a=0.30;
+      if(jackGreen.has(j)){ tint=C.ok; a=0.95; }
+      else if(j===jackAmberCursor){ tint=C.warn; a=1.0; }
+      else if(j<jackLit){ tint=C.accent; a=jackStrobe?(0.55+jwAmp*0.4*snare(t-(j%JCOLS)*0.012)):0.85; }
+      s.tint=tint; s.alpha=jackWallAlpha*a;
+      s.scale.set(jackGreen.has(j)?(1.05+0.08*beat(t)):0.9);
+    }
+  }
+  function renderPackets(t){
+    for(const P of packets){
+      const sp=0.55; // ~ lane traverse time
+      const ph0=(P.phase + (t/sp)) % 1;
+      const x=lerp(120,720,ph0);
+      P.s.x=x; P.s.y=laneY(P.L);
+      const vis=(P.i/PKT_PER_LANE)<packetRate && (P.i/PKT_PER_LANE)<packetVisibleRatio;
+      P.s.alpha=vis? (0.7+0.3*beat(t-P.L*0.05))*(1-Math.abs(ph0-0.5)*0.6) : 0;
+    }
+  }
+
+  // ============================================================
+  //  9) CAMERA RIG (GOLDEN RULE: all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  function shakeAmp(t){
+    let a=0;
+    a+=shakeEnv(t,51.85,6);    // S4 "tě položí" collapse
+    a+=shakeEnv(t,176.64,3);   // S20 callback hell stamp
+    // chorus L2 "zabijou" small shakes (occ #1/#2/#3)
+    a+=shakeEnv(t,88.50,3);
+    a+=shakeEnv(t,143.62,3);
+    a+=shakeEnv(t,221.25,3);
+    // S20 unease band
+    if(t>=171.74 && t<177.04){ a=Math.max(a,3*(0.5+0.5*Math.sin(t*22))*ph(t,171.74,173.0)*(1-ph(t,176.8,177.04))); }
+    return a<0.05?0:a;
+  }
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function updateCamera(t){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.014*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  10) SCENE MANAGER (pick by t, destroy+init on change, cross-fade, backward-reset)
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy)prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c); prev.inst.c.destroy({children:true}); }catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ============================================================
+  //  11) SHARED FILTER INSTANCES (built once)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:24,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ShockwaveFilter')) FILT.shock2=new F.ShockwaveFilter([640,360],{amplitude:18,wavelength:120,speed:480,brightness:1.1,radius:-1},0);
+  FILT._shock2Fire=0;
+  if(hasF('ColorOverlayFilter')) FILT.flash=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashWarn=new F.ColorOverlayFilter(C.warn,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashRed=new F.ColorOverlayFilter(C.danger,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashCyan=new F.ColorOverlayFilter(C.accent,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[980,360],innerRadius:0});
+  if(hasF('ZoomBlurFilter')) FILT.zoomDrop=new F.ZoomBlurFilter({strength:0,center:[980,360],innerRadius:0});
+  if(hasF('TwistFilter')) FILT.twist=new F.TwistFilter({radius:600,angle:0,offset:[640,300],padding:20});
+  else FILT.twistDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('CRTFilter')) FILT.crt=new F.CRTFilter({curvature:1.2,lineWidth:1.2,lineContrast:0.3,vignetting:0.4,noise:0.15,time:0});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('GlitchFilter')) FILT.glitch=new F.GlitchFilter({slices:8,offset:14,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('RGBSplitFilter')) FILT.rgb=new F.RGBSplitFilter({red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('MotionBlurFilter')) FILT.motion=new F.MotionBlurFilter([0,0],15,0);
+  if(hasF('RadialBlurFilter')) FILT.radial=new F.RadialBlurFilter({angle:0,center:[420,360],radius:160});
+  if(hasF('TiltShiftFilter')) FILT.tilt=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,460),end:new PIXI.Point(W,460)});
+  if(hasF('HslAdjustmentFilter')) FILT.hsl=new F.HslAdjustmentFilter({hue:0,saturation:0,lightness:0,colorize:false,alpha:1});
+
+  let _sceneFiltName=null;
+  function sceneFilters(list){ sceneRoot.filters=(list&&list.length)?list:null; if(list&&list.length){ sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H); } }
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H); }
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+
+  // ============================================================
+  //  12) SHARED HUD HELPERS (vertical bar / gauge)
+  // ============================================================
+  function drawVBar(g,x,y0,y1,w,frac,col){
+    g.beginFill(C.ink,0.6).drawRoundedRect(x,y0,w,y1-y0,4).endFill();
+    const h=(y1-y0)*clamp01(frac);
+    g.beginFill(col,0.92).drawRoundedRect(x,y1-h,w,h,4).endFill();
+  }
+
+  // ============================================================
+  //  13) RENDER persistent NOC (server core, counter, jacks, packets)
+  // ============================================================
+  function renderNOC(t){
+    serverCore.scale.set(1+0.02*beat(t));
+    if(serverCore._bloom){ serverCore._bloom.bloomScale=1.0+0.25*beat(t); }
+    serverCore._glow.scale.set(1.1+0.15*beat(t));
+    counterTxt.text=connCount>=10000?'10 000':String(connCount);
+    if(counterTxt._g){ counterTxt._g.outerStrength=2+1.5*beat(t); }
+    renderJackWall(t);
+    renderPackets(t);
+  }
+
+  // ============================================================
+  //  14) REUSABLE CHORUS SCENE (built once; used S9+S10, S16, S27)
+  // ============================================================
+  function buildChorus(occ,S){
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    const bloomGain={1:0.5,2:0.7,3:0.9}[occ];
+    const occFactor={1:1.0,2:1.2,3:1.6}[occ];
+    const readyCount=6+4*occ;
+    let bloomF=null;
+    if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    const wglow=glow('cyan',0,0,1.0,0.7); worker.addChild(wglow);
+    const ring=new PIXI.Graphics(); c.addChild(ring);
+    const sFlag=txt('1 server',18,C.accent2,'800'); sFlag.position.set(980,300); sFlag.alpha=0; legible(sFlag); c.addChild(sFlag);
+    const pStamp=txt('1 problém',18,C.danger,'800'); pStamp.position.set(640,300); pStamp.alpha=0; legible(pStamp); c.addChild(pStamp);
+    const trapG=new PIXI.Graphics(); c.addChild(trapG);
+    const trapLbl=txt('neškáluje',18,C.danger,'800'); trapLbl.position.set(640,330); trapLbl.alpha=0; legible(trapLbl); c.addChild(trapLbl);
+    const nbStamp=txt('neblokující I/O',18,C.accent,'800'); nbStamp.position.set(420,210); nbStamp.alpha=0; legible(nbStamp); c.addChild(nbStamp);
+    const board=new PIXI.Graphics(); c.addChild(board);
+    const ribbon=makeRope(TRAIL.green,C.ok,12); c.addChild(ribbon);
+    const onStrike=new PIXI.Graphics(); c.addChild(onStrike);
+    const gaugeG=new PIXI.Graphics(); c.addChild(gaugeG);
+    const gaugeLbl=txt('škáluje',16,C.ok,'800'); gaugeLbl.position.set(1050,70); gaugeLbl.alpha=0; legible(gaugeLbl); c.addChild(gaugeLbl);
+    c._ch={occ,bloomGain,occFactor,readyCount,bloomF,worker,wg,wglow,ring,sFlag,pStamp,trapG,trapLbl,nbStamp,board,ribbon,onStrike,gaugeG,gaugeLbl};
+    return c;
+  }
+  function updateChorus(c,t,LS,occ,S){
+    camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    const X=c._ch;
+    const {bloomF,worker,wglow,ring,sFlag,pStamp,trapG,trapLbl,nbStamp,board,ribbon,onStrike,gaugeG,gaugeLbl}=X;
+    const L1=LS.L1,L2=LS.L2,L3=LS.L3,L4=LS.L4;
+    if(bloomF) bloomF.bloomScale=1.0+X.bloomGain*beat(t);
+    connCount=10000; jackWallAlpha=1; jackLit=N_JACKS; jackStrobe=true; packetRate=1;
+    wglow.scale.set(0.9+0.2*beat(t)); worker.scale.set(1+0.03*beat(t));
+    // ---- L1 drop ----
+    if(t>=L1 && !S.fired.has('drop'+occ)){ S.fired.add('drop'+occ);
+      if(FILT.zoomDrop){ FILT.zoomDrop.center=[980,360]; FILT.zoomDrop.strength=0.30; addOverlayFx('zoomDrop',FILT.zoomDrop); } }
+    if(FILT.zoomDrop && hasOverlayFx('zoomDrop')){ FILT.zoomDrop.strength=0.30*(1-ph(t,L1,L1+0.25)); if(t>=L1+0.30) removeOverlayFx('zoomDrop'); }
+    const serverAt=L1+3.0, problemAt=L1+4.3;
+    sFlag.alpha=easeOut(ph(t,serverAt,serverAt+0.3))*(1-ph(t,L2-0.3,L2));
+    sFlag.scale.set(1+0.12*beat(t)*ph(t,serverAt,serverAt+0.4));
+    pStamp.alpha=ph(t,problemAt,problemAt+0.2)*0.85*(1-ph(t,problemAt+0.8,problemAt+1.4));
+    // ---- L2 trap recap (transient blips, NOT a rebuild) ----
+    trapG.clear(); trapLbl.alpha=0;
+    if(t>=L2 && t<L3){
+      const neAt=L2+0.96, pamAt=L2+2.0, ctxAt=L2+2.95, swAt=L2+3.76, zabAt=L2+4.64;
+      const memBlip=triWave(t,pamAt-0.05,pamAt+0.35);
+      drawVBar(trapG,70,90,330,28,0.2+0.7*memBlip,lerpColor(C.thread,C.danger,memBlip));
+      const flat=ph(t,neAt,neAt+0.2)*(1-ph(t,neAt+0.5,neAt+0.8));
+      if(flat>0.01){ trapG.lineStyle(3,C.danger,flat).moveTo(560,300).lineTo(720,300); }
+      trapLbl.alpha=flat;
+      const carA=triWave(t,ctxAt,swAt+0.4);
+      if(carA>0.01){ trapG.lineStyle(3,C.danger,carA*0.7); trapG.drawCircle(CAROUSEL[0],CAROUSEL[1],140);
+        const an2=t*18; trapG.beginFill(C.danger,carA).drawCircle(CAROUSEL[0]+Math.cos(an2)*140,CAROUSEL[1]+Math.sin(an2)*140,8).endFill(); }
+      if(t>=zabAt && t<zabAt+0.4){ const jolt=1-ph(t,zabAt,zabAt+0.4);
+        if(FILT.rgb){ FILT.rgb.red=[6*jolt,0]; FILT.rgb.blue=[-6*jolt,0]; sceneFlash(FILT.rgb,true); } }
+      else { if(FILT.rgb && sceneRoot.filters && sceneRoot.filters.indexOf(FILT.rgb)>=0) sceneFlash(FILT.rgb,false); }
+    }
+    // ---- L3 epoll readiness payoff ----
+    board.clear(); onStrike.clear();
+    if(t>=L3){
+      board.beginFill(C.panel,0.85).lineStyle(2.5,C.accent2,1).drawRoundedRect(EPOLL[0]-70,EPOLL[1]-40,140,80,10).endFill();
+      board.lineStyle(2,C.accent2,0.5);
+      for(let i=0;i<4;i++){ board.moveTo(EPOLL[0]-60,EPOLL[1]-26+i*18).lineTo(EPOLL[0]+60,EPOLL[1]-26+i*18); }
+      const epollAt=L3+2.6;
+      const nReady=Math.round(easeOut(ph(t,epollAt,epollAt+1.6))*X.readyCount);
+      jackGreen.clear();
+      for(let r=0;r<nReady;r++){ jackGreen.add((r*13+7)%N_JACKS); }
+      if(nReady>0){ setRopeAlongPath(ribbon,[[EPOLL[0]+60,EPOLL[1]],[(EPOLL[0]+WORKER[0])/2,(EPOLL[1]+WORKER[1])/2],[WORKER[0],WORKER[1]-20]]);
+        ribbon.alpha=0.7*(0.7+0.3*beat(t)); } else ribbon.alpha=0;
+      const onAt=L3+2.6;
+      const oa=ph(t,onAt,onAt+0.15)*(1-ph(t,onAt+0.15,onAt+0.45));
+      if(oa>0.01){ onStrike.lineStyle(3,C.danger,oa).moveTo(560,250).lineTo(620,210); }
+      nbStamp.alpha=easeOut(ph(t,L3+0.37,L3+0.9))*(1-ph(t,L4-0.2,L4));
+      if(nReady>=1 && !S.fired.has('ping'+occ)){ S.fired.add('ping'+occ);
+        if(FILT.shock){ const gp=jacks[7].s.getGlobalPosition(new PIXI.Point()); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('chPing',FILT.shock); } }
+    } else { jackGreen.clear(); ribbon.alpha=0; nbStamp.alpha=0; }
+    if(FILT.shock && hasOverlayFx('chPing')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('chPing'); }
+    // ---- L4 scale gauge resolve ----
+    gaugeG.clear();
+    if(t>=L4){
+      const skAt=L4+(occ===1?3.48:occ===2?2.92:3.7);
+      const gf=easeOut(ph(t,L4,skAt+0.3));
+      drawVBar(gaugeG,1050,90,330,28,gf,C.ok);
+      gaugeLbl.alpha=easeOut(ph(t,L4+0.3,L4+0.8));
+      const swell=1.0+(0.5*X.occFactor)*beat(t);
+      if(bloomF) bloomF.bloomScale=1.0+X.bloomGain*beat(t)*swell*0.5;
+      wglow.scale.set(0.9+0.25*beat(t)*swell);
+    } else { gaugeLbl.alpha=0; }
+    // event-loop ring spinning calm
+    ring.clear();
+    ring.lineStyle(3,C.accent,0.6+0.3*beat(t)); ring.drawCircle(LOOP[0],LOOP[1],120);
+    const an=t*1.6; ring.beginFill(C.accent,0.9).drawCircle(LOOP[0]+Math.cos(an)*120,LOOP[1]+Math.sin(an)*120,6).endFill();
+  }
+  function chorusScene(occ,LS){
+    return (S)=>{ const c=buildChorus(occ,S); return {c,update(lt,t){ updateChorus(c,t,LS,occ,S); },destroy(){ jackGreen.clear(); if(FILT.rgb) sceneFlash(FILT.rgb,false); }}; };
+  }
+
+  // ============================================================
+  //  15) BOT SWARM (shared ParticleContainer pool, ≤1200)
+  //  Used as OS-thread crowd (S3) and virtual-thread crowd (S21-25).
+  // ============================================================
+  const botPC=new PIXI.ParticleContainer(N_BOTS,{position:true,scale:true,alpha:true,tint:true},N_BOTS,true);
+  fxLayer.addChild(botPC);
+  const bots=[];
+  for(let i=0;i<N_BOTS;i++){ const s=new PIXI.Sprite(BOT_TEX); s.anchor.set(0.5);
+    s.tint=C.thread; s.alpha=0; s.scale.set(0.9); botPC.addChild(s);
+    // deterministic home position across the floor
+    const hx=120+hash01(i*1.13)*600, hy=420+hash01(i*2.71)*210;
+    bots.push({s,hx,hy,seed:i}); }
+  // slab heap pool (low-alpha rects behind bots) — drawn in a Graphics per scene; here just a sprite pool
+  const slabPC=new PIXI.ParticleContainer(N_BOTS,{position:true,scale:true,alpha:true,tint:true},N_BOTS,true);
+  fxLayer.addChild(slabPC);
+  const slabs=[];
+  for(let i=0;i<N_BOTS;i++){ const s=new PIXI.Sprite(SLAB_TEX); s.anchor.set(0.5); s.tint=C.thread; s.alpha=0; s.scale.set(0.9); slabPC.addChild(s); slabs.push({s}); }
+  // global bot controls (set by scenes); rendered by renderBots(t)
+  let botMode='off';   // 'os' | 'vthread' | 'implode' | 'off'
+  let botCount=0;      // visible count
+  let botImplodeP=0;   // 0..1 implode progress toward WORKER
+  let botFrozenFrac=0; // 0..1 left-to-right freeze (S5)
+  let botStutter=0;    // 0..1 scheduler-thrash jitter
+  function renderBots(t){
+    const playing2=1;
+    for(let i=0;i<N_BOTS;i++){ const B=bots[i]; const s=B.s; const SL=slabs[i].s;
+      if(botMode==='off' || i>=botCount){ s.alpha=0; SL.alpha=0; continue; }
+      let x=B.hx, y=B.hy, tint, sc, slabOn=false;
+      if(botMode==='os'){ tint=C.thread; sc=0.9; slabOn=true;
+        if(botStutter>0){ x+=botStutter*4*Math.sin(t*20+i); }
+        // freeze wave grey (S5/S6)
+        const fr=(B.hx-120)/600;
+        if(botFrozenFrac>0 && fr<=botFrozenFrac){ tint=C.grey; }
+      } else if(botMode==='vthread'){ tint=C.vthread; sc=0.5; slabOn=false;
+      } else if(botMode==='implode'){ tint=C.thread; sc=lerp(0.9,0.1,botImplodeP); slabOn=true;
+        x=lerp(B.hx,WORKER[0],easeIn(botImplodeP)); y=lerp(B.hy,WORKER[1],easeIn(botImplodeP));
+      }
+      s.x=x; s.y=y; s.tint=tint; s.scale.set(sc*(1+0.05*beat(t-i*0.001)));
+      s.alpha=(botMode==='implode')?(1-botImplodeP)*0.9:0.85;
+      if(slabOn){ SL.x=x-16; SL.y=y; SL.tint=(s.tint); SL.alpha=s.alpha*0.4; SL.scale.set(sc); } else SL.alpha=0;
+    }
+  }
+
+  // ============================================================
+  //  16) SCENES S0 .. S29
+  // ============================================================
+  // default NOC drivers reset each scene-entry via update; renderNOC reads the globals
+
+  // ---------- S0 : COLD OPEN 0.00-0.89 ----------
+  scene(0,0.89,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      const a=easeOutCubic(ph(t,0,0.89));
+      serverCore.alpha=a;
+      jackWallAlpha=0.5*a; jackLit=0; jackGreen.clear(); jackAmberCursor=-1; jackStrobe=false;
+      connCount=0; packetRate=0;
+      moteEnvelope=0.3*a;
+      botMode='off';
+    }};
+  });
+
+  // ---------- S1 : INTRO a 0.89-13.32 ----------
+  scene(0.89,13.32,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    serverCore.alpha=1;
+    const title=txt('DESET TISÍC SPOJENÍ',60,C.accent,'900'); title.position.set(640,320); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('C10k · neblokující I/O',24,C.muted,'700'); sub.position.set(640,372); legible(sub);
+    c.addChild(title,sub);
+    const sFlag=txt('1 server',18,C.accent2,'800'); sFlag.position.set(980,300); sFlag.alpha=0; legible(sFlag); c.addChild(sFlag);
+    // concurrency vs rate gauges
+    const gaugeG=new PIXI.Graphics(); c.addChild(gaugeG);
+    const gL1=txt('souběžná spojení',13,C.ok,'700'); gL1.anchor.set(0,0.5); gL1.position.set(90,98); legible(gL1); c.addChild(gL1);
+    const gL2=txt('requests/s',13,C.muted,'700'); gL2.anchor.set(0,0.5); gL2.position.set(90,156); legible(gL2); c.addChild(gL2);
+    const cardCap=txt('10 000 spojení ≈ 256 jacků × ~39',16,C.muted,'700'); cardCap.position.set(980,486); cardCap.alpha=0; legible(cardCap); c.addChild(cardCap);
+    const narazTag=txt('naráz / souběžně',16,C.accent,'800'); narazTag.position.set(980,96); narazTag.alpha=0; legible(narazTag); c.addChild(narazTag);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+      jackStrobe=true; jackAmberCursor=-1; jackGreen.clear();
+      const tin=easeOut(ph(t,0.89,2.6));
+      title.alpha=tin*(1-ph(t,11.0,13.2)); title.y=330-tin*10; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // packet flood ramps, jacks fill, counter ticks
+      packetRate=easeIn(ph(t,0.89,9.0));
+      jackWallAlpha=lerp(0.5,1,ph(t,0.89,3.0));
+      jackLit=Math.round(easeOut(ph(t,1.90,11.36))*N_JACKS);
+      connCount=Math.round(easeOut(ph(t,0.89,11.36))*10000);
+      // server emphasis @9.78/11.36
+      sFlag.alpha=easeOut(ph(t,9.78,10.2))*(1-ph(t,12.6,13.2));
+      sFlag.scale.set(1+0.12*beat(t)*ph(t,9.78,10.4));
+      // counter land @11.36
+      if(t>=11.36 && !S.fired.has('land')){ S.fired.add('land');
+        if(FILT.shock){ FILT.shock.center=[980,60]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s1land',FILT.shock); } }
+      if(FILT.shock && hasOverlayFx('s1land')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s1land'); }
+      narazTag.alpha=easeOut(ph(t,7.27,7.8))*(1-ph(t,11.8,12.6));
+      // gauges
+      gaugeG.clear();
+      const gp=easeOut(ph(t,2,11));
+      drawVBar(gaugeG,70,90,330,18,gp,C.ok);
+      // requests/s gauge (greyed + crossed out @7.27)
+      drawVBar(gaugeG,70,148,330,18,0.4,C.grey);
+      if(t>=7.27){ const sa=ph(t,7.27,7.7); gaugeG.lineStyle(3,C.muted,sa).moveTo(66,166).lineTo(102,148); }
+      cardCap.alpha=easeOut(ph(t,11.36,11.9))*(1-ph(t,14.0,14.5));
+    }};
+  });
+
+  // ---------- S2 : INTRO b 13.32-22.46 (C10k name stamp) ----------
+  scene(13.32,22.46,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    const stamp=txt('C10k',72,C.accent,'900'); stamp.position.set(640,300); stamp.alpha=0; legible(stamp);
+    if(hasF('GlowFilter')){ stamp._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); stamp.filters=(stamp.filters||[]).concat([stamp._g]); }
+    const sub=txt('≥ 10 000 souběžných spojení',22,C.muted,'700'); sub.position.set(640,360); sub.alpha=0; legible(sub);
+    c.addChild(stamp,sub);
+    const c1m=txt('C1M',16,C.muted,'700'); c1m.position.set(810,300); c1m.alpha=0; c.addChild(c1m);
+    const c10m=txt('C10M',16,C.muted,'700'); c10m.position.set(900,300); c10m.alpha=0; c.addChild(c10m);
+    return {c,update(lt,t){
+      camDollyScale=1; jackStrobe=true; jackGreen.clear(); jackAmberCursor=-1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=1;
+      // C10k stamp @16.77
+      if(t>=16.77 && !S.fired.has('c10k')){ S.fired.add('c10k');
+        if(FILT.flash){ FILT.flash.color=0xffffff; FILT.flash.alpha=0.5; sceneFlash(FILT.flash,true); }
+        if(FILT.shock){ FILT.shock.center=[640,300]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s2shock',FILT.shock); } }
+      stamp.alpha=easeOutBack(ph(t,16.77,17.2))*(1-ph(t,20.5,22.4)); stamp.y=300;
+      stamp.scale.set(easeOutBack(ph(t,16.77,17.2)));
+      sub.alpha=easeOut(ph(t,17.4,18.0))*(1-ph(t,20.5,22.0));
+      if(stamp._g) stamp._g.outerStrength=2+1.5*beat(t);
+      if(FILT.flash && S.fired.has('c10k')){ FILT.flash.alpha=0.5*(1-ph(t,16.77,16.93)); if(t>16.94) sceneFlash(FILT.flash,false); }
+      if(FILT.shock && hasOverlayFx('s2shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s2shock'); }
+      // C1M/C10M tease @18.98
+      const tease=easeOut(ph(t,18.98,19.6))*0.3*(1-ph(t,20.8,21.6));
+      c1m.alpha=tease; c10m.alpha=tease;
+    },destroy(){ if(FILT.flash) sceneFlash(FILT.flash,false); }};
+  });
+
+  // ---------- S3 : VERSE 1a 22.46-42.62 (thread-per-connection spawn) ----------
+  scene(22.46,42.62,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const plaque=txt('Apache: thread-per-connection',16,C.warn,'800'); plaque.anchor.set(0,0.5); plaque.position.set(120,150); plaque.alpha=0; legible(plaque); c.addChild(plaque);
+    const memG=new PIXI.Graphics(); c.addChild(memG);
+    const memLbl=txt('memory',13,C.muted,'700'); memLbl.anchor.set(0,0.5); memLbl.position.set(70,80); legible(memLbl); c.addChild(memLbl);
+    const cap=txt('1 vlákno / spojení — každé má vlastní zásobník',20,C.muted,'700'); cap.position.set(640,650); cap.alpha=0; legible(cap); c.addChild(cap);
+    const vc=txt('vláken: 0',16,C.thread,'800'); vc.anchor.set(0,0.5); vc.position.set(120,180); legible(vc); c.addChild(vc);
+    return {c,update(lt,t){
+      camDollyScale=1; jackStrobe=true; jackGreen.clear(); jackAmberCursor=-1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=1;
+      botMode='os'; botStutter=0; botFrozenFrac=0;
+      botCount=Math.round(easeIn(ph(t,22.46,42.0))*N_BOTS);
+      plaque.alpha=easeOut(ph(t,34.45,35.0))*(1-ph(t,41.5,42.5));
+      vc.text='vláken: '+Math.round(botCount/N_BOTS*10000)+' → 10 000'; vc.alpha=easeOut(ph(t,30.0,31.0));
+      // memory bar climbs @38.62
+      memG.clear();
+      const mf=easeIn(ph(t,38.62,42.5))*0.55;
+      drawVBar(memG,70,90,330,28,mf,lerpColor(C.thread,C.warn,ph(t,38.62,42.5)));
+      cap.alpha=easeOut(ph(t,38.62,39.2))*(1-ph(t,42.0,42.5));
+    }};
+  });
+
+  // ---------- S4 : VERSE 1b 42.62-52.72 (memory redline + carousel + flatline) ----------
+  scene(42.62,52.72,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const memG=new PIXI.Graphics(); c.addChild(memG);
+    const memLbl=txt('MEM',13,C.danger,'800'); memLbl.anchor.set(0,0.5); memLbl.position.set(70,80); legible(memLbl); c.addChild(memLbl);
+    const carG=new PIXI.Graphics(); c.addChild(carG);
+    const csLbl=txt('context switch',18,C.danger,'800'); csLbl.position.set(420,210); csLbl.alpha=0; legible(csLbl); c.addChild(csLbl);
+    const tpG=new PIXI.Graphics(); c.addChild(tpG);
+    const tpLbl=txt('real work',13,C.muted,'700'); tpLbl.anchor.set(0,0.5); tpLbl.position.set(140,520); legible(tpLbl); c.addChild(tpLbl);
+    const polozi=txt('tě položí',26,C.danger,'900'); polozi.position.set(640,300); polozi.alpha=0; legible(polozi); c.addChild(polozi);
+    let radialOn=false;
+    return {c,update(lt,t){
+      camDollyScale=1; jackStrobe=true; jackGreen.clear();
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=1;
+      botMode='os'; botCount=N_BOTS; botFrozenFrac=0;
+      botStutter=ph(t,45.76,51.85);
+      // memory redline @44.44
+      memG.clear();
+      const mf=lerp(0.55,0.95,easeOut(ph(t,44.44,48.0)));
+      const blink=(mf>0.9 && Math.sin(t*TAU*2)>0)?1:0.85;
+      drawVBar(memG,70,90,330,28,mf,C.danger);
+      memLbl.alpha=(mf>0.9)?blink:0.5;
+      // carousel @45.76, accelerating omega
+      carG.clear();
+      if(t>=45.76){
+        const ca=easeOut(ph(t,45.76,46.4));
+        carG.lineStyle(3,C.danger,0.6*ca).drawCircle(CAROUSEL[0],CAROUSEL[1],140);
+        const omega=lerp(2,26,easeIn(ph(t,45.76,51.85)));
+        const an=t*omega;
+        carG.beginFill(C.danger,ca).drawCircle(CAROUSEL[0]+Math.cos(an)*140,CAROUSEL[1]+Math.sin(an)*140,9).endFill();
+        // RadialBlur when omega high
+        if(FILT.radial){ FILT.radial.center=[CAROUSEL[0],CAROUSEL[1]]; FILT.radial.angle=lerp(0,18,ph(t,48.0,51.85)); if(omega>14 && !radialOn){ radialOn=true; sceneFilters([FILT.radial]); } }
+        csLbl.alpha=easeOut(ph(t,45.76,46.3))*(1-ph(t,52.0,52.7));
+      }
+      // throughput rises then flatlines
+      tpG.clear();
+      tpG.lineStyle(2,C.muted,0.4).moveTo(140,540).lineTo(700,540);
+      const rise=easeOut(ph(t,42.62,46.0)); const dip=easeIn(ph(t,46.0,51.85));
+      tpG.lineStyle(3,C.danger,0.9).moveTo(140,540);
+      tpG.lineTo(300,540-40*rise); tpG.lineTo(460,540-40*rise+30*dip); tpG.lineTo(700,540-10*rise+35*dip);
+      // tě položí @51.85
+      if(t>=51.85 && !S.fired.has('polozi')){ S.fired.add('polozi');
+        if(radialOn){ sceneFilters(null); radialOn=false; }
+        if(FILT.rgb){ FILT.rgb.red=[4,0]; FILT.rgb.blue=[-4,0]; sceneFlash(FILT.rgb,true); } }
+      polozi.alpha=easeOut(ph(t,51.85,52.2))*(1-ph(t,52.5,52.72));
+      if(FILT.rgb && S.fired.has('polozi')){ const jolt=1-ph(t,51.85,52.35); FILT.rgb.red=[4*jolt,0]; FILT.rgb.blue=[-4*jolt,0]; if(t>52.35) sceneFlash(FILT.rgb,false); }
+    },destroy(){ if(radialOn||sceneRoot.filters){ sceneFilters(null); } if(FILT.rgb) sceneFlash(FILT.rgb,false); }};
+  });
+
+  // ---------- S5 : VERSE 1c 52.72-59.92 (blocking I/O freeze wave) ----------
+  scene(52.72,59.92,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const stamp=txt('blocking I/O',24,C.warn,'800'); stamp.position.set(640,140); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    const tally=txt('vlákna zaparkovaná: 0 · 0 B přeneseno',16,C.warn,'700'); tally.position.set(640,650); tally.alpha=0; legible(tally); c.addChild(tally);
+    return {c,update(lt,t){
+      camDollyScale=1; jackStrobe=true; jackGreen.clear();
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.5;
+      botMode='os'; botCount=N_BOTS; botStutter=0;
+      botFrozenFrac=ph(t,52.92,58.41);
+      // stamp @52.92
+      if(t>=52.92 && !S.fired.has('stamp')){ S.fired.add('stamp');
+        if(FILT.shock){ FILT.shock.center=[640,140]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s5shock',FILT.shock); } }
+      if(FILT.shock && hasOverlayFx('s5shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s5shock'); }
+      stamp.alpha=easeOut(ph(t,52.92,53.5))*(1-ph(t,59.0,59.8));
+      // warn vignette
+      if(FILT.flashWarn){ const v=0.10*ph(t,52.92,58.0); FILT.flashWarn.alpha=v; sceneFlash(FILT.flashWarn,v>0.01); }
+      const parked=Math.round(botFrozenFrac*N_BOTS/N_BOTS*8500);
+      tally.text='vlákna zaparkovaná: '+parked+' · 0 B přeneseno'; tally.alpha=easeOut(ph(t,53.5,54.2))*(1-ph(t,59.2,59.8));
+    },destroy(){ if(FILT.flashWarn) sceneFlash(FILT.flashWarn,false); }};
+  });
+
+  // ---------- S6 : VERSE 1d 59.92-65.56 (hero frozen bot) ----------
+  scene(59.92,65.56,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    let tiltOn=false;
+    const hero=new PIXI.Container(); hero.position.set(420,460); c.addChild(hero);
+    const hg=new PIXI.Graphics(); drawBot(hg,C.grey,true); hero.addChild(hg);
+    if(hasF('OutlineFilter')){ hero._o=new F.OutlineFilter(0,C.danger,1); hero.filters=[hero._o]; }
+    const cable=new PIXI.Graphics(); c.addChild(cable);
+    const hourC=new PIXI.Container(); hourC.position.set(620,440); c.addChild(hourC);
+    const hourG=new PIXI.Graphics(); hourC.addChild(hourG);
+    const tag=txt('drží celé vlákno',20,C.danger,'800'); tag.position.set(420,520); tag.alpha=0; legible(tag); c.addChild(tag);
+    const wait=txt('WAITING on read()',13,C.warn,'700'); wait.position.set(420,408); wait.alpha=0; legible(wait); c.addChild(wait);
+    return {c,update(lt,t){
+      camDollyScale=1; jackStrobe=true; jackGreen.clear();
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.4;
+      botMode='os'; botCount=N_BOTS; botFrozenFrac=1; botStutter=0;
+      // tilt focus to hero
+      if(FILT.tilt){ const band=easeOut(ph(t,59.92,60.8)); FILT.tilt.blur=70*band; FILT.tilt.start.y=460; FILT.tilt.end.y=460;
+        if(band>0.02 && !tiltOn){ tiltOn=true; sceneFilters([FILT.tilt]); } }
+      // cable to hourglass
+      cable.clear(); cable.lineStyle(3,C.warn,0.8).moveTo(429,460).lineTo(620,448);
+      drawHourglass(hourG,0.8,clamp01(ph(t,59.92,65.0)));
+      wait.alpha=easeOut(ph(t,59.92,60.6))*(0.6+0.4*Math.sin(t*4));
+      // red-edge @62.26
+      if(hero._o) hero._o.thickness=(t>=62.26)?(2+1*beat(t)):0;
+      tag.alpha=easeOut(ph(t,62.26,62.9))*(1-ph(t,65.0,65.5));
+    },destroy(){ if(tiltOn) sceneFilters(null); }};
+  });
+
+  // ---------- S7 : PRE-CHORUS a 65.56-71.94 (army collapses to one) ----------
+  scene(65.56,71.94,'PRE-CHORUS','prechorus',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    const wglow=glow('cyan',0,0,1.0,0); worker.addChild(wglow);
+    const ring=new PIXI.Graphics(); c.addChild(ring);
+    const stamp=txt('1 worker · mnoho spojení',22,C.accent,'800'); stamp.position.set(420,360); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    const memG=new PIXI.Graphics(); c.addChild(memG);
+    return {c,update(lt,t){
+      camDollyScale=1; jackStrobe=true; jackGreen.clear();
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=1;
+      // army implode @66.35
+      botMode='implode'; botCount=N_BOTS; botImplodeP=easeIn(ph(t,66.35,69.77));
+      worker.alpha=easeOut(ph(t,66.35,67.5)); wglow.alpha=0.7*ph(t,67.0,68.0); worker.scale.set(1+0.04*beat(t));
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      stamp.alpha=easeOut(ph(t,67.90,68.5))*(1-ph(t,71.4,71.9));
+      // heap dissolve burst @67.90
+      if(t>=67.90 && !S.fired.has('heap')){ S.fired.add('heap'); burst(420,540,C.accent,40,3,0.18); }
+      // memory drains
+      memG.clear();
+      const mf=lerp(0.95,0.20,easeOut(ph(t,67.90,71.0)));
+      drawVBar(memG,70,90,330,28,mf,lerpColor(C.danger,C.accent,ph(t,67.90,71.0)));
+      // ring recolor calm
+      ring.clear(); const ra=easeOut(ph(t,68.68,70.5));
+      ring.lineStyle(3,C.accent,0.6*ra+0.2*beat(t)); ring.drawCircle(LOOP[0],LOOP[1],120);
+      if(ra>0.1){ const an=t*1.6; ring.beginFill(C.accent,0.9*ra).drawCircle(LOOP[0]+Math.cos(an)*120,LOOP[1]+Math.sin(an)*120,6).endFill(); }
+    }};
+  });
+
+  // ---------- S8 : PRE-CHORUS b 71.94-78.62 (OS waits) ----------
+  scene(71.94,78.62,'PRE-CHORUS','prechorus',(S)=>{
+    const c=new PIXI.Container();
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    const wglow=glow('cyan',0,0,1.0,0.7); worker.addChild(wglow);
+    const ring=new PIXI.Graphics(); c.addChild(ring);
+    const osG=new PIXI.Graphics(); c.addChild(osG);
+    const osLbl=txt('OS',20,C.accent2,'800'); osLbl.position.set(980,540); osLbl.alpha=0; legible(osLbl); c.addChild(osLbl);
+    const noTy=txt('ne ty',16,C.accent,'800'); noTy.position.set(420,392); noTy.alpha=0; legible(noTy); c.addChild(noTy);
+    const cap=txt('ať čeká OS, ne tvoje vlákno',20,C.muted,'700'); cap.position.set(640,650); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; jackStrobe=true; jackGreen.clear();
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.7;
+      botMode='off';
+      worker.scale.set(1+0.03*beat(t)); wglow.scale.set(0.9+0.2*beat(t));
+      // OS counter @73.28
+      osG.clear();
+      const oa=easeOut(ph(t,73.28,74.2));
+      if(oa>0.01){ osG.beginFill(C.panel,0.9*oa).lineStyle(2,C.accent2,oa).drawRoundedRect(900,520,160,70,10).endFill();
+        // bell
+        osG.beginFill(C.warn,0.9*oa).drawCircle(980,548,8).endFill(); osG.lineStyle(2,C.warn,oa).moveTo(972,556).lineTo(988,556); }
+      osLbl.alpha=oa;
+      // bell ring @76.62
+      if(t>=76.62 && !S.fired.has('bell')){ S.fired.add('bell');
+        if(FILT.shock){ FILT.shock.center=[980,560]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s8bell',FILT.shock); } }
+      if(FILT.shock && hasOverlayFx('s8bell')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s8bell'); }
+      noTy.alpha=easeOut(ph(t,76.62,77.1))*(1-ph(t,78.2,78.6));
+      // event loop ring calm
+      ring.clear(); ring.lineStyle(3,C.accent,0.6+0.3*beat(t)); ring.drawCircle(LOOP[0],LOOP[1],120);
+      const an=t*1.6; ring.beginFill(C.accent,0.9).drawCircle(LOOP[0]+Math.cos(an)*120,LOOP[1]+Math.sin(an)*120,6).endFill();
+      cap.alpha=easeOut(ph(t,73.28,73.9))*(1-ph(t,78.0,78.5));
+    }};
+  });
+
+  // ---------- S9 : CHORUS 1a 78.62-90.10 (L1+L2) ----------
+  scene(78.62,90.10,'CHORUS','chorus',chorusScene(1,{L1:78.62,L2:83.86,L3:90.10,L4:95.42}));
+  // ---------- S10 : CHORUS 1b 90.10-99.70 (L3+L4) ----------
+  scene(90.10,99.70,'CHORUS','chorus',chorusScene(1,{L1:78.62,L2:83.86,L3:90.10,L4:95.42}));
+
+  // ---------- S12 : VERSE 2a 99.70-111.65 (select/poll O(n) clerk) ----------
+  scene(99.70,111.65,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=820; camPivotY=300;
+    const cursor=new PIXI.Graphics(); c.addChild(cursor);
+    const onTag=txt('O(n)',20,C.warn,'900'); onTag.alpha=0; legible(onTag); c.addChild(onTag);
+    // select/poll plaques
+    const pSel=txt('select: max FD · ničí seznam → rebuild',14,C.warn,'700'); pSel.anchor.set(0,0.5); pSel.position.set(120,150); pSel.alpha=0; legible(pSel); c.addChild(pSel);
+    const pPoll=txt('poll: bez limitu · reusable · ale iteruješ vše',14,C.muted,'700'); pPoll.anchor.set(0,0.5); pPoll.position.set(120,176); pPoll.alpha=0; legible(pPoll); c.addChild(pPoll);
+    const costG=new PIXI.Graphics(); c.addChild(costG);
+    const costX=txt('# spojení',14,C.muted,'700'); costX.position.set(980,575); legible(costX); c.addChild(costX);
+    const bubble=txt('to je drahé',16,C.warn,'700'); bubble.position.set(420,400); bubble.alpha=0; legible(bubble); c.addChild(bubble);
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=820; camPivotY=300;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.5; jackStrobe=false; jackGreen.clear();
+      botMode='off';
+      // clerk cursor walks the wall jack-by-jack @102.86
+      const cj=Math.round(ph(t,102.86,106.50)*N_JACKS);
+      jackAmberCursor=(t>=102.86 && t<106.7 && cj<N_JACKS)?cj:-1;
+      cursor.clear();
+      if(jackAmberCursor>=0){ const col=(jackAmberCursor%JCOLS);
+        const cx=760+col*28; cursor.lineStyle(2,C.warn,0.9).moveTo(cx,84).lineTo(cx,470);
+        onTag.position.set(cx,76); onTag.alpha=0.9; }
+      else onTag.alpha=0;
+      pSel.alpha=easeOut(ph(t,100.81,101.5))*(1-ph(t,109.5,110.6));
+      pPoll.alpha=easeOut(ph(t,102.10,102.8))*(1-ph(t,109.5,110.6));
+      // cost meter rising linearly with #connections (below wall)
+      costG.clear();
+      costG.lineStyle(2,C.muted,0.4).moveTo(760,560).lineTo(1200,560).moveTo(760,560).lineTo(760,470);
+      const cf=easeOut(ph(t,102.86,108.66));
+      costG.lineStyle(3,C.warn,0.95).moveTo(760,560).lineTo(760+cf*440,560-cf*90);
+      if(t>=108.66 && !S.fired.has('drahe')){ S.fired.add('drahe'); if(FILT.flashWarn){ FILT.flashWarn.alpha=0.18; sceneFlash(FILT.flashWarn,true);} }
+      if(FILT.flashWarn && S.fired.has('drahe')){ FILT.flashWarn.alpha=0.18*(1-ph(t,108.66,109.2)); if(t>109.3) sceneFlash(FILT.flashWarn,false); }
+      bubble.alpha=easeOut(ph(t,106.74,107.4))*(0.7+0.3*beat(t))*(1-ph(t,110.0,110.6));
+    },destroy(){ jackAmberCursor=-1; if(FILT.flashWarn) sceneFlash(FILT.flashWarn,false); }};
+  });
+
+  // ---------- S13 : VERSE 2b 111.65-118.77 (epoll: notifies ready) ----------
+  scene(111.65,118.77,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=600; camPivotY=320;
+    let boardBloom=null; if(hasF('AdvancedBloomFilter')){ boardBloom=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); }
+    const board=new PIXI.Graphics(); c.addChild(board);
+    if(boardBloom) board.filters=[boardBloom];
+    const plaque=txt('Linux: epoll',16,C.accent2,'800'); plaque.anchor.set(0,0.5); plaque.position.set(120,150); plaque.alpha=0; legible(plaque); c.addChild(plaque);
+    const kq=txt('kqueue (BSD)',13,C.muted,'600'); kq.anchor.set(0,0.5); kq.position.set(120,178); kq.alpha=0; c.addChild(kq);
+    const ribbon=makeRope(TRAIL.green,C.ok,12); c.addChild(ribbon);
+    const gaugeG=new PIXI.Graphics(); c.addChild(gaugeG);
+    const lipLbl=txt('škáluje líp',16,C.ok,'800'); lipLbl.position.set(1050,70); lipLbl.alpha=0; legible(lipLbl); c.addChild(lipLbl);
+    const ltet=txt('LT: svítí · ET (EPOLLET): blikne',13,C.muted,'600'); ltet.position.set(640,470); ltet.alpha=0; c.addChild(ltet);
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=600; camPivotY=320;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.6; jackStrobe=false; jackAmberCursor=-1;
+      botMode='off';
+      // board powers on @112.69
+      board.clear();
+      const ba=easeOut(ph(t,112.69,113.6));
+      board.beginFill(C.panel,0.85*ba).lineStyle(2.5,C.accent2,ba).drawRoundedRect(EPOLL[0]-72,EPOLL[1]-42,144,84,10).endFill();
+      board.lineStyle(2,C.accent2,0.5*ba); for(let i=0;i<4;i++){ board.moveTo(EPOLL[0]-60,EPOLL[1]-28+i*18).lineTo(EPOLL[0]+60,EPOLL[1]-28+i*18); }
+      if(boardBloom) boardBloom.bloomScale=1.0+0.4*beat(t)*ba;
+      plaque.alpha=easeOut(ph(t,111.86,112.5))*(1-ph(t,118.0,118.7)); kq.alpha=plaque.alpha*0.7;
+      // light ONLY ready jacks @114.99
+      jackGreen.clear();
+      const nReady=Math.round(easeOut(ph(t,114.99,118.0))*14);
+      for(let r=0;r<nReady;r++){ jackGreen.add((r*17+3)%N_JACKS); }
+      if(nReady>0){ setRopeAlongPath(ribbon,[[EPOLL[0]+62,EPOLL[1]],[(EPOLL[0]+WORKER[0])/2,(EPOLL[1]+WORKER[1])/2],[WORKER[0],WORKER[1]-20]]); ribbon.alpha=0.7*(0.7+0.3*beat(t)); } else ribbon.alpha=0;
+      if(nReady>=1 && !S.fired.has('ping')){ S.fired.add('ping');
+        if(FILT.shock){ const gp=jacks[3].s.getGlobalPosition(new PIXI.Point()); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s13ping',FILT.shock); } }
+      if(FILT.shock && hasOverlayFx('s13ping')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s13ping'); }
+      // scale gauge jumps @113.71
+      gaugeG.clear();
+      const gf=easeOut(ph(t,113.71,115.0));
+      drawVBar(gaugeG,1050,90,330,28,gf,C.ok);
+      lipLbl.alpha=easeOut(ph(t,113.71,114.3))*(1-ph(t,118.0,118.7));
+      // mini-graph: epoll flat vs greyed select/poll O(n)
+      gaugeG.lineStyle(2,C.muted,0.3).moveTo(1050,360).lineTo(1200,300);
+      gaugeG.lineStyle(2,C.ok,0.8).moveTo(1050,360).lineTo(1200,352);
+      ltet.alpha=easeOut(ph(t,116.0,116.6))*0.6*(1-ph(t,118.3,118.7));
+    },destroy(){ jackGreen.clear(); }};
+  });
+
+  // ---------- S14 : VERSE 2c 119.19-124.78 (readiness IS the event loop) ----------
+  scene(119.19,124.78,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const onGhost=new PIXI.Graphics(); c.addChild(onGhost);
+    const onLbl=txt('O(n)',26,C.danger,'900'); onLbl.position.set(980,280); onLbl.alpha=0; legible(onLbl); c.addChild(onLbl);
+    const ring=new PIXI.Graphics(); c.addChild(ring);
+    const stamp=txt('event loop',22,C.accent,'800'); stamp.position.set(420,500); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    const feed=makeRope(TRAIL.green,C.ok,10); c.addChild(feed);
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.7; jackStrobe=false; jackAmberCursor=-1;
+      botMode='off';
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      // struck O(n) ghost @119.61
+      onGhost.clear();
+      const oa=ph(t,119.61,120.27)*(1-ph(t,120.27,120.6));
+      if(oa>0.01){ onLbl.alpha=oa; onGhost.lineStyle(3,C.danger,oa).moveTo(940,250).lineTo(1030,310); } else onLbl.alpha=0;
+      // only green ready jacks @121.44
+      jackGreen.clear();
+      if(t>=121.44){ for(let r=0;r<12;r++){ jackGreen.add((r*21+5)%N_JACKS); } }
+      // event-loop ring spins up @123.42
+      ring.clear();
+      const ra=easeOut(ph(t,123.42,124.5));
+      ring.lineStyle(3,C.accent,(0.5+0.3*beat(t))*Math.max(0.3,ra)); ring.drawCircle(LOOP[0],LOOP[1],120);
+      const an=t*2.2; ring.beginFill(C.accent,0.9*Math.max(0.3,ra)).drawCircle(LOOP[0]+Math.cos(an)*120,LOOP[1]+Math.sin(an)*120,6).endFill();
+      if(t>=121.44){ setRopeAlongPath(feed,[[760,300],[600,330],[LOOP[0]+120,LOOP[1]]]); feed.alpha=0.6*(0.7+0.3*beat(t)); } else feed.alpha=0;
+      stamp.alpha=easeOut(ph(t,123.42,124.0));
+    },destroy(){ jackGreen.clear(); }};
+  });
+
+  // ---------- S15 : PRE-CHORUS 2 124.78-134.50 (fix reprise, abbreviated) ----------
+  scene(124.78,134.50,'PRE-CHORUS','prechorus',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    const wglow=glow('cyan',0,0,1.0,0.7); worker.addChild(wglow);
+    const ring=new PIXI.Graphics(); c.addChild(ring);
+    const stamp=txt('1 worker',20,C.accent,'800'); stamp.position.set(420,360); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    const osG=new PIXI.Graphics(); c.addChild(osG);
+    const noTy=txt('ne ty',16,C.accent,'800'); noTy.position.set(420,392); noTy.alpha=0; legible(noTy); c.addChild(noTy);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.8; jackStrobe=true; jackGreen.clear(); jackAmberCursor=-1;
+      // quick army-implode blip @125.11
+      botMode='implode'; botCount=N_BOTS; botImplodeP=easeIn(ph(t,125.11,127.3));
+      worker.scale.set(1+0.03*beat(t)); wglow.scale.set(0.9+0.2*beat(t));
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      stamp.alpha=easeOut(ph(t,126.09,126.6))*(1-ph(t,131.0,131.6));
+      // OS re-assert @128.64..131.22 + bell ping
+      osG.clear();
+      const oa=easeOut(ph(t,128.64,129.4));
+      if(oa>0.01){ osG.beginFill(C.panel,0.9*oa).lineStyle(2,C.accent2,oa).drawRoundedRect(900,520,160,70,10).endFill();
+        osG.beginFill(C.warn,0.9*oa).drawCircle(980,548,8).endFill(); }
+      if(t>=131.22 && !S.fired.has('bell')){ S.fired.add('bell');
+        if(FILT.shock){ FILT.shock.center=[980,560]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s15bell',FILT.shock); } }
+      if(FILT.shock && hasOverlayFx('s15bell')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s15bell'); }
+      noTy.alpha=easeOut(ph(t,132.73,133.2))*(1-ph(t,134.1,134.5));
+      ring.clear(); ring.lineStyle(3,C.accent,0.6+0.3*beat(t)); ring.drawCircle(LOOP[0],LOOP[1],120);
+      const an=t*1.6; ring.beginFill(C.accent,0.9).drawCircle(LOOP[0]+Math.cos(an)*120,LOOP[1]+Math.sin(an)*120,6).endFill();
+    }};
+  });
+
+  // ---------- S16 : CHORUS 2 134.50-154.68 ----------
+  scene(134.50,154.68,'CHORUS','chorus',chorusScene(2,{L1:134.50,L2:138.84,L3:144.62,L4:150.44}));
+
+  // ---------- S17 : BRIDGE 1 Java NIO 154.68-162.42 ----------
+  scene(154.68,162.42,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); }
+    const marquee=txt('Java NIO',26,C.accent2,'800'); marquee.position.set(640,140); marquee.alpha=0; legible(marquee); c.addChild(marquee);
+    const board=new PIXI.Graphics(); c.addChild(board); if(bloomF) board.filters=[bloomF];
+    const buf=txt('Buffer',18,C.text,'800'); buf.position.set(300,470); buf.alpha=0; legible(buf); c.addChild(buf);
+    const chan=txt('Channel',18,C.text,'800'); chan.position.set(420,470); chan.alpha=0; legible(chan); c.addChild(chan);
+    const sel=txt('Selector',18,C.accent,'800'); sel.position.set(540,470); sel.alpha=0; legible(sel); c.addChild(sel);
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.6; jackStrobe=false; jackAmberCursor=-1;
+      botMode='off'; jackGreen.clear(); for(let r=0;r<10;r++) jackGreen.add((r*19+1)%N_JACKS);
+      marquee.alpha=easeOutBack(ph(t,154.68,155.4))*(1-ph(t,161.5,162.4));
+      // epoll board under NIO
+      board.clear();
+      board.beginFill(C.panel,0.85).lineStyle(2.5,C.accent2,1).drawRoundedRect(EPOLL[0]-72,EPOLL[1]-42,144,84,10).endFill();
+      board.lineStyle(2,C.accent2,0.5); for(let i=0;i<4;i++){ board.moveTo(EPOLL[0]-60,EPOLL[1]-28+i*18).lineTo(EPOLL[0]+60,EPOLL[1]-28+i*18); }
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      // chips clip on
+      function clip(el,at){ el.alpha=easeOutBack(ph(t,at,at+0.4))*(1-ph(t,161.8,162.4)); el.scale.set(easeOutBack(ph(t,at,at+0.4))); }
+      clip(buf,157.32); clip(chan,159.21); clip(sel,161.18);
+      [[buf,157.32],[chan,159.21],[sel,161.18]].forEach(([el,at])=>{
+        if(t>=at && !S.fired.has('clip'+at)){ S.fired.add('clip'+at);
+          if(FILT.shock2){ FILT.shock2.center=[el.x,el.y]; FILT._shock2Fire=t; FILT.shock2.time=0; addOverlayFx('nioClip',FILT.shock2); } } });
+      if(FILT.shock2 && hasOverlayFx('nioClip')){ FILT.shock2.time=t-FILT._shock2Fire; if(t-FILT._shock2Fire>1.0) removeOverlayFx('nioClip'); }
+    },destroy(){ jackGreen.clear(); }};
+  });
+
+  // ---------- S18 : BRIDGE 2 Selector → many channels 162.42-168.24 ----------
+  scene(162.42,168.24,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    const dial=new PIXI.Graphics(); c.addChild(dial);
+    const channels=[]; for(let i=0;i<10;i++){ const r=makeRope(TRAIL.cyan,C.accent,10); c.addChild(r); channels.push(r); }
+    const innerLbl=txt('uvnitř: epoll',16,C.muted,'700'); innerLbl.position.set(420,360); innerLbl.alpha=0; legible(innerLbl); c.addChild(innerLbl);
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.0,1.06,easeInOut(ph(t,165.95,168.0)));
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.6; jackStrobe=false; jackAmberCursor=-1;
+      botMode='off'; jackGreen.clear();
+      // selector dial spins @162.42
+      dial.clear();
+      const da=easeOut(ph(t,162.42,163.2));
+      dial.lineStyle(3,C.accent,0.8*da).drawCircle(540,470,26);
+      const an=t*2.0; dial.beginFill(C.accent,da).drawCircle(540+Math.cos(an)*26,470+Math.sin(an)*26,6).endFill();
+      if(FILT.radial && da>0.5){ FILT.radial.center=[540,470]; FILT.radial.angle=6; }
+      // fan-out channels @163.51
+      const ca=easeOut(ph(t,163.51,165.0));
+      channels.forEach((r,i)=>{
+        const ang=(i/10)*Math.PI*0.9 - Math.PI*0.05;
+        const tx=820+Math.cos(ang)*180, ty=200+i*22;
+        setRopeAlongPath(r,[[540,470],[lerp(540,tx,0.5),lerp(470,ty,0.5)],[tx,ty]]);
+        r.alpha=0.6*ca*(0.7+0.3*beat(t-i*0.05));
+      });
+      innerLbl.alpha=easeOut(ph(t,166.98,167.5))*(1-ph(t,167.9,168.2));
+    }};
+  });
+
+  // ---------- S19 : BRIDGE 3 fast but ugly 168.24-171.74 ----------
+  scene(168.24,171.74,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const gaugeG=new PIXI.Graphics(); c.addChild(gaugeG);
+    const spdLbl=txt('rychlý',14,C.accent,'800'); spdLbl.position.set(1050,70); spdLbl.alpha=0; legible(spdLbl); c.addChild(spdLbl);
+    const panel=new PIXI.Graphics(); c.addChild(panel);
+    const code=txt('cb(()=>{ cb(()=>{ cb(()=>{ ... }) }) })',16,C.warn,'700'); code.position.set(640,420); code.alpha=0; legible(code); c.addChild(code);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.7; jackStrobe=false; jackGreen.clear(); jackAmberCursor=-1;
+      botMode='off';
+      // speed gauge high
+      gaugeG.clear();
+      const gf=easeOut(ph(t,168.24,169.9));
+      drawVBar(gaugeG,1050,90,330,28,gf,C.accent);
+      spdLbl.alpha=easeOut(ph(t,169.88,170.3))*(1-ph(t,171.3,171.7));
+      // ugly code panel @170.55
+      panel.clear();
+      const pa=easeOut(ph(t,170.55,171.2));
+      if(pa>0.01){ panel.beginFill(C.panel,0.9*pa).lineStyle(2,C.warn,pa*(0.6+0.4*beat(t))).drawRoundedRect(420,390,440,70,8).endFill(); }
+      code.alpha=pa;
+      // mild glitch on panel only
+      if(FILT.glitch && t>=170.55){ FILT.glitch.slices=4; FILT.glitch.offset=4*pa; FILT.glitch.seed=Math.sin(t*40); sceneFlash(FILT.glitch,pa>0.1); }
+    },destroy(){ if(FILT.glitch) sceneFlash(FILT.glitch,false); }};
+  });
+
+  // ---------- S20 : BRIDGE 4 callback hell 171.74-177.04 ----------
+  scene(171.74,177.04,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=640; camPivotY=300;
+    const boxes=new PIXI.Graphics(); c.addChild(boxes);
+    const hell=txt('callback hell',36,C.danger,'900'); hell.position.set(640,300); hell.alpha=0; legible(hell); c.addChild(hell);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=300;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=0.7; packetRate=0.4; jackStrobe=false; jackGreen.clear(); jackAmberCursor=-1;
+      botMode='off';
+      // box-in-box recursion
+      boxes.clear();
+      const depth=Math.round(ph(t,171.74,176.64)*7);
+      for(let d=0;d<depth;d++){ const sz=180-d*22; const rot=d*0.12; const a=0.7-d*0.06;
+        boxes.lineStyle(2,lerpColor(C.warn,C.danger,d/7),Math.max(0.2,a));
+        const cx=640,cy=300;
+        const co=Math.cos(rot),si=Math.sin(rot);
+        const pts=[[-sz/2,-sz/2],[sz/2,-sz/2],[sz/2,sz/2],[-sz/2,sz/2]].map(p=>[cx+p[0]*co-p[1]*si,cy+p[0]*si+p[1]*co]);
+        boxes.moveTo(pts[0][0],pts[0][1]); for(let k=1;k<4;k++) boxes.lineTo(pts[k][0],pts[k][1]); boxes.lineTo(pts[0][0],pts[0][1]);
+      }
+      // twist warp carried into S21 (overlayFx 'twistHell')
+      if(t>=173.28 && !hasOverlayFx('twistHell')){
+        if(FILT.twist){ FILT.twist.offset=[640,300]; addOverlayFx('twistHell',FILT.twist); }
+        else if(FILT.twistDisp){ addOverlayFx('twistHell',FILT.twistDisp); } }
+      if(hasOverlayFx('twistHell')){
+        let ang; if(t<177.04) ang=0.5*easeInOut(ph(t,173.28,176.64)); else ang=0.5*(1-ph(t,177.04,177.6));
+        if(FILT.twist) FILT.twist.angle=ang; else if(FILT.twistDisp){ FILT.twistDisp.scale.x=FILT.twistDisp.scale.y=ang*60; }
+        if(t>=177.6) removeOverlayFx('twistHell');
+      }
+      // glitch burst + danger tint @176.64
+      if(t>=176.64 && !S.fired.has('hell')){ S.fired.add('hell');
+        if(FILT.glitch){ FILT.glitch.slices=8; FILT.glitch.offset=12; sceneFlash(FILT.glitch,true); }
+        if(FILT.flashRed){ FILT.flashRed.alpha=0.35; } }
+      hell.alpha=easeOut(ph(t,176.64,177.0)); hell.scale.set(easeOutBack(ph(t,176.64,177.0)));
+      if(FILT.glitch && S.fired.has('hell')){ FILT.glitch.seed=Math.sin(t*60); FILT.glitch.offset=12*(1-ph(t,176.64,177.04)); if(t>177.0) sceneFlash(FILT.glitch,false); }
+    },destroy(){ if(FILT.glitch) sceneFlash(FILT.glitch,false); }};
+  });
+
+  // ---------- S21 : BRIDGE 5 Loom arrives 177.04-182.52 ----------
+  scene(177.04,182.52,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=W/2; camPivotY=H/2;
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const marquee=txt('Project Loom · Java 21',26,C.vthread,'800'); marquee.position.set(640,140); marquee.alpha=0; legible(marquee); c.addChild(marquee);
+    const tag=txt('spravuje JVM, ne OS',16,C.muted,'700'); tag.position.set(640,200); tag.alpha=0; legible(tag); c.addChild(tag);
+    const padG=new PIXI.Graphics(); c.addChild(padG);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.7; jackStrobe=true; jackGreen.clear(); jackAmberCursor=-1;
+      // twist release handled in S20's overlayFx removal (window crosses 177.6)
+      if(hasOverlayFx('twistHell')){ let ang=0.5*(1-ph(t,177.04,177.6)); if(FILT.twist) FILT.twist.angle=Math.max(0,ang); else if(FILT.twistDisp){ FILT.twistDisp.scale.x=FILT.twistDisp.scale.y=Math.max(0,ang)*60; } if(t>=177.6) removeOverlayFx('twistHell'); }
+      // accent relief flash @177.04
+      if(t>=177.04 && !S.fired.has('relief')){ S.fired.add('relief'); if(FILT.flashCyan){ FILT.flashCyan.alpha=0.3; sceneFlash(FILT.flashCyan,true); } burst(640,300,C.accent,40,3,0.2); }
+      if(FILT.flashCyan && S.fired.has('relief')){ FILT.flashCyan.alpha=0.3*(1-ph(t,177.04,177.5)); if(t>177.5) sceneFlash(FILT.flashCyan,false); }
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      marquee.alpha=easeOutBack(ph(t,179.26,180.0))*(1-ph(t,182.0,182.5));
+      tag.alpha=easeOut(ph(t,180.62,181.2))*(1-ph(t,182.0,182.5));
+      // vthread swarm spawns @179.65
+      botMode='vthread'; botCount=Math.round(easeOut(ph(t,179.65,182.0))*N_BOTS);
+      // carrier pads
+      padG.clear();
+      const pa=easeOut(ph(t,179.65,180.6));
+      if(pa>0.01){ for(let cc=0;cc<8;cc++){ const p=carrier(cc); padG.beginFill(C.panel,0.8*pa).lineStyle(2,C.accent2,0.6*pa).drawRoundedRect(p[0]-26,p[1]-8,52,16,4).endFill(); } }
+    },destroy(){ if(FILT.flashCyan) sceneFlash(FILT.flashCyan,false); }};
+  });
+
+  // ---------- S22 : BRIDGE 6 millions, JVM-managed 182.52-190.44 ----------
+  scene(182.52,190.44,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const mult=txt('× miliony',20,C.vthread,'800'); mult.position.set(640,200); mult.alpha=0; legible(mult); c.addChild(mult);
+    const conductor=new PIXI.Container(); conductor.position.set(980,360); c.addChild(conductor);
+    const cg=new PIXI.Graphics(); conductor.addChild(cg);
+    const jvmLbl=txt('JVM ≠ OS',18,C.vthread,'800'); jvmLbl.position.set(980,300); jvmLbl.alpha=0; legible(jvmLbl); c.addChild(jvmLbl);
+    const padG=new PIXI.Graphics(); c.addChild(padG);
+    const ghost=new PIXI.Graphics(); c.addChild(ghost);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.8; jackStrobe=true; jackGreen.clear(); jackAmberCursor=-1;
+      botMode='vthread'; botCount=N_BOTS;
+      mult.alpha=easeOut(ph(t,182.52,183.2))*(1-ph(t,189.6,190.3))*(0.8+0.2*beat(t));
+      // JVM conductor @185.64
+      cg.clear();
+      const ca=easeOut(ph(t,185.64,186.4));
+      if(ca>0.01){ cg.beginFill(C.accent2,0.85*ca).lineStyle(2,C.vthread,ca).drawRoundedRect(-20,-30,40,60,8).endFill();
+        cg.lineStyle(3,C.vthread,ca).moveTo(0,-30).lineTo(Math.cos(t*3)*24,-30+Math.sin(t*3)*10); }
+      jvmLbl.alpha=easeOut(ph(t,186.30,187.0))*(1-ph(t,189.6,190.3));
+      // carrier pads small underneath
+      padG.clear();
+      for(let cc=0;cc<8;cc++){ const p=carrier(cc); padG.beginFill(C.panel,0.6).lineStyle(2,C.accent2,0.5).drawRoundedRect(p[0]-22,p[1]-7,44,14,4).endFill(); }
+      // heavy thread ghost contrast
+      ghost.clear();
+      const ga=0.4*(0.5+0.5*Math.sin(t*1.5))*ph(t,183.55,185.0)*(1-ph(t,188.0,189.0));
+      if(ga>0.02){ drawBot(ghost,C.thread,true); ghost.x=320; ghost.y=560; ghost.alpha=ga; }
+    }};
+  });
+
+  // ---------- S23 : VERSE 3a 190.44-195.28 (simple blocking code) ----------
+  scene(190.44,195.28,'VERSE 3','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const panel=new PIXI.Graphics(); c.addChild(panel);
+    const code=txt('read();\nprocess();\nwrite();',18,C.text,'800'); code.position.set(640,420); code.alpha=0; legible(code); c.addChild(code);
+    const cross=new PIXI.Graphics(); c.addChild(cross);
+    const check=txt('✓ čitelné',18,C.ok,'800'); check.position.set(640,470); check.alpha=0; legible(check); c.addChild(check);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.7; jackStrobe=true; jackGreen.clear(); jackAmberCursor=-1;
+      botMode='vthread'; botCount=Math.round(N_BOTS*0.7);
+      panel.clear();
+      const pa=easeOut(ph(t,190.44,191.4));
+      panel.beginFill(C.panel,0.9*pa).lineStyle(2,C.vthread,pa).drawRoundedRect(500,380,280,80,8).endFill();
+      code.alpha=pa;
+      // crossed callback-hell ghost
+      cross.clear();
+      const ca=0.35*pa;
+      cross.lineStyle(2,C.danger,ca).drawRect(280,390,90,60); cross.moveTo(280,390).lineTo(370,450);
+      check.alpha=easeOut(ph(t,194.86,195.2));
+    }};
+  });
+
+  // ---------- S24 : VERSE 3b 195.28-205.00 (unmount → mount, money shot) ----------
+  scene(195.28,205.00,'VERSE 3','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=540; camPivotY=520;
+    const padG=new PIXI.Graphics(); c.addChild(padG);
+    const heroV=new PIXI.Container(); heroV.position.set(540,640); c.addChild(heroV);
+    const hvg=new PIXI.Graphics(); drawBot(hvg,C.vthread,false); hvg.scale.set(1.3); heroV.addChild(hvg);
+    const parked=new PIXI.Container(); c.addChild(parked);
+    const pkg=new PIXI.Graphics(); drawBot(pkg,C.warn,false); pkg.scale.set(1.3); parked.addChild(pkg); parked.alpha=0;
+    const newV=new PIXI.Container(); newV.position.set(540,640); c.addChild(newV);
+    const nvg=new PIXI.Graphics(); drawBot(nvg,C.vthread,false); nvg.scale.set(1.3); newV.addChild(nvg); newV.alpha=0;
+    const tagU=txt('unmount',16,C.vthread,'800'); tagU.position.set(700,560); tagU.alpha=0; legible(tagU); c.addChild(tagU);
+    const tagC=txt('carrier OS thread',14,C.muted,'700'); tagC.position.set(540,672); tagC.alpha=0; legible(tagC); c.addChild(tagC);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=540; camPivotY=520;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.7; jackStrobe=true; jackGreen.clear(); jackAmberCursor=-1;
+      botMode='vthread'; botCount=Math.round(N_BOTS*0.8);
+      // 8 carrier pads, the hero is pad 3
+      padG.clear();
+      for(let cc=0;cc<8;cc++){ const p=carrier(cc); const hot=(cc===3); padG.beginFill(C.panel,0.85).lineStyle(2,hot?C.accent:C.accent2,0.7).drawRoundedRect(p[0]-26,p[1]-9,52,18,4).endFill(); }
+      tagC.alpha=easeOut(ph(t,195.28,196.0));
+      // block @197.24 -> hero amber
+      const blocked=ph(t,196.72,197.24);
+      hvg.clear(); drawBot(hvg,lerpColor(C.vthread,C.warn,blocked),false); hvg.scale.set(1.3);
+      // unmount @198.94 (MotionBlur lift)
+      const up=easeInOut(ph(t,198.94,200.4));
+      heroV.alpha=1-up;
+      parked.position.set(lerp(540,720,up),lerp(640,540,up)); parked.alpha=(up>0.05&&up<0.98)?1:(up>=0.98?0.85:0);
+      tagU.alpha=easeOut(ph(t,198.94,199.5))*(1-ph(t,202.0,203.0));
+      if(t>=198.94 && !S.fired.has('unmount')){ S.fired.add('unmount');
+        if(FILT.motion){ FILT.motion.velocity=[20,-12]; sceneFlash(FILT.motion,true); } }
+      if(FILT.motion && S.fired.has('unmount')){ const m=1-ph(t,198.94,199.44); FILT.motion.velocity=[20*m,-12*m]; if(t>199.44) sceneFlash(FILT.motion,false); }
+      // mount another @203.28
+      const dp=easeOut(ph(t,203.28,204.2));
+      newV.alpha=dp; newV.scale.set(lerp(0.6,1,dp));
+      if(t>=204.0 && !S.fired.has('mount')){ S.fired.add('mount'); burst(540,640,C.accent,24,2.5,0.16); }
+    },destroy(){ if(FILT.motion) sceneFlash(FILT.motion,false); }};
+  });
+
+  // ---------- S25 : VERSE 3c 205.00-211.00 (simple + scales, I/O-bound) ----------
+  scene(205.00,211.00,'VERSE 3','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const panel=new PIXI.Graphics(); c.addChild(panel);
+    const code=txt('read();\nprocess();',16,C.text,'800'); code.position.set(360,420); code.alpha=0; legible(code); c.addChild(code);
+    const gaugeG=new PIXI.Graphics(); c.addChild(gaugeG);
+    const skLbl=txt('škáluje',16,C.ok,'800'); skLbl.position.set(1050,70); skLbl.alpha=0; legible(skLbl); c.addChild(skLbl);
+    const cmpG=new PIXI.Graphics(); c.addChild(cmpG);
+    const ioLbl=txt('I/O-bound',13,C.ok,'700'); ioLbl.position.set(1050,300); ioLbl.alpha=0; legible(ioLbl); c.addChild(ioLbl);
+    const cpuLbl=txt('CPU-bound: žádný zisk',13,C.muted,'600'); cpuLbl.position.set(1090,340); cpuLbl.alpha=0; c.addChild(cpuLbl);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.7; jackStrobe=true; jackGreen.clear(); jackAmberCursor=-1;
+      botMode='vthread'; botCount=Math.round(N_BOTS*0.7);
+      panel.clear();
+      const pa=easeOut(ph(t,205.00,206.0));
+      panel.beginFill(C.panel,0.9*pa).lineStyle(2,C.vthread,pa).drawRoundedRect(260,390,200,70,8).endFill();
+      code.alpha=pa;
+      gaugeG.clear();
+      drawVBar(gaugeG,1050,90,330,28,easeOut(ph(t,205.0,209.8)),C.ok);
+      skLbl.alpha=easeOut(ph(t,209.54,210.0));
+      // I/O vs CPU bars
+      cmpG.clear();
+      const cmA=easeOut(ph(t,206.5,207.5));
+      drawVBar(cmpG,1040,300,360,18,0.9*cmA,C.ok);
+      drawVBar(cmpG,1062,300,360,18,0.12*cmA,C.grey);
+      ioLbl.alpha=cmA; cpuLbl.alpha=cmA*0.7;
+    }};
+  });
+
+  // ---------- S27 : CHORUS 3 211.00-232.00 (climactic) ----------
+  scene(211.00,232.00,'CHORUS','chorus',chorusScene(3,{L1:211.00,L2:216.02,L3:222.46,L4:227.02}));
+
+  // ---------- S28 : OUTRO recap 232.00-249.66 ----------
+  scene(232.00,249.66,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const c10k=txt('C10k',56,C.accent,'900'); c10k.position.set(640,250); c10k.alpha=0; legible(c10k);
+    if(hasF('GlowFilter')){ c10k._g=new F.GlowFilter({distance:16,outerStrength:1.5,color:C.accent,quality:0.4}); c10k.filters=(c10k.filters||[]).concat([c10k._g]); }
+    c.addChild(c10k);
+    const board=new PIXI.Graphics(); c.addChild(board);
+    const gaugeG=new PIXI.Graphics(); c.addChild(gaugeG);
+    const worker=new PIXI.Container(); worker.position.set(WORKER[0],WORKER[1]); c.addChild(worker);
+    const wg=new PIXI.Graphics(); drawBot(wg,C.accent,false); worker.addChild(wg);
+    const ribbon=makeRope(TRAIL.green,C.ok,12); c.addChild(ribbon);
+    const summary=txt('epoll · NIO · Loom',18,C.muted,'700'); summary.position.set(640,560); summary.alpha=0; legible(summary); c.addChild(summary);
+    const padG=new PIXI.Graphics(); c.addChild(padG);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.0,0.96,easeInOut(ph(t,244.30,249.0))); camPivotX=W/2; camPivotY=H/2;
+      connCount=10000; jackLit=N_JACKS; jackWallAlpha=1; packetRate=0.6; jackStrobe=true; jackAmberCursor=-1;
+      if(bloomF) bloomF.bloomScale=1.0+0.3*beat(t);
+      c10k.alpha=easeOut(ph(t,232.0,233.5))*(1-ph(t,243.0,244.3));
+      if(c10k._g) c10k._g.outerStrength=1.5+1*beat(t);
+      // event-loop solution replay 235.27..242.30
+      const showLoop=(t>=235.27 && t<244.3);
+      board.clear(); gaugeG.clear(); jackGreen.clear();
+      if(showLoop){
+        board.beginFill(C.panel,0.85).lineStyle(2.5,C.accent2,1).drawRoundedRect(EPOLL[0]-72,EPOLL[1]-42,144,84,10).endFill();
+        const nReady=Math.round(easeOut(ph(t,236.64,240.0))*16);
+        for(let r=0;r<nReady;r++) jackGreen.add((r*23+9)%N_JACKS);
+        if(nReady>0){ setRopeAlongPath(ribbon,[[EPOLL[0]+62,EPOLL[1]],[700,360],[WORKER[0],WORKER[1]-20]]); ribbon.alpha=0.6*(0.7+0.3*beat(t)); } else ribbon.alpha=0;
+        drawVBar(gaugeG,1050,90,330,28,easeOut(ph(t,236.64,240.0)),C.ok);
+        worker.alpha=1; padG.clear(); botMode='off';
+      } else { ribbon.alpha=0; }
+      // Loom swarm crossfade @244.30
+      if(t>=244.30){
+        botMode='vthread'; botCount=Math.round(easeOut(ph(t,244.30,247.0))*N_BOTS);
+        worker.alpha=1-ph(t,244.30,245.5);
+        padG.clear(); for(let cc=0;cc<8;cc++){ const p=carrier(cc); padG.beginFill(C.panel,0.7).lineStyle(2,C.accent2,0.5).drawRoundedRect(p[0]-24,p[1]-8,48,16,4).endFill(); }
+        summary.alpha=easeOut(ph(t,244.76,245.6));
+      } else { botMode='off'; worker.alpha=easeOut(ph(t,232.0,233.0)); summary.alpha=0; }
+    },destroy(){ jackGreen.clear(); }};
+  });
+
+  // ---------- S29 : END-CARD + tail 249.66-254.952 ----------
+  scene(249.66,254.952,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; camPivotX=640; camPivotY=360;
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const badge=txt('🔌',40,C.accent,'700'); badge.position.set(640,250); badge.alpha=0; c.addChild(badge);
+    const credit=txt('Titulky vytvořil Jirka Kováč',22,C.text,'800'); credit.position.set(640,330); credit.alpha=0; legible(credit); c.addChild(credit);
+    const title=txt('DESET TISÍC SPOJENÍ · C10k',24,C.accent,'800'); title.position.set(640,386); title.alpha=0; legible(title); c.addChild(title);
+    const tagline=txt('C10k · neblokující I/O · ESW B4M36ESW',18,C.muted,'700'); tagline.position.set(640,560); tagline.alpha=0; legible(tagline); c.addChild(tagline);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      const q=ph(t,249.66,254.0);
+      connCount=10000; jackWallAlpha=lerp(1,0.4,easeInOut(q)); jackLit=N_JACKS; jackStrobe=true; jackAmberCursor=-1;
+      jackGreen.clear();
+      packetRate=lerp(1.0,0.0,easeInOut(q)); packetVisibleRatio=lerp(1.0,0.15,easeInOut(q));
+      moteVisibleRatio=lerp(1.0,0.2,easeInOut(q)); moteEnvelope=lerp(0.3,0.1,easeInOut(q));
+      botMode='vthread'; botCount=Math.round(lerp(N_BOTS,N_BOTS*0.2,easeInOut(q)));
+      badge.alpha=easeOut(ph(t,249.66,250.6))*(0.7+0.3*beat(t)*(1-q));
+      credit.alpha=easeOut(ph(t,249.66,250.8));
+      title.alpha=easeOut(ph(t,250.6,251.6));
+      tagline.alpha=easeOut(ph(t,251.4,252.4));
+      if(bloomF) bloomF.bloomScale=1.0+0.25*Math.exp(-Math.pow((t-253.0),2)/0.3);
+    },destroy(){ packetVisibleRatio=1; moteVisibleRatio=1; }};
+  });
+
+  // ============================================================
+  //  17) SECTION GRADE per scene (ColorMatrix on bgLayer)
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='verse' && t>=42.62 && t<59.92){
+      // collapse / blocking: desaturate toward danger
+      const d=ph(t,42.62,46.0)*(1-ph(t,58.0,59.92));
+      bgGrade.saturate(-0.3*d,false); bgGrade.brightness(1-0.08*d,true);
+    } else if(sec==='verse' && t>=22.46 && t<42.62){
+      bgGrade.saturate(0.05,false); // warm-warn creep handled by gradient
+    } else if(sec==='bridge' && t>=154.68 && t<168.24){
+      bgGrade.saturate(0.12,false); // Java violet lift
+    } else if(sec==='bridge' && t>=168.24 && t<177.04){
+      const u=ph(t,168.24,173.0)*(1-ph(t,177.0,177.04));
+      bgGrade.saturate(-0.2*u,false);
+    } else if(sec==='chorus'){
+      bgGrade.saturate(0.16,false);
+    } else if(sec==='outro'){
+      bgGrade.saturate(0.06,false);
+    } else if(sec==='prechorus'){
+      bgGrade.saturate(0.12,false);
+    } else {
+      bgGrade.saturate(0.08,false);
+    }
+  }
+
+  // ============================================================
+  //  18) KARAOKE (DOM, word-by-word, exact final picker §5)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=890, LAST_WORD_END=254900;
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;   // GLOBAL GATE first (S0 + tail blank)
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; }
+    return null;                                                // FALLBACK REMOVED — gaps show no line
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  19) MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    const dt=app.ticker.deltaMS/1000;
+    bgIntent.kawase=false; bgIntent.hsl=false;
+    // reset NOC drivers to safe defaults each frame; active scene re-sets them in its update
+    packetVisibleRatio = (t>=249.66)?packetVisibleRatio:1;
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='verse' && t>=42.62 && t<59.92){ const d=ph(t,42.62,46.0)*(1-ph(t,58.0,59.92)); top=lerpColor(C.bgTop,C.bgTopRed,d); bot=lerpColor(C.bgBot,C.bgBotRed,d); }
+    else if(sec==='bridge' && t>=168.24 && t<177.04){ const u=ph(t,168.24,173.0)*(1-ph(t,177.0,177.04)); top=lerpColor(C.bgTop,C.bgTopRed,u); bot=lerpColor(C.bgBot,C.bgBotRed,u); }
+    else if(sec==='bridge' && t>=154.68 && t<168.24){ const v=ph(t,154.68,156.0); top=lerpColor(C.bgTop,C.bgTopViolet,v); bot=lerpColor(C.bgBot,C.bgBotViolet,v); }
+    else if(sec==='chorus' || (sec==='verse'&&t>=99.70&&t<124.78) || sec==='outro'){ top=lerpColor(C.bgTop,C.bgTopGreen,0.5); bot=lerpColor(C.bgBot,C.bgBotGreen,0.5); }
+    if(t>=249.66){ const q=easeInOut(ph(t,249.66,254.0)); top=lerpColor(top,0x05101e,q); bot=lerpColor(bot,0x02060d,q); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // scanline drift + reflection + godray time
+    scanTile.tilePosition.y=(t*60)%256; scanTile.alpha=0.10*clamp01(moteEnvelope/0.3);
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time=t; }
+    bgIntent.godray=(sec==='intro'||sec==='chorus'||sec==='outro');
+
+    // ----- scene manager (backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.14);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame -----
+    { const arr=[bgGrade];
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(bgIntent.hsl && FILT.hsl) arr.push(FILT.hsl);
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+
+    // ----- persistent NOC + bots -----
+    renderNOC(t);
+    renderBots(t);
+
+    // ----- camera -----
+    updateCamera(t);
+
+    // ----- karaoke + section label -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  20) AMBIENT (deltaMS) — motes + sparks (non-load-bearing, PAUSE-FREEZE)
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    const playing = !player.paused && !player.ended;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y>H+20){ m.s.y=-20; m.s.x=Math.random()*W; } }
+      const visible=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      m.s.alpha=visible? moteEnvelope*(0.7+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  21) PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  22) TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>
+

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESW – Efektivní software · studijní materiály ke zkoušce</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 ESW – obsah</a>
+    <span class="spacer"></span>
+    <a href="zkouska.html">📝 Zkouška</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <h1>Efektivní software (B4M36ESW)</h1>
+    <p>Kompletní studijní materiály ke zkoušce – vysvětlení obsahu předmětu po jednotlivých
+    přednáškách, klíčové pojmy a zkouškové otázky s odpověďmi. FEL ČVUT.</p>
+  </div>
+
+  <p class="perex">Předmět učí psát <strong>efektivní software</strong> – tedy software, který dobře
+  využívá dostupné prostředky (CPU, paměť, energii, síť) na <em>moderním vícejádrovém hardwaru</em>.
+  Techniky se procvičují v <strong>C/C++/Rust</strong> (nativní část) a v <strong>Javě/JVM</strong>
+  (managed část). Hlavní témata: optimalizace kódu, efektivní datové struktury a využití cache,
+  datové struktury ve vícevláknových aplikacích a implementace efektivních síťových serverů.</p>
+
+  <h2>Jak je předmět rozdělený</h2>
+  <p>Předmět má dvě paralelní linie, které odpovídají i dvěma částem zkouškové písemky:</p>
+  <ul>
+    <li><span class="badge badge-c">C/C++ část</span> – nativní svět: architektura, kompilátor,
+      benchmarking, synchronizace (RCU), paměť a cache, serializace, virtualizace
+      (přednášky 1–6 a 12).</li>
+    <li><span class="badge badge-java">Java/JVM část</span> – managed svět: běh programu a JIT,
+      konkurence dat, efektivní servery (C10k), analýza paměti, alokace objektů, garbage collectory
+      (přednášky 7–11 a 13).</li>
+  </ul>
+
+  <div class="box poznamka">
+    <p class="box-title">ℹ️ Pravidla zkoušky a hodnocení</p>
+    <ul>
+      <li><strong>Zápočet (podmínka):</strong> minimálně <strong>30 b</strong> z cvičení (max 60 b),
+        všechny úlohy odevzdané do BRUTE; semestrální práce = efektivní server (soutěž).</li>
+      <li><strong>Písemka:</strong> max <strong>30 b</strong>, dvě části –
+        <strong>C/C++ (15 b)</strong> + <strong>Java/JVM (15 b)</strong>, dohromady <strong>60 minut</strong>.</li>
+      <li><strong>Minimum z písemky:</strong> letos <strong>15/30 b</strong>, jinak neprojdeš
+        (nezávisle na ústní).</li>
+      <li><strong>Ústní zkouška:</strong> nepovinná, max <strong>+10 b</strong>, bývá tentýž den
+        ~1,5–3 h po písemce.</li>
+      <li>Otázky jsou rozdělené na více <strong>samostatně bodovaných podotázek</strong>. Java část
+        bývá hodnocena mírně – „když k tomu něco napíšeš, většinou bod dostaneš“.</li>
+    </ul>
+  </div>
+
+  <div class="box insight">
+    <p class="box-title">✅ Jak se efektivně připravit (osvědčený postup)</p>
+    <ol>
+      <li>Projdi <strong>všech 13 přednášek</strong> níže – jsou jádro učiva.</li>
+      <li>U každé si odpověz na <strong>zkouškové otázky</strong> (rozbalovací odpovědi) – aktivní
+        opakování funguje nejlépe.</li>
+      <li>Projdi stránku <a href="zkouska.html"><strong>Zkouška</strong></a> – vzorové zkouškové
+        otázky s odpověďmi.</li>
+      <li>Nezapomeň na <strong>perf / profiling z cvičení</strong> – ve výkladu byl jen okrajově,
+        ale u zkoušky se objevuje (čtení výstupu, cache/TLB/L1i miss).</li>
+    </ol>
+  </div>
+
+  <div class="section-label">
+    <span class="badge badge-c">C/C++ část</span>
+    <h2>Nativní svět</h2>
+  </div>
+  <div class="card-grid">
+    <a class="card" href="01-uvod-architektura.html">
+      <div class="card-num">Přednáška 1</div>
+      <div class="card-title">Úvod a architektura počítače</div>
+      <div class="card-desc">Co je efektivní SW, optimalizační smyčka, paměťová hierarchie, cache, pipelining, superskalár, OoO, SMT, NUMA, kompilátory.</div>
+    </a>
+    <a class="card" href="02-bentley-kompilator-profiling.html">
+      <div class="card-num">Přednáška 2</div>
+      <div class="card-title">Bentleyho pravidla, kompilátor, profiling</div>
+      <div class="card-desc">Fáze kompilace (AST, IR), optimalizace kompilátoru, PGO, restrict/volatile, Bentleyho pravidla, perf a performance counters.</div>
+    </a>
+    <a class="card" href="03-benchmarking-statistika-wcet.html">
+      <div class="card-num">Přednáška 3</div>
+      <div class="card-title">Benchmarking, statistika, WCET</div>
+      <div class="card-desc">Měření času, interval spolehlivosti, speedup, opakovatelnost, timestamping (syscall/HW/vDSO), WCET.</div>
+    </a>
+    <a class="card" href="04-skalovatelna-synchronizace.html">
+      <div class="card-num">Přednáška 4</div>
+      <div class="card-title">Škálovatelná synchronizace</div>
+      <div class="card-desc">Mutex, spinlock, RW-lock, atomiky a paměťové bariéry, RCU, transakční paměť, škálování na mnoha CPU.</div>
+    </a>
+    <a class="card" href="05-pamet-cache-numa.html">
+      <div class="card-num">Přednáška 5</div>
+      <div class="card-title">Přístup do paměti: cache a NUMA</div>
+      <div class="card-desc">SRAM/DRAM, typy cache miss, asociativita, zápisové politiky, TLB, true/false sharing, malloc, NUMA.</div>
+    </a>
+    <a class="card" href="06-serializace.html">
+      <div class="card-num">Přednáška 6</div>
+      <div class="card-title">Serializace</div>
+      <div class="card-desc">JSON, XML, RMI/RPC, IDL, Protobuf, Avro, Cap'n Proto – binární reprezentace, rychlost, paměť, rozšiřitelnost.</div>
+    </a>
+    <a class="card" href="12-virtualizace.html">
+      <div class="card-num">Přednáška 12</div>
+      <div class="card-title">Virtualizace</div>
+      <div class="card-desc">Hypervizory, trap-and-emulate, HW-asistovaná virtualizace, dvojí stránkování, IOMMU, SR-IOV, PCI pass-through, virtio, kontejnery.</div>
+    </a>
+  </div>
+
+  <div class="section-label">
+    <span class="badge badge-java">Java/JVM část</span>
+    <h2>Managed svět (JVM)</h2>
+  </div>
+  <div class="card-grid">
+    <a class="card" href="07-beh-programu-jit.html">
+      <div class="card-num">Přednáška 7</div>
+      <div class="card-title">Běh programu, JVM, JIT</div>
+      <div class="card-desc">Virtuální stroj, bytecode, stack-oriented execution, interpret vs JIT, C1/C2/tiered, OSR, safepoint, OOP, warm-up, profiling.</div>
+    </a>
+    <a class="card" href="08-konkurence-dat-jvm.html">
+      <div class="card-num">Přednáška 8</div>
+      <div class="card-title">Konkurence dat v JVM</div>
+      <div class="card-desc">Data race, volatile, lock addl, synchronized, thin/fat/biased lock, non-blocking algoritmy, wait-free, CAS, neblokující kolekce.</div>
+    </a>
+    <a class="card" href="09-efektivni-servery-c10k.html">
+      <div class="card-num">Přednáška 9</div>
+      <div class="card-title">Efektivní servery, C10k</div>
+      <div class="card-desc">Proces vs vlákno, thread pooling, virtuální vlákna, blokující vs neblokující I/O, select/poll/epoll, NIO, C10k.</div>
+    </a>
+    <a class="card" href="10-jvm-analyza-pameti.html">
+      <div class="card-num">Přednáška 10</div>
+      <div class="card-title">JVM: analýza paměti a kolekce</div>
+      <div class="card-desc">Statická/dynamická analýza, heap dump, shallow vs retained size, autoboxing, neefektivní kontejnery, Trove/FastUtil.</div>
+    </a>
+    <a class="card" href="11-jvm-alokace-objektu.html">
+      <div class="card-num">Přednáška 11</div>
+      <div class="card-title">JVM: alokace objektů, reference</div>
+      <div class="card-desc">Bump-the-pointer, TLAB, escape analysis, bloom filter, typy referencí (soft/weak/phantom/final), caching.</div>
+    </a>
+    <a class="card" href="13-jvm-garbage-collectors.html">
+      <div class="card-num">Přednáška 13</div>
+      <div class="card-title">Správa paměti a garbage collectory</div>
+      <div class="card-desc">Generační hypotéza, reference counting vs tracing, marking, Serial/Parallel/G1/ZGC, minor/mixed/full, layout objektu.</div>
+    </a>
+  </div>
+
+  <div class="section-label">
+    <span class="badge badge-soft">Příprava</span>
+    <h2>Zkouška</h2>
+  </div>
+  <div class="card-grid">
+    <a class="card" href="zkouska.html">
+      <div class="card-num">Souhrn</div>
+      <div class="card-title">📝 Zkouškové otázky a postup</div>
+      <div class="card-desc">Vzorové zkouškové otázky (C i Java) s rozbory, formát, bodování a postup přípravy.</div>
+    </a>
+  </div>
+
+  <h2>Rychlý rejstřík klíčových pojmů</h2>
+  <p class="kv">Kde co najít, když si potřebuješ rychle něco dohledat:</p>
+  <table>
+    <thead><tr><th>Pojem</th><th>Přednáška</th></tr></thead>
+    <tbody>
+      <tr><td>Paměťová hierarchie, latence, 64B cache line</td><td><a href="01-uvod-architektura.html">P1</a></td></tr>
+      <tr><td>Pipelining, branch prediction, superskalár, OoO, SMT, NUMA</td><td><a href="01-uvod-architektura.html">P1</a></td></tr>
+      <tr><td>Fáze kompilace, AST, IR, PGO, optimalizace kompilátoru</td><td><a href="02-bentley-kompilator-profiling.html">P2</a></td></tr>
+      <tr><td>Bentleyho pravidla, restrict/volatile, perf, performance counters</td><td><a href="02-bentley-kompilator-profiling.html">P2</a></td></tr>
+      <tr><td>Interval spolehlivosti, speedup, opakovatelnost, timestamping, WCET</td><td><a href="03-benchmarking-statistika-wcet.html">P3</a></td></tr>
+      <tr><td>Mutex, spinlock, RW-lock, atomiky, bariéry, RCU, QSBR, TM</td><td><a href="04-skalovatelna-synchronizace.html">P4</a></td></tr>
+      <tr><td>Typy cache miss, asociativita, TLB, true/false sharing, malloc</td><td><a href="05-pamet-cache-numa.html">P5</a></td></tr>
+      <tr><td>JSON/XML, Protobuf, Avro, Cap'n Proto, IDL</td><td><a href="06-serializace.html">P6</a></td></tr>
+      <tr><td>Bytecode, JIT, C1/C2/tiered, safepoint, TTSP, OSR, OOP</td><td><a href="07-beh-programu-jit.html">P7</a></td></tr>
+      <tr><td>Data race, volatile, synchronized, non-blocking, wait-free, CAS</td><td><a href="08-konkurence-dat-jvm.html">P8</a></td></tr>
+      <tr><td>Thread pooling, virtuální vlákna, epoll, NIO, C10k</td><td><a href="09-efektivni-servery-c10k.html">P9</a></td></tr>
+      <tr><td>Shallow vs retained size, heap dump, autoboxing, Trove/FastUtil</td><td><a href="10-jvm-analyza-pameti.html">P10</a></td></tr>
+      <tr><td>TLAB, escape analysis, bloom filter, typy referencí</td><td><a href="11-jvm-alokace-objektu.html">P11</a></td></tr>
+      <tr><td>IOMMU, SR-IOV, virtio, PCI pass-through, kontejnery</td><td><a href="12-virtualizace.html">P12</a></td></tr>
+      <tr><td>Generační hypotéza, GC (Parallel/G1/ZGC), marking, layout objektu</td><td><a href="13-jvm-garbage-collectors.html">P13</a></td></tr>
+    </tbody>
+  </table>
+
+  <footer class="page-foot">
+    <span>ESW · B4M36ESW · studijní materiály ke zkoušce</span>
+    <span>Zdroj: přednášky a materiály FEL ČVUT (esw.pages.fel.cvut.cz)</span>
+  </footer>
+
+</div>
+</body>
+</html>

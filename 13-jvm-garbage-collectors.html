@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P13 – Správa paměti a garbage collectory · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="12-virtualizace.html">← Virtualizace</a>
+    <a class="nav-link" href="zkouska.html">další: Zkouška →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 13 · <span class="badge badge-java">Java/JVM část</span></div>
+    <h1>Správa paměti v JVM – rozložení paměti a garbage collectory</h1>
+    <p class="perex">Jak HotSpot JVM automaticky spravuje paměť: jak je objekt rozložen v paměti
+    (object header, mark word, klass pointer, zarovnání), jak garbage collector pozná, které objekty
+    žijí, jak je halda rozdělená na generace a jak fungují produkční sběrače – propustnostní
+    <strong>Parallel</strong>, regionový <strong>G1</strong> a moderní <strong>low-pause</strong>
+    sběrače ZGC a Shenandoah. Cestou: generační hypotéza, reference counting vs. tracing,
+    kopírování vs. mark-compact, remembered set / card table, write barriers, stop-the-world,
+    safepointy a ladění GC.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#layout">Rozložení objektu v paměti</a></li>
+      <li><a href="#auto">Automatická správa paměti</a></li>
+      <li><a href="#vlastnosti">Žádané vlastnosti GC</a></li>
+      <li><a href="#generacni">Generační hypotéza a generace</a></li>
+      <li><a href="#dosazitelnost">Identifikace dosažitelných objektů</a></li>
+      <li><a href="#algoritmy">Kopírování vs. mark-compact</a></li>
+      <li><a href="#dimenze">Dimenze návrhu sběračů</a></li>
+      <li><a href="#parallel">Parallel collector</a></li>
+      <li><a href="#g1">Garbage-First (G1)</a></li>
+      <li><a href="#lowpause">ZGC a Shenandoah</a></li>
+      <li><a href="#safepoint">Stop-the-world a safepointy</a></li>
+      <li><a href="#ladeni">Ladění GC</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="layout">Rozložení objektu v paměti</h2>
+  <p>Každý objekt na haldě má kromě vlastních dat i <strong>hlavičku (object header)</strong>, kterou
+  JVM potřebuje pro správu objektu. U běžných 64bitových objektů (s tzv. ordinary object pointers)
+  vypadá rozložení takto:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Obsah</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x00</code></td><td>mark word</td></tr>
+      <tr><td><code>0x08</code></td><td>Klass pointer (ukazatel na metadata třídy)</td></tr>
+      <tr><td><code>0x10</code></td><td>délka pole | prázdná výplň (jen u polí)</td></tr>
+      <tr><td><code>0x18</code></td><td>reference na prvek pole s indexem 0</td></tr>
+      <tr><td><code>0x20</code></td><td>reference na prvek pole s indexem 1</td></tr>
+      <tr><td>…</td><td>…</td></tr>
+    </tbody>
+  </table>
+  <dl class="pojmy-list">
+    <dt>Mark word</dt><dd>Slovo na offsetu <code>0x00</code>, které drží stav objektu: identity hash,
+    příznaky zámku, příznaky GC. Během GC sem sběrač zapisuje <strong>forwarding pointer</strong>
+    (přesměrovací adresu) s tagovými bity <code>0b11</code>, jakmile se objekt přesune.</dd>
+    <dt>Klass pointer</dt><dd>Ukazatel na interní metadatovou strukturu <strong>Klass</strong>, kde jsou
+    mj. <strong>offsety referenčních polí</strong>. Tracing collector je používá, aby uvnitř objektu
+    našel, kde leží reference na další objekty.</dd>
+    <dt>Délka pole</dt><dd>U polí je na offsetu <code>0x10</code> uložena délka; samotné prvky pole
+    začínají na <code>0x18</code> (proto se v post-write barrieru používá offset <code>0x18</code> pro
+    prvek s indexem 0, viz níže).</dd>
+    <dt>Zarovnání (alignment)</dt><dd>Velikost objektu je zarovnaná (object alignment), typicky na
+    8 bajtů. Díky tomu lze adresy posouvat v „qword“ (8B) jednotkách a forwarding adresa se vejde do
+    mark wordu i s tagovými bity.</dd>
+  </dl>
+  <div class="box poznamka">
+    <p class="box-title">💬 Souvislost se shallow / retained size</p>
+    <p>Velikost hlavičky přímo ovlivňuje <strong>shallow size</strong> objektu – kolik bajtů zabírá
+    samotná instance včetně hlavičky a polí (ale bez objektů, na něž odkazuje). <strong>Retained
+    size</strong> je naopak součet shallow size objektu a všech objektů, které by se uvolnily, kdyby
+    daný objekt zmizel (tedy ty, jež jsou dosažitelné jen přes něj). Hlavička je tak fixní režie každé
+    instance: u mnoha malých objektů tvoří hlavičky (mark word + klass pointer + zarovnání) značnou
+    část obsazené paměti.</p>
+  </div>
+
+  <h2 id="auto">Automatická správa paměti</h2>
+  <h3>Výhody oproti ruční správě</h3>
+  <ul>
+    <li>Zabraňuje chybám typu <strong>dangling reference / use-after-free</strong> a
+      <strong>double-free</strong> v řízeném (managed) kódu.</li>
+    <li>Omezuje chyby ručního uvolňování paměti. Pozor: <strong>logické úniky</strong> (memory leaks)
+      jsou stále možné – objekt zůstane omylem dosažitelný, a proto se neuvolní.</li>
+  </ul>
+  <h3>Komponenty</h3>
+  <ul>
+    <li><strong>Operace v aplikačním kódu:</strong> alokace, čtení a zápis referencí.</li>
+    <li><strong>Garbage collector:</strong>
+      <ul>
+        <li>identifikuje objekty, které nejsou <strong>tranzitivně dosažitelné</strong> z
+          <strong>GC roots</strong> (lokální proměnné a operandové zásobníky ve stack frames, statická
+          pole, JNI handly a interní VM kořeny),</li>
+        <li>uvolní paměť obsazenou nedosažitelnými objekty.</li>
+      </ul>
+    </li>
+  </ul>
+  <p>Kanonický postup alokace, která může před selháním spustit sběr:</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-blue"><span class="dn-num">1</span><span class="dn-title">allocate()</span><span class="dn-sub">ref ← allocate()</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-num">2</span><span class="dn-title">ref = null?</span><span class="dn-sub">collect() a allocate() znovu</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-red"><span class="dn-num">3</span><span class="dn-title">stále null?</span><span class="dn-sub">error „Out of memory“</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-num">4</span><span class="dn-title">return ref</span><span class="dn-sub">úspěšná alokace</span></div>
+    </div>
+    <div class="diag-cap">Kanonický postup alokace <code>New()</code> – při selhání spustí <code>collect()</code> a zkusí znovu.</div>
+  </div>
+
+  <h2 id="vlastnosti">Žádané vlastnosti GC</h2>
+  <div class="box pojmy">
+    <p class="box-title">🔑 Charakteristiky správy paměti</p>
+    <dl class="pojmy-list">
+      <dt>Safety (bezpečnost)</dt><dd>Nikdy neuvolní paměť dosažitelného objektu; zachová vláknovou
+      bezpečnost.</dd>
+      <dt>Throughput (propustnost)</dt><dd>Výkon aplikace včetně režie alokace. Sem patří rychlost
+      alokace (vyhnout se fragmentaci), volba mezi <em>object handles</em> a přímými referencemi a
+      cena reference countingu / sledování meziregionových referencí. <strong>Read/write barriers</strong>
+      (instrukce vkládané do překládaného kódu) mohou omezovat přeskupování v kompilátoru/CPU, přidávat
+      náklady na paměťové uspořádání a zhoršovat lokalitu – např. <strong>false sharing</strong>.</dd>
+      <dt>Completeness (úplnost)</dt><dd>Nedosažitelné objekty se nakonec vždy uvolní.</dd>
+      <dt>Promptness (rychlost uvolnění)</dt><dd>Jak dlouho zůstává garbage alokovaný.</dd>
+      <dt>Pause time (doba pauzy)</dt><dd>Stop-the-world pauzy na globálních safepointech.</dd>
+      <dt>Space overhead (prostorová režie)</dt><dd>Metadata navíc na objekt, region, kartu či referenci;
+      kopírovací sběrače navíc potřebují volné místo – semi-space sběrač až druhý semi-space.</dd>
+      <dt>Scalability &amp; portability</dt><dd>Škálovatelnost na vícejádrových systémech a velkých haldách,
+      přenositelnost.</dd>
+    </dl>
+  </div>
+
+  <h2 id="generacni">Generační hypotéza a generace</h2>
+  <div class="box pisnicka" id="pisen-garbage-collection">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Garbage Collection</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s07">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <div class="box insight">
+    <p class="box-title">💡 Generační hypotéza</p>
+    <p><strong>Slabá (weak) generační hypotéza:</strong> <em>většina objektů umírá mladá</em> – a jen
+    málo referencí vede ze starších objektů na mladší. <strong>Silná (strong) generační hypotéza:</strong>
+    <em>mladší objekty častěji umřou dřív než starší.</em></p>
+  </div>
+  <p>Histogram životnosti objektů (osa x = délka života, osa y = počet objektů) má u počátku velmi
+  vysokou špičku <strong>krátce žijících</strong> objektů, pak malý hrbol střednědobých a dlouhý nízký
+  „ocas“ dlouhožijících – přesně to ilustruje slabou generační hypotézu.</p>
+  <p><strong>Segregace objektů podle stáří do generací</strong> umožňuje zkrátit pauzy:</p>
+  <ul>
+    <li><strong>Mladá generace (young):</strong> obvykle menší, sbírá se často a rychle
+      (young/minor collection).</li>
+    <li><strong>Stará generace (old / tenured):</strong> obvykle větší, sbírá se méně často.</li>
+  </ul>
+  <p>Přežívající objekty mohou být během young/minor sběru <strong>povýšeny (promotion)</strong> do
+  staré generace.</p>
+  <h3>Eden, survivor spaces, old</h3>
+  <p>Mladá generace se dělí na <strong>Eden</strong> a dva <strong>survivor spaces</strong> (from a to).
+  Nové objekty vznikají v Edenu; po minor sběru se živé objekty kopírují do to-space (případně se
+  povýší do old), survivory se prohodí a Eden i from-space zůstanou prázdné. Rozložení haldy
+  Parallel collectoru (od nízké k vysoké adrese):</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">Old</span><span class="db-sub">(allocated)</span></div>
+      <div class="diag-box accent"><span class="db-title">Old</span><span class="db-sub">(virtual/reserv)</span></div>
+      <div class="diag-box accent"><span class="db-title">Young</span><span class="db-sub">(virtual)</span></div>
+      <div class="diag-box accent"><span class="db-title">Eden</span></div>
+      <div class="diag-box accent"><span class="db-title">Survivor Spaces</span><span class="db-sub">(from + to)</span></div>
+    </div>
+    <div class="diag-cap">Rozložení haldy Parallel collectoru: nízká adresa (vlevo) → vysoká adresa (vpravo).</div>
+  </div>
+  <p>Halda podporuje <strong>adaptivní změnu velikosti</strong>; rezervovaný virtuální adresní prostor
+  není fyzicky <strong>alokovaný (commitnutý)</strong>, dokud není potřeba. Klíčové flagy velikosti:</p>
+  <table>
+    <thead><tr><th>Flag</th><th>Význam</th><th>Výchozí hodnota</th></tr></thead>
+    <tbody>
+      <tr><td><code>-Xmx</code></td><td>maximální (rezervovaná) velikost haldy</td><td>≈ 1/4 fyzické paměti</td></tr>
+      <tr><td><code>-Xms</code></td><td>počáteční commitnutá velikost haldy</td><td>≈ 1/64 fyzické paměti</td></tr>
+      <tr><td><code>-XX:NewRatio=&lt;n&gt;</code></td><td>poměr Old : Young</td><td>2 → Old je 2× větší než Young</td></tr>
+      <tr><td><code>-XX:SurvivorRatio=&lt;n&gt;</code></td><td>poměr Eden : jeden Survivor</td><td>8 → Eden je 8× větší než jeden survivor</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="dosazitelnost">Identifikace dosažitelných objektů</h2>
+  <h3>Možnost 1: Reference counting (počítání referencí)</h3>
+  <ul>
+    <li><strong>Čítač na každý objekt</strong> sleduje počet příchozích referencí.</li>
+    <li>Aby byl vláknově bezpečný, vyžaduje mnoho <strong>atomických aktualizací</strong> → zpomaluje
+      aplikační kód.</li>
+    <li><strong>Neuvolní cyklický garbage</strong> bez přídavného detektoru cyklů – objekty v cyklu
+      mají nenulový čítač, ale jsou z kořenů nedosažitelné.</li>
+    <li>Způsobuje výrazné <strong>znečištění cache</strong> (cache pollution) kvůli paměťovým operacím
+      navíc.</li>
+    <li>Umí uvolnit objekt <strong>okamžitě</strong>, jakmile čítač klesne na nulu; pak dekrementuje
+      čítače objektů, na které uvolněný objekt odkazoval.</li>
+  </ul>
+  <h3>Možnost 2: Tracing (stopovací sběr)</h3>
+  <p>HotSpot používá tracing. V aplikačním kódu nejsou nutné aktualizace čítače na každou referenci
+  (ale barriers mohou stále přidávat režii).</p>
+  <ul>
+    <li><strong>Nalezení referencí:</strong>
+      <ul>
+        <li>kořeny ve stack frames pomocí <strong>OopMaps</strong> – přeložená metadata, jež mapují
+          umístění referencí na <strong>safepointech</strong>, např.:
+          <pre><code>OopMap{rsi=Oop [48]=Oop rdx=Oop [72]=Oop off=1734}</code></pre></li>
+        <li>uvnitř objektů na haldě podle metadat / typu objektu – offsety referenčních polí jsou
+          uloženy v interní struktuře <strong>Klass</strong>.</li>
+      </ul>
+    </li>
+    <li><strong>Marking phase (fáze značení)</strong> projde všechny objekty dosažitelné z
+      <strong>roots</strong> (DFS nebo BFS). Často dominuje době sběru kvůli „pointer chasing“ a
+      náhodným přístupům do paměti.</li>
+    <li><strong>Mark flags</strong> brání zacyklení: v hlavičce objektu (běžné zápisy s možností
+      částečného opakovaného průchodu), nebo jako <strong>side mark bitmaps</strong> (lepší chování
+      cache).</li>
+  </ul>
+  <p><strong>Mark-and-sweep:</strong> tracing nejprve označí (mark) všechny živé objekty z kořenů a
+  poté „zamete“ (sweep) – neoznačené objekty prohlásí za uvolnitelné. Tracing startuje v kořenech;
+  i objekt, který odkazuje do živého objektu, je garbage, pokud na něj samotný nikdo z kořenů
+  neukazuje.</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node muted"><span class="dn-title">GC roots</span><span class="dn-sub">R1, R2, R3</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">A (live)</span><span class="dn-sub">dosažitelný z R1</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">B (live)</span><span class="dn-sub">z R2</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">D (live)</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">E (live)</span></div>
+    </div>
+    <div class="diag-flow">
+      <div class="diag-node c-red"><span class="dn-title">G1 (garbage)</span><span class="dn-sub">z kořenů nedosažitelný</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-red"><span class="dn-title">G2 (garbage)</span></div>
+      <div class="diag-node c-red"><span class="dn-title">G3 (garbage)</span><span class="dn-sub">odkazuje na C, ale sám je garbage</span></div>
+    </div>
+    <div class="diag-cap">Zelené = živé, dosažitelné z kořenů (R1→A, R2→B, R3→C). G1/G2/G3 jsou z kořenů nedosažitelné = garbage, i když G3 ukazuje na C.</div>
+  </div>
+
+  <h2 id="algoritmy">Kopírování vs. mark-compact</h2>
+  <table>
+    <thead><tr><th></th><th>Kopírovací (copying)</th><th>Mark-compact (zhutňující)</th></tr></thead>
+    <tbody>
+      <tr><td>Princip</td><td>živé objekty se zkopírují do jiného prostoru (to-space), zdroj se vyprázdní</td><td>živé objekty se posouvají (sliding compaction) v rámci stejného prostoru</td></tr>
+      <tr><td>Prostor navíc</td><td>vyžaduje volné místo navíc (semi-space až druhý semi-space)</td><td>vyžaduje málo místa navíc</td></tr>
+      <tr><td>Rychlost</td><td>rychlejší (úměrné jen živým datům)</td><td>obecně pomalejší než čisté kopírování</td></tr>
+      <tr><td>Fragmentace</td><td>odstraní ji (kompaktní výstup)</td><td>odstraní ji (kompaktní výstup)</td></tr>
+      <tr><td>Použití v HotSpot</td><td>Parallel Scavenge (minor), evakuace v G1</td><td>Parallel Mark-Compact (full), full GC v G1</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="dimenze">Dimenze návrhu sběračů</h2>
+  <p>Sběrač lze klasifikovat podle tří nezávislých os:</p>
+  <ul>
+    <li><strong>serial</strong> vs. <strong>parallel</strong> (jeden vs. více GC vláken),</li>
+    <li><strong>concurrent</strong> vs. <strong>stop-the-world</strong>,</li>
+    <li><strong>sliding/compacting</strong> vs. <strong>non-compacting</strong> vs.
+      <strong>copying</strong>.</li>
+  </ul>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-teal"><span class="dn-title">Serial</span><span class="dn-sub">App (1 vlákno)</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-red"><span class="dn-title">STW pauza</span><span class="dn-sub">1 GC vlákno</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">App pokračuje</span></div>
+    </div>
+    <div class="diag-flow vert">
+      <div class="diag-node c-teal"><span class="dn-title">Parallel</span><span class="dn-sub">App (N vláken)</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-red"><span class="dn-title">STW pauza</span><span class="dn-sub">N GC vláken</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">App pokračuje</span></div>
+    </div>
+    <div class="diag-flow vert">
+      <div class="diag-node c-teal"><span class="dn-title">G1</span><span class="dn-sub">App (N vláken) + concurrent GC</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-title">krátké paralelní STW dávky</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">App + concurrent GC</span></div>
+    </div>
+    <div class="diag-cap">Čas plyne dolů. Teal/zelená = aplikace (App), červená/amber = práce GC.</div>
+  </div>
+  <p>Přehled HotSpot sběračů podle generace, kterou spravují, a jejich flagů:</p>
+  <table>
+    <thead><tr><th>Young collector</th><th>Old collector</th><th>Flag</th></tr></thead>
+    <tbody>
+      <tr><td>Serial</td><td>Serial Old (Mark-Compact)</td><td><code>-XX:+UseSerialGC</code></td></tr>
+      <tr><td>ParNew</td><td>Concurrent Mark &amp; Sweep (CMS)</td><td><code>-XX:+UseConcMarkSweepGC</code> (+ <code>-XX:+UseParNewGC</code>)</td></tr>
+      <tr><td>Parallel Scavenge</td><td>Parallel Old (Mark-Compact)</td><td><code>-XX:+UseParallelGC</code> / <code>-XX:+UseParallelOldGC</code></td></tr>
+      <tr><td colspan="2"><strong>G1</strong> (jeden sjednocený sběrač)</td><td><code>-XX:+UseG1GC</code></td></tr>
+      <tr><td colspan="2"><strong>ZGC</strong> (jeden sjednocený sběrač)</td><td><code>-XX:+UseZGC</code></td></tr>
+    </tbody>
+  </table>
+  <div class="box pozor">
+    <p class="box-title">⚠️ CMS</p>
+    <p>Kombinace <strong>ParNew + Concurrent Mark &amp; Sweep (CMS)</strong> byla <strong>odstraněna
+    v JDK 14</strong>. CMS byl převážně concurrent sběrač staré generace bez kompakce (mark-and-sweep),
+    který tak trpěl fragmentací. G1 a ZGC jsou samostatné sběrače pokrývající obě generace, ne dvojice
+    young/old.</p>
+  </div>
+
+  <h2 id="parallel">Parallel collector</h2>
+  <p>Propustnostní (throughput) sběrač – <strong>výchozí v Oracle JDK 8</strong> na serverových
+  konfiguracích.</p>
+  <h3>Alokace a spouštěče sběru</h3>
+  <ul>
+    <li>Objekty se alokují v <strong>TLAB</strong> (Thread-Local Allocation Buffer) uvnitř Edenu;
+      objekty, jež se do TLABu nevejdou, přímo v Edenu; velmi velké objekty se mohou alokovat
+      <strong>přímo ve staré generaci</strong>, pokud se nevejdou do Edenu.</li>
+    <li><strong>Young/minor sběr (Parallel Scavenge)</strong> – spustí se, když Eden nedokáže uspokojit
+      refill TLABu nebo alokaci. Živé objekty se <strong>kopírují</strong>; výsledkem je prázdný Eden
+      a from-space, survivory se prohodí.</li>
+    <li><strong>Full sběr (Parallel Mark-Compact)</strong> – spustí se, když není místo pro promotion
+      ani nový objekt v Old. Sbírá <strong>obě</strong> generace; výsledkem je prázdná young generace
+      (Eden i <strong>oba</strong> survivory).</li>
+  </ul>
+
+  <h3>Remembered set a card table</h3>
+  <ul>
+    <li><strong>Remembered set</strong> sleduje <strong>old-to-young reference</strong> a zrychluje
+      identifikaci živých objektů při minor sběru: průchod startuje z GC roots plus zapamatovaných
+      old-to-young referencí, nemusí procházet celou starou generaci (rychlé hraniční kontroly, když
+      jsou velikosti generací mocniny dvou).</li>
+    <li>HotSpot ho komprimuje jako <strong>card table</strong>: halda je rozdělena na
+      <strong>512bajtové karty</strong> (osm 64B cache lines), jeden jednobajtový slot na kartu (bajtový
+      zápis se vyhne drahému atomickému read-modify-write):
+      <ul>
+        <li><strong>dirty (0):</strong> karta <em>může</em> obsahovat referenci do young – falešně
+          pozitivní výsledky jsou povoleny,</li>
+        <li><strong>clean:</strong> karta jistě referenci do young neobsahuje – falešně negativní
+          výsledky nejsou povoleny.</li>
+      </ul>
+    </li>
+    <li><strong>100 GiB halda ⇒ ~200 MiB card table (&lt; 0,2 %)</strong>; jedna 64B cache line pokrývá
+      karty pro 32 KiB haldy.</li>
+  </ul>
+  <p><strong>Post-write barrier</strong> (vkládaný do generovaného kódu) při zápisu reference označí
+  kartu jako dirty. Nesleduje null zápisy ani zápisy v čerstvě alokovaných objektech:</p>
+  <pre><code>CARD_TABLE[object_address &gt;&gt; 9] = 0;          // běžné objektové pole
+CARD_TABLE[array_slot_address &gt;&gt; 9] = 0;      // prvek pole (skutečná adresa slotu)</code></pre>
+  <p><code>&gt;&gt; 9</code> dělí adresu 512 (= 2⁹), tedy velikostí karty, a indexuje card table;
+  <code>= 0</code> značí dirty. Barrier je konzervativní, ale velmi rychlý – falešně pozitivní se
+  filtrují až při minor sběru. Ukázka inline x86-64 barrieru pro zápis nenulové reference v
+  <code>RAX</code> do objektu na adrese <code>R11</code>:</p>
+  <pre><code>mov    %rax,0x10(%r11)        ; ulož referenci z RAX
+mov    %r11,%r8               ; spočítej offset karty z adresy objektu
+shr    $0x9,%r8               ;   (&gt;&gt; 9 == děleno 512)
+movabs $0x215153000,%r9       ; báze card table do R9
+movb   $0x0,(%r9,%r8,1)       ; zapiš dirty bajt (0) do card table</code></pre>
+  <div class="box pozor">
+    <p class="box-title">⚠️ False sharing card table</p>
+    <p>Jedna 64B cache line obsahuje karty pokrývající <strong>32 KiB</strong> haldy (64 × 512 B). Při
+    soupeřících vícevláknových zápisech, hlavně na <strong>vícesoketových</strong> systémech, vzniká
+    <strong>false sharing</strong>. Zmírní ho <strong>podmíněná aktualizace</strong>
+    (<code>-XX:+UseCondCardMark</code>), která nepřepisuje už znečištěnou kartu, takže cache line
+    zůstane sdílená:</p>
+    <pre><code>if (CARD_TABLE[address &gt;&gt; 9] != 0) CARD_TABLE[address &gt;&gt; 9] = 0;</code></pre>
+  </div>
+
+  <h3>Minor sběr – Parallel Scavenge</h3>
+  <ul>
+    <li>Stop-the-world, paralelní (<code>-XX:ParallelGCThreads=&lt;N&gt;</code>; výchozí N GC vláken
+      pro N ≤ 8 HW vláken).</li>
+    <li><strong>Kopírování</strong> se survivory: živé objekty se kopírují do to-space; pokud survivor
+      nestačí, <strong>povýší (promote)</strong> do old; když selže promotion, spustí se full sběr.
+      Eden a from-space jsou po sběru prázdné.</li>
+    <li>Paralelně zpracovává <strong>frontu úloh</strong> naplněnou pruhy karet (hledání old-to-young
+      referencí), JNI handly a VM referencemi, stack frames všech Java vláken a statickými referencemi.</li>
+    <li><strong>Crossing map</strong> (jeden bajt na 512B kartu, jen pro old) zrychluje nalezení
+      začátku objektu ve „špinavé“ kartě: N &gt; 0 kóduje offset začátku objektu v jednotkách
+      zarovnání, N &lt; 0 kóduje, že v kartě žádný objekt nezačíná, a udává vzdálenost zpět k objektu,
+      který kartu přesahuje.</li>
+    <li>Pro každou zpracovávanou old-to-young referenci: je-li cíl už přesunut, mark word obsahuje
+      <strong>forwarding adresu + tag <code>0b11</code></strong> → aktualizuj referenci. Jinak: je-li
+      <em>věk &lt; tenuring threshold</em>, kopíruj do to-space survivoru přes <strong>young PLAB</strong>
+      (Promotion Local Allocation Buffer); je-li starší / není místo, <strong>povýší</strong> do old
+      přes old PLAB. Forwarding pointer se instaluje do mark wordu přes <strong>CAS</strong> (při
+      selhání undo alokace a přečti forwarding adresu; při úspěchu aktualizuj věk a vlož reference
+      kopie do scan fronty).</li>
+  </ul>
+  <div class="box poznamka">
+    <p class="box-title">💬 NUMA</p>
+    <p>PLABy a alokace objektů mohou být <strong>NUMA-aligned</strong>, aby se zrychlil sběr – paměť se
+    drží lokálně k socketu, na němž běží GC/aplikační vlákno.</p>
+  </div>
+
+  <h3>Full sběr – Parallel Mark-Compact</h3>
+  <p>Výchozí full/major sběrač u Parallel GC; stop-the-world, paralelní. Stará generace je logicky
+  rozdělena na <strong>fixní regiony</strong> a používá <strong>sliding compaction</strong>.</p>
+  <ol>
+    <li><strong>Paralelní mark phase</strong> – startuje ze všech GC roots (card table se nepoužívá),
+      sleduje <em>všechny</em> reference (ne jen do young); informace o živých objektech (poloha,
+      velikost) se propagují do metadat regionů (každý region má hustotu/liveness, např. R1: 5/6,
+      R2: 4/6, R3: 3/6, R4: 1/6, R5: 0/6).</li>
+    <li><strong>Jednovláknová summary phase</strong> – spočítá hustotu regionů (díky předchozím
+      kompakcím bývají starší objekty vlevo), určí první region, od kterého se kompakce vyplatí, a
+      zvolí <strong>dense prefix</strong> (nejlevější husté regiony se nechají na místě). Spočítá nové
+      umístění objektů: živá data z nejpravějších zdrojových regionů plní nejlevější cílové regiony
+      při zachování pořadí objektů.</li>
+    <li><strong>Paralelní compaction phase</strong> – cílové regiony se rozdělí mezi vlákna; každé
+      vlákno zhutní svůj region a naplní ho živými objekty ze zdrojových regionů vpravo (reference
+      aktualizuje podle read-only summary dat, aktualizuje crossing map). Není potřeba synchronizace
+      (jeden region = jedno vlákno). Halda je nakonec „spakovaná“, s jedním velkým souvislým volným
+      blokem na pravém (vysoké adresy) konci.</li>
+  </ol>
+  <div class="box insight">
+    <p class="box-title">💡 Dense prefix a silná generační hypotéza</p>
+    <p>Mark-compact podporuje <strong>silnou</strong> generační hypotézu: objekty s nejvyšší
+    pravděpodobností přežití jsou (díky předchozím GC) vlevo a <strong>dense prefix</strong> je
+    nekopíruje. <strong>50 % práce full GC uvolní ~82 % uvolnitelného garbage</strong>; zbylých
+    18 % stojí zhruba stejně jako prvních 50 %. Dense prefix se adaptivně mění podle poměru
+    obsazené/celkové haldy. Po full sběru je celá young generace prázdná a card table se vyčistí
+    (nezůstávají žádné old-to-young reference).</p>
+  </div>
+
+  <h3>Ergonomika Parallel collectoru</h3>
+  <p>Adaptivní změna velikosti generací (<code>-XX:+UseAdaptiveSizePolicy</code>) s prioritou:</p>
+  <ol>
+    <li><strong>Cíl maximální pauzy</strong> (<code>-XX:MaxGCPauseMillis</code>) – pokud není splněn,
+      zmenši generaci přispívající nejvíc k pauze.</li>
+    <li><strong>Cíl propustnosti</strong> (<code>-XX:GCTimeRatio=99</code>) – řeší se až po splnění
+      cíle pauzy; pokud není splněn, zvětši obě generace úměrně jejich podílu na celkovém čase GC.</li>
+    <li><strong>Minimální footprint</strong> – až po splnění obou předchozích cílů; zmenši haldu/generace.</li>
+  </ol>
+
+  <h2 id="g1">Garbage-First (G1) collector</h2>
+  <p>Dynamický, regionový generační sběrač (<code>-XX:+UseG1GC</code>), převážně
+  <strong>concurrent</strong>, pro víceprocesorové stroje a velké haldy. <strong>Výchozí na
+  serverových HotSpot konfiguracích od JDK 9.</strong></p>
+  <h3>Regiony</h3>
+  <ul>
+    <li>Halda je rozdělena na <strong>stejně velké regiony</strong>; HotSpot volí velikost jako mocninu
+      dvou cílící zhruba na <strong>2048 regionů</strong>. Ergonomický default je <strong>omezen na
+      32 MB</strong>, explicitní hodnoty mohou být <strong>1 MB až 512 MB</strong>
+      (<code>-XX:G1HeapRegionSize</code>).</li>
+    <li><strong>Žádné souvislé fyzické oddělení generací</strong>: generace je <strong>dynamická
+      množina regionů</strong> s rolemi <strong>E</strong> (Eden), <strong>S</strong> (Survivor),
+      <strong>O</strong> (Old), rozesetých po haldě.</li>
+    <li><strong>Evakuace</strong> zhutňuje živé objekty do cílových regionů; alokace může používat
+      bump-pointer / TLAB. Udržuje <strong>seznam volných regionů</strong>.</li>
+    <li><strong>Humongous objekty</strong> (velikost ≥ 50 % regionu) se alokují do jedné nebo více
+      souvislých humongous regionů přímo ve staré generaci.</li>
+  </ul>
+
+  <h3>Per-region remembered set a barriers</h3>
+  <ul>
+    <li>RSet sleduje místa <strong>mimo region / collection set</strong>, jež mohou obsahovat reference
+      <em>do</em> něj; ignoruje null a vnitroregionové reference, zaznamenává meziregionové
+      (old-to-young i old-to-old). RSet cílového regionu drží zdrojové lokace, jež do něj ukazují.</li>
+    <li>Implementace: <strong>per-region remembered-set tables (PRT)</strong> + card tables,
+      aktualizované převážně asynchronně z per-thread dirty-card bufferů zpracovávaných
+      <strong>concurrent refinement vlákny</strong> (<code>-XX:G1ConcRefinementThreads=&lt;n&gt;</code>),
+      plněné <strong>pre- a post-write barriers</strong>:</li>
+  </ul>
+  <pre><code>oop oldFooVal = this.foo;
+if (GC.isMarking != 0 &amp;&amp; oldFooVal != null) {
+    g1_wb_pre(oldFooVal);          // SATB pre-write barrier: zaznamenej přepsanou referenci
+}
+this.foo = bar;
+if (((this ^ bar) &gt;&gt; 20) != 0 &amp;&amp; bar != null) {
+    g1_wb_post(this);              // post-write barrier: kontrola napříč regiony, zařaď dirty kartu
+}</code></pre>
+  <p>Posun <code>20</code> je <code>log2(velikost regionu)</code> (20 pro 1 MiB region). Výraz
+  <code>((this ^ bar) &gt;&gt; 20) != 0</code> je pravdivý právě tehdy, když <code>this</code> a
+  <code>bar</code> leží v <strong>různých regionech</strong>.</p>
+
+  <h3>Young-only, mixed a full sběry</h3>
+  <p>G1 střídá <strong>krátké paralelní STW pauzy</strong> na globálních safepointech (Concurrent Start
+  / Initial Mark, Remark, Cleanup, evakuace) s <strong>concurrent fázemi</strong> (refinement RSetu,
+  concurrent marking se SATB barriers, cleanup). Klíčová výhoda: evakuaci aplikuje
+  <strong>inkrementálně</strong> na vybrané old regiony a vyhne se tak pauzám přes celou haldu.</p>
+  <ul>
+    <li><strong>Young-only sběr</strong> – collection set (CSet) = Eden + from-survivor regiony;
+      spustí se, když nelze alokovat v Edenu.</li>
+    <li><strong>Mixed sběr</strong> – CSet = Eden + from-survivor + kandidátní old regiony; nastane
+      <em>po concurrent marku</em>, který identifikoval old kandidáty. Živé objekty z young → survivor
+      nebo old (podle věku / tenuring threshold), z vybraných old → jiné old regiony (forwarding
+      pointers, mark-word stav jako u Parallel Scavenge).</li>
+    <li><strong>Concurrent marking</strong> – spustí se při dosažení <strong>IHOP</strong> prahu
+      (s Adaptive IHOP je 45 % jen <em>počáteční</em> hodnota). Concurrent Start / Initial Mark je
+      „piggybacked“ na young GC, používá <strong>snapshot-at-the-beginning (SATB)</strong> z root setu;
+      pre-write barrier zaznamenává přepsané reference do SATB bufferů. <strong>Remark</strong> je STW
+      pauza, jež vyprázdní SATB buffery, dokončí značení, spočítá liveness a připraví seřazené old
+      kandidáty pro mixed sběry; Remark/Cleanup uvolní zcela prázdné old regiony.</li>
+    <li><strong>Full sběr</strong> – vícefázové sledování a in-place kompakce <em>všech</em> regionů na
+      globálním safepointu. Spouštěče: <strong>concurrent mode failure</strong> (old se naplní dřív,
+      než dokončí concurrent marking), <strong>to-space / evacuation failure</strong> (došlo místo pro
+      evakuované/povýšené objekty), <strong>humongous allocation failure</strong> (málo souvislých
+      volných regionů).</li>
+  </ul>
+  <div class="box poznamka">
+    <p class="box-title">💬 Humongous objekty</p>
+    <p>Objekt ≥ 50 % regionu (pro 1 MiB region tedy ≥ 512 KiB) zabírá souvislou sekvenci humongous
+    regionů (přesně jeden objekt v sekvenci), <strong>nevyužitý zbytek posledního regionu se plýtvá až do uvolnění objektu</strong>. Mohou zvyšovat fragmentaci, vynucovat drahé Full GC nebo
+    <code>OutOfMemoryError</code>. Uvolnění: Remark/Cleanup na konci concurrent cyklu, nebo Full GC.
+    <code>-XX:MaxGCPauseMillis</code> je u G1 jen <strong>měkký cíl, ne tvrdá horní mez</strong>. G1 je
+    <strong>NUMA-aware</strong> – nové Eden regiony alokuje z lokální paměti.</p>
+  </div>
+
+  <h2 id="lowpause">ZGC a Shenandoah</h2>
+  <p>Moderní <strong>low-pause</strong> sběrače (<code>-XX:+UseZGC</code>, resp.
+  <code>-XX:+UseShenandoahGC</code>) cílí na pauzy v řádu jednotek milisekund nezávisle na velikosti
+  haldy. Klíčem je provádět i <strong>přesun (evakuaci) objektů souběžně</strong> s během aplikace –
+  na rozdíl od G1, kde evakuace probíhá ve stop-the-world pauze.</p>
+  <ul>
+    <li><strong>Concurrent evacuation:</strong> objekty se kopírují, zatímco aplikace běží. Stop-the-world
+      pauzy se omezí jen na krátké fáze (start/end marku, příprava), takže pauza je téměř nezávislá na
+      velikosti haldy.</li>
+    <li><strong>Barriers:</strong> aby aplikace viděla konzistentní reference i během souběžného
+      přesunu, používají tyto sběrače barriers. <strong>ZGC</strong> využívá <strong>load (read)
+      barriers</strong> spolu s <strong>colored pointers</strong> (značky uložené v bitech ukazatele):
+      při čtení reference barrier zjistí, zda objekt nebyl přesunut, a případně referenci „opraví“
+      (self-healing) na novou adresu. <strong>Shenandoah</strong> historicky používal
+      <strong>Brooks forwarding pointer</strong> a dnes load reference barriers k přesměrování na
+      aktuální kopii objektu.</li>
+    <li>Cena za nízkou pauzu je vyšší režie barriers a obvykle větší <strong>headroom</strong> haldy,
+      protože marking i evakuace běží souběžně/inkrementálně.</li>
+  </ul>
+
+  <h2 id="safepoint">Stop-the-world a safepointy</h2>
+  <p><strong>Stop-the-world (STW)</strong> pauza je okamžik, kdy se <em>všechna</em> aplikační (mutator)
+  vlákna zastaví, aby GC mohl bezpečně pracovat s konzistentním stavem haldy a kořenů. Aby se vlákna
+  dala bezpečně zastavit, musí dorazit na <strong>safepoint</strong> – bod ve vykonávání, kde JVM zná
+  přesné rozložení referencí (přes <strong>OopMaps</strong>) a kde je stav konzistentní.</p>
+  <ul>
+    <li>GC vyhlásí požadavek na safepoint; vlákna v kompilovaném kódu narážejí na <strong>safepoint
+      polls</strong> a zastaví se, jakmile k jednomu dorazí (proto je vidět <code>off=…</code> v
+      OopMapě – offset safepointu, na němž platí dané mapování referencí).</li>
+    <li>Teprve po dosažení globálního safepointu (všechna vlákna stojí) může GC číst kořeny ze stack
+      frames, přesouvat objekty a aktualizovat reference.</li>
+    <li><strong>Serial</strong> a <strong>Parallel</strong> jsou plně STW. <strong>G1</strong> dělá
+      většinu práce concurrent a STW pauzy drží krátké a paralelní (Initial Mark, Remark, evakuace).
+      <strong>ZGC/Shenandoah</strong> přesouvají i evakuaci mimo STW a pauzu zkracují na minimum.</li>
+  </ul>
+  <div class="box insight">
+    <p class="box-title">💡 Jak moderní GC zkracují pauzy</p>
+    <p>Místo jedné velké pauzy přes celou haldu rozdělí práci do <strong>regionů</strong> a velkou část
+    (marking, refinement, u ZGC/Shenandoah i evakuaci) přesunou do <strong>concurrent</strong> fází,
+    které běží paralelně s aplikací. STW pak zbývá jen na krátké, ohraničené kroky. Cenou je vyšší
+    režie barriers a potřeba většího headroomu haldy.</p>
+  </div>
+
+  <h2 id="ladeni">Ladění GC</h2>
+  <p>Doporučení: <strong>začni s výchozím nastavením a laď až po pozorování GC logů a dat z Java Flight
+  Recorderu.</strong> Diagnostika přes <strong>unified logging</strong>
+  (<code>-Xlog:gc*</code>, případně <code>-Xlog:gc*=debug</code>) a <strong>JFR / Java Mission
+  Control</strong> (alokační události <code>ObjectAllocationInNewTLAB</code> a
+  <code>ObjectAllocationOutsideTLAB</code>; <strong>Native Memory Tracking</strong> pro velikost RSetu).
+  RSet metadata jsou závislá na zátěži – počítej s několika procenty haldy.</p>
+  <p>Relevantní flagy a nástroje pro G1:</p>
+  <pre><code>-Xms
+-Xmx
+-XX:MaxGCPauseMillis
+-XX:InitiatingHeapOccupancyPercent
+-XX:G1HeapRegionSize
+-XX:G1ReservePercent
+-XX:ConcGCThreads
+-XX:ParallelGCThreads
+-XX:G1HeapWastePercent
+-XX:G1MixedGCCountTarget
+-XX:G1MixedGCLiveThresholdPercent
+-Xlog:gc*
+Java Flight Recorder v Java Mission Control</code></pre>
+  <ul>
+    <li><strong>Concurrent mode failure</strong> → zvyš headroom, sniž IHOP (start marku dřív), nebo
+      přidej concurrent marking vlákna.</li>
+    <li><strong>To-space / evacuation failure</strong> → zvyš haldu / rezervu, start marku dřív, sniž
+      tlak na alokaci, nebo (po měření) zvyš <code>-XX:G1ReservePercent</code>.</li>
+    <li><strong>Humongous allocation failure</strong> → vyhni se nebo rozděl objekty ≥ 50 % regionu;
+      <code>-XX:G1HeapRegionSize</code> nebo velikost haldy zvyš až po potvrzení tlaku humongous objektů
+      v logu / JFR.</li>
+  </ul>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> NUMA: co to je, proč na ni dbát, TLAB, podpora v JVM.</summary>
+    <div class="odpoved">
+      <p><strong>NUMA (Non-Uniform Memory Access):</strong> vícesoketový systém, kde každý socket má
+      vlastní lokální paměť; přístup do vzdálené paměti přes interconnect je pomalejší (řádově ~15 %).
+      Software vidí veškerou paměť, ale <strong>umístění rozhoduje o výkonu</strong> – proto je třeba
+      držet data a vlákno, jež s nimi pracuje, na stejném socketu (OS alokuje politikou
+      <strong>first-touch</strong>).</p>
+      <p><strong>TLAB (Thread-Local Allocation Buffer):</strong> per-vláknový kousek Edenu, do kterého
+      vlákno alokuje objekty bez zámku (bump-pointer). Díky vazbě vlákno↔TLAB lze alokovat NUMA-lokálně –
+      objekt vzniká v paměti blízké socketu vlákna.</p>
+      <p><strong>Podpora v JVM:</strong> GC umí NUMA-aware alokaci – Parallel collector zarovnává
+      PLABy/alokace na NUMA uzly, aby zrychlil sběr; <strong>G1</strong> zkouší nové Eden regiony
+      alokovat z lokální paměti. Mimo JVM se vlákna/paměť připínají přes <code>numactl</code> /
+      <code>taskset</code>.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P13</span> Vysvětli generační hypotézu a proč díky ní GC funguje.</summary>
+    <div class="odpoved">
+      <p><strong>Slabá:</strong> většina objektů umírá mladá (a málo referencí vede z old do young).
+      <strong>Silná:</strong> mladší objekty umírají dřív než starší. Halda se proto rozdělí na malou
+      <strong>young</strong> generaci (Eden + 2 survivory), kterou stačí sbírat často, rychle a jen nad
+      malou částí haldy (minor GC), a velkou <strong>old</strong>, sbíranou zřídka. Přežívající objekty
+      se <strong>povyšují (promotion)</strong> do old. Funguje to, protože drtivá většina garbage je
+      v young → málo práce uvolní hodně paměti, a remembered set/card table omezí skenování jen na
+      old-to-young reference místo celé staré generace.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P13</span> Reference counting vs. tracing – výhody, nevýhody, cykly.</summary>
+    <div class="odpoved">
+      <p><strong>Reference counting:</strong> čítač příchozích referencí na objekt; uvolní objekt
+      okamžitě při dosažení nuly. Nevýhody: drahé atomické aktualizace (zpomalují aplikaci), cache
+      pollution a hlavně <strong>neuvolní cykly</strong> (objekty v cyklu mají nenulový čítač, ale jsou
+      z kořenů nedosažitelné) bez detektoru cyklů.</p>
+      <p><strong>Tracing (mark-and-sweep):</strong> ve fázi marking projde vše dosažitelné z GC roots
+      (přes OopMaps a Klass offsety), neoznačené = garbage. Cykly řeší přirozeně (nedosažitelný cyklus
+      se prostě neoznačí). Nevýhoda: marking dominuje času sběru kvůli pointer chasingu a náhodným
+      přístupům. HotSpot používá tracing.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P13</span> Jaký je rozdíl mezi Parallel a G1?</summary>
+    <div class="odpoved">
+      <p><strong>Parallel</strong> je propustnostní, plně <strong>stop-the-world</strong> sběrač se
+      souvislými generacemi: minor = Parallel Scavenge (kopírování young), full = Parallel Mark-Compact
+      (sliding compaction celé haldy). Maximalizuje throughput, ale full pauza je úměrná velikosti
+      haldy.</p>
+      <p><strong>G1</strong> je regionový, převážně <strong>concurrent</strong> sběrač: halda je
+      množina ~2048 stejných regionů, generace jsou dynamické množiny regionů. Marking běží souběžně,
+      evakuace se dělá <strong>inkrementálně</strong> jen nad vybranými regiony (young-only, mixed),
+      takže G1 cílí na <strong>měkký</strong> cíl pauzy (<code>-XX:MaxGCPauseMillis</code>) a vyhýbá se
+      pauzám přes celou haldu. Platí za to vyšší režii barriers a potřebu většího headroomu.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P13</span> Co je stop-the-world a jak ho zkracují moderní GC (G1, ZGC)?</summary>
+    <div class="odpoved">
+      <p><strong>STW</strong> = všechna mutator vlákna zastavena na globálním <strong>safepointu</strong>,
+      aby GC pracoval s konzistentní haldou a kořeny. <strong>G1</strong> přesune většinu práce
+      (marking, RSet refinement) do <strong>concurrent</strong> fází a STW drží krátké a paralelní
+      (Initial Mark, Remark, evakuace nad vybranými regiony). <strong>ZGC/Shenandoah</strong> jdou dál a
+      přesouvají i <strong>evakuaci souběžně</strong> s aplikací pomocí barriers (ZGC: load barriers +
+      colored pointers se self-healingem; Shenandoah: load reference barriers / forwarding pointer),
+      takže pauza je v řádu milisekund a téměř nezávislá na velikosti haldy.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P13</span> Popiš rozložení object headeru a jak souvisí se shallow / retained size.</summary>
+    <div class="odpoved">
+      <p>Hlavička 64bitového objektu: <strong>mark word</strong> (<code>0x00</code> – hash, zámky,
+      GC příznaky, za běhu GC forwarding adresa + tag <code>0b11</code>) a <strong>Klass pointer</strong>
+      (<code>0x08</code> – metadata třídy s offsety referenčních polí). U polí navíc délka na
+      <code>0x10</code> a prvky od <code>0x18</code>. Velikost je <strong>zarovnaná</strong> (obvykle 8 B).</p>
+      <p><strong>Shallow size</strong> = velikost samotné instance včetně hlavičky, polí a zarovnání,
+      bez odkazovaných objektů. <strong>Retained size</strong> = shallow size + vše, co by se uvolnilo,
+      kdyby objekt zmizel (objekty dosažitelné jen přes něj). Hlavička je fixní režie každé instance,
+      takže u mnoha malých objektů výrazně nafukuje celkový shallow footprint.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li>Object header = <strong>mark word</strong> (<code>0x00</code>) + <strong>Klass pointer</strong>
+        (<code>0x08</code>), pole má délku na <code>0x10</code> a prvky od <code>0x18</code>; vše
+        <strong>zarovnané</strong> → určuje shallow size.</li>
+      <li>Automatická správa ruší use-after-free/double-free, ale <strong>logické úniky</strong> zůstávají.
+        GC hledá objekty, které <strong>nejsou tranzitivně dosažitelné z GC roots</strong>. Kvalita: safety,
+        throughput, completeness, promptness, pause time, space overhead, scalability.</li>
+      <li><strong>Generační hypotéza:</strong> většina objektů umírá mladá → malá často sbíraná young
+        (Eden + 2 survivory) a velká řídce sbíraná old, s <strong>promotion</strong> přeživších.
+        <code>-Xmx</code>≈1/4, <code>-Xms</code>≈1/64 paměti, <code>NewRatio=2</code>,
+        <code>SurvivorRatio=8</code>.</li>
+      <li><strong>Reference counting</strong> (okamžité, ale atomiky, cache pollution, neuvolní cykly)
+        vs. <strong>tracing</strong> (mark-and-sweep z kořenů přes OopMaps + Klass offsety; HotSpot).</li>
+      <li><strong>Remembered set / card table</strong> (512B karty, <code>addr &gt;&gt; 9</code>, dirty=0,
+        post-write barrier; <code>UseCondCardMark</code> proti false sharingu) sleduje old-to-young, aby
+        minor GC nemusel skenovat celé old.</li>
+      <li><strong>Parallel:</strong> throughput, plně STW – Parallel Scavenge (kopírování) + Parallel
+        Mark-Compact (dense prefix, ~50 % práce uvolní ~82 % garbage).</li>
+      <li><strong>G1:</strong> regiony (~2048, default ≤32 MB), dynamické generace, převážně concurrent,
+        young-only/mixed/full, PRT + SATB/post-write barriers, IHOP (45 % init), humongous ≥50 % regionu.</li>
+      <li><strong>ZGC/Shenandoah:</strong> low-pause – evakuace <strong>concurrent</strong> přes barriers
+        (colored pointers / forwarding), pauza ~ms nezávislá na haldě. <strong>CMS odstraněn v JDK 14.</strong></li>
+      <li><strong>STW na safepointu</strong> moderní GC zkracují přesunem práce do concurrent fází; laď
+        až podle <code>-Xlog:gc*</code> a JFR.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="12-virtualizace.html">← Virtualizace</a></span>
+    <span><a href="zkouska.html">Další: Zkouška →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

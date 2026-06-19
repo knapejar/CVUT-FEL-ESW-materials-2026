@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zkouška – formát a vzorové otázky · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="13-jvm-garbage-collectors.html">← předchozí: Garbage collectory</a>
+    <span class="nav-link disabled">další →</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Příprava ke zkoušce · <span class="badge badge-soft">souhrn</span></div>
+    <h1>Zkouška: formát a vzorové otázky</h1>
+    <p class="perex">Vše o zkouškové písemce na jednom místě: jak vypadá a jak se boduje, obě
+    oficiální vzorové zkoušky (z roku 2018) s rozborem a vzorové zkouškové otázky
+    namapované na příslušné přednášky, a doporučený postup přípravy. Pokrývají typické okruhy
+    předmětu – projít je všechny je dobrá příprava.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#format">Formát a bodování</a></li>
+      <li><a href="#postup">Jak se připravit</a></li>
+      <li><a href="#vzor-c">Vzorová zkouška – C/C++ část</a></li>
+      <li><a href="#vzor-java">Vzorová zkouška – Java část</a></li>
+      <li><a href="#vzorove-otazky">Vzorové zkouškové otázky</a></li>
+      <li><a href="#ustni">Ústní zkouška</a></li>
+      <li><a href="#checklist">Checklist témat</a></li>
+    </ol>
+  </div>
+
+  <h2 id="format">Formát a bodování</h2>
+  <table>
+    <thead><tr><th>Složka</th><th>Body</th><th>Minimum</th><th>Poznámka</th></tr></thead>
+    <tbody>
+      <tr><td>Cvičení (zápočet)</td><td>max 60</td><td><strong>30</strong></td><td>8 menších úloh do BRUTE + semestrální práce (efektivní server, soutěž). Podmínka před zkouškou.</td></tr>
+      <tr><td>Písemka</td><td>max 30</td><td><strong>15</strong></td><td>C/C++ část (15 b) + Java/JVM část (15 b), <strong>60 minut dohromady</strong>.</td></tr>
+      <tr><td>Ústní (nepovinná)</td><td>max +10</td><td>—</td><td>Tentýž den ~2–3 h po písemce. Nepomáhá k dosažení minima z písemky.</td></tr>
+    </tbody>
+  </table>
+  <div class="box poznamka">
+    <p class="box-title">ℹ️ Důležité k bodování</p>
+    <ul>
+      <li>Z písemky musíš mít <strong>aspoň 15/30</strong>, jinak neprojdeš – nezávisle na ústní.</li>
+      <li>Každá otázka má více <strong>samostatně bodovaných podotázek</strong> – čti zadání pozorně,
+        často obsahuje několik částí.</li>
+      <li><strong>C část</strong> se hodnotí „normálně“, <strong>Java část</strong> bývá mírná –
+        když k tématu něco rozumného napíšeš, většinou bod dostaneš.</li>
+      <li>Výsledná známka = součet bodů podle klasifikační stupnice ČVUT.</li>
+    </ul>
+  </div>
+
+  <h2 id="postup">Jak se připravit (osvědčený postup)</h2>
+  <ol>
+    <li>Projdi <strong>všech 13 přednášek</strong> (jádro učiva) – odkazy v <a href="index.html">obsahu</a>.</li>
+    <li>U každé přednášky si nahlas odpověz na <strong>zkouškové otázky</strong> (aktivní opakování).</li>
+    <li>Projdi vzorové otázky níže – pokrývají typické okruhy, na které se předmět ptá.</li>
+    <li>Nezapomeň na <strong>perf / profiling z cvičení</strong> – ve výkladu byl jen okrajově, ale u
+      zkoušky se ptají (čtení perf výstupu, cache/TLB/L1i miss). Užitečné je projet si i benchmarking
+      lab (interval spolehlivosti, speedup).</li>
+    <li>Slidy podle studentů „stačí“; když něčemu nerozumíš, dohledej to (tyto materiály, ESW guide,
+      nahrané přednášky).</li>
+  </ol>
+
+  <h2 id="vzor-c">Vzorová zkouška – C/C++ část <span class="badge badge-c">oficiální</span></h2>
+  <p class="kv">Oficiální vzorový test, C/C++ část, 6. 9. 2018 · celkem 15 bodů. Rozbaluj řešení až po vlastním pokusu.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">4 b</span> Kompilace a optimalizace</summary>
+    <div class="odpoved">
+      <p><strong>Zadání:</strong> Popiš jednotlivé fáze kompilace C/C++ programu a jejich vstup a výstup
+      (co se děje uvnitř kompilátoru). Vysvětli několik optimalizací, které kompilátor dělá. Co je
+      <strong>profile-guided optimization</strong> a kdy pomáhá?</p>
+      <p><strong>Kam to patří:</strong> <a href="02-bentley-kompilator-profiling.html">P2 – Bentleyho pravidla, kompilátor, profiling</a>.</p>
+      <p><strong>Osnova odpovědi:</strong> frontend (lexer/parser → <em>AST</em>, typová kontrola) →
+      middle-end (převod na <em>IR</em>, optimalizační pasy) → backend (generování assembleru, alokace
+      registrů, plánování instrukcí) → linker. Optimalizace: constant folding/propagation, eliminace
+      společných podvýrazů (CSE), inlining, LICM (vytažení invariantu ze smyčky), unrolling,
+      vektorizace, eliminace mrtvého kódu. PGO = nejdřív se sesbírá profil běhu (které větve/funkce jsou
+      horké), překlad se pak řídí reálnými daty – lépe rozhoduje o inliningu, rozložení kódu a predikci
+      větví. Pomáhá u kódu s výraznými horkými cestami a těžko staticky odhadnutelným chováním větví.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">3 b</span> Režie virtualizace</summary>
+    <div class="odpoved">
+      <p><strong>Zadání:</strong> Software ve virtualizovaném systému běží typicky pomaleji než na
+      reálném hardwaru, a to i při hardwarově asistované virtualizaci. Jaké jsou důvody nižšího výkonu a jak je může
+      vývojář a/nebo administrátor zmírnit?</p>
+      <p><strong>Kam to patří:</strong> <a href="12-virtualizace.html">P12 – Virtualizace</a>.</p>
+      <p><strong>Osnova:</strong> důvody – VM exity (trap-and-emulate citlivých instrukcí), dvojí
+      překlad adres (vnořené stránkování / EPT → dražší TLB miss), emulace I/O, ztráta lokality cache,
+      NUMA efekty, sdílení HW. Zmírnění – HW podpora (VT-x/EPT), <strong>paravirtualizace I/O (virtio)</strong>,
+      <strong>SR-IOV / PCI pass-through</strong> (přiřazení zařízení přímo VM přes <strong>IOMMU</strong>),
+      huge pages, připnutí vCPU/paměti (NUMA-aware), vyhnutí se zbytečným VM exitům.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">5 b</span> Reference counting vs. RCU</summary>
+    <div class="odpoved">
+      <p><strong>Zadání:</strong> Objekt sdílený více vlákny nesmí být uvolněn dřív, než ho přestane
+      používat poslední vlákno. (a) Porovnej <strong>reference counting</strong> a <strong>RCU</strong>
+      z hlediska výkonu čtení i aktualizace, uveď další plusy/minusy. (b) Vysvětli, kdy RCU uvolňuje objekty.</p>
+      <p><strong>Kam to patří:</strong> <a href="04-skalovatelna-synchronizace.html">P4 – Škálovatelná synchronizace</a>.</p>
+      <p><strong>Osnova:</strong> reference counting – každý čtenář atomicky inkrementuje/dekrementuje
+      čítač → zápis do sdílené cache line i při čtení → <em>špatně škáluje</em> (cache-line bouncing),
+      ale uvolní hned po poklesu na nulu. RCU – čtenáři <em>nezapisují</em> (jen označí kritickou sekci),
+      čtení je extrémně levné a škáluje lineárně; aktualizace dělá copy-on-write a publikuje nový ukazatel.
+      (b) RCU uvolní starou verzi až po uplynutí <strong>grace period</strong>, tj. když všechna vlákna,
+      která mohla držet starý ukazatel, projdou <em>quiescent state</em> (mechanismus QSBR /
+      <code>synchronize_rcu</code>).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">3 b</span> perf: L1 instrukční cache miss</summary>
+    <div class="odpoved">
+      <p><strong>Zadání:</strong> <code>perf record -e l1i_miss ./myprog</code> ukázal zpomalení ve
+      funkci <code>process_data</code>, která v cyklu volá tři <code>static inline</code> funkce
+      <code>do_a</code>, <code>do_b</code>, <code>do_c</code>. Vysvětli příčinu a navrhni změnu se
+      zachováním funkčnosti.</p>
+      <p><strong>Kam to patří:</strong> <a href="05-pamet-cache-numa.html">P5 – Paměť a cache</a>.</p>
+      <p><strong>Osnova:</strong> velké inline funkce nafouknou tělo smyčky tak, že se kód jedné iterace
+      nevejde do <strong>L1 instrukční cache</strong> → na každém průchodu se instrukce znovu načítají
+      (L1i miss). Řešení: rozdělit na <strong>tři samostatné smyčky</strong> (loop fission) – nejdřív
+      všechny <code>do_a</code>, pak <code>do_b</code>, pak <code>do_c</code>; každá smyčka má malé tělo,
+      které se do L1i vejde. (Pozor na trade-off s datovou lokalitou.)</p>
+    </div>
+  </details>
+
+  <h2 id="vzor-java">Vzorová zkouška – Java část <span class="badge badge-java">oficiální</span></h2>
+  <p class="kv">Oficiální vzorový test, Java část · celkem 15 bodů.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">8 b</span> Data race, volatile, cache a sharing</summary>
+    <div class="odpoved">
+      <p><strong>Zadání:</strong> Co je <strong>data race</strong> (1 b)? K jakým operacím je užitečná
+      proměnná <strong>volatile</strong> v JVM (1 b) a jak se projeví v nativním kódu (2 b)? Jak je dnes
+      <strong>organizovaná cache</strong> (1 b)? Co je <strong>true sharing</strong> (1 b), co
+      <strong>false sharing</strong> (1 b) a proč je důležité na sdílení dbát (1 b)?</p>
+      <p><strong>Kam to patří:</strong> <a href="08-konkurence-dat-jvm.html">P8 – Konkurence dat</a>
+      (data race, volatile) a <a href="05-pamet-cache-numa.html">P5 – Cache</a> (organizace, true/false sharing).</p>
+      <p><strong>Osnova:</strong> data race = dvě vlákna přistupují ke stejné paměti bez synchronizace,
+      aspoň jedno zapisuje. volatile zajišťuje <em>viditelnost</em> a zákaz přeuspořádání (vhodné pro
+      příznaky/publikaci ukazatele, ne pro složené operace typu ++). V nativním kódu se projeví
+      <strong>paměťovou bariérou</strong> – typicky <code>lock addl $0x0,(%rsp)</code> za zápisem.
+      Cache je hierarchická (L1/L2/L3), data po <strong>64bajtových řádcích</strong>. True sharing = dvě jádra
+      sdílejí <em>tutéž</em> proměnnou; false sharing = různé proměnné padnou do <em>stejné cache line</em>
+      → zbytečný bouncing. Záleží na tom kvůli cache-koherenčnímu provozu, který vede k propadu škálování.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">7 b</span> Escape analysis</summary>
+    <div class="odpoved">
+      <p><strong>Zadání:</strong> Co je <strong>escape analysis</strong> v JVM a proč je důležitá pro
+      programátora (2 b)? V jaké <strong>fázi</strong> se aplikuje (1 b)? Mění <strong>inline</strong>
+      optimalizace v JIT rozsah escape analysis (1 b)? Vyjmenuj a popiš <strong>tři klasifikace</strong>
+      escape analysis (3 b).</p>
+      <p><strong>Kam to patří:</strong> <a href="11-jvm-alokace-objektu.html">P11 – Alokace objektů</a>.</p>
+      <p><strong>Osnova:</strong> EA zjišťuje, zda objekt „neunikne“ mimo metodu/vlákno; pokud ne, JIT
+      ho může <strong>alokovat na zásobníku / nahradit skaláry</strong> (scalar replacement) a vynechat
+      zamykání (lock elision) → méně práce pro GC. Aplikuje se v <strong>JIT kompilátoru (C2)</strong>.
+      Inlining EA <strong>pomáhá</strong> – po vložení volání do těla metody vidí EA víc kódu a může
+      lépe rozhodnout. Klasifikace: <strong>NoEscape</strong> (objekt neunikne – lze stack alloc/scalar
+      replacement), <strong>ArgEscape</strong> (unikne jako argument volané metody, ale ne do haldy/vlákna),
+      <strong>GlobalEscape</strong> (unikne globálně – do statického pole, návratem, jiného vlákna).</p>
+    </div>
+  </details>
+
+  <h2 id="vzorove-otazky">Vzorové zkouškové otázky</h2>
+  <p class="kv">Sada vzorových otázek napříč předmětem, seřazená podle přednášky – u každé je odkaz na příslušnou přednášku s výkladem i odpovědí.</p>
+  <table>
+    <thead><tr><th>Přednáška</th><th>Část</th><th>Otázka</th></tr></thead>
+    <tbody>
+      <tr><td><a href="01-uvod-architektura.html">P1</a> / <a href="07-beh-programu-jit.html">P7</a></td><td>Java</td><td>Co je SIMD? Proč by ho měl programátor znát a používat? Jak použít SIMD v Javě (Vector API)?</td></tr>
+      <tr><td><a href="02-bentley-kompilator-profiling.html">P2</a></td><td>C</td><td>2 funkce v C: napiš 3 optimalizace kompilátoru (jméno+popis), 1 manuální optimalizaci, kterou kompilátor neudělá, a proč (i trik násobení 2 → bit shift).</td></tr>
+      <tr><td><a href="02-bentley-kompilator-profiling.html">P2</a></td><td>C</td><td>Napiš AST z úryvku (funkce s ifem). K čemu slouží AST při kompilaci?</td></tr>
+      <tr><td><a href="02-bentley-kompilator-profiling.html">P2</a></td><td>C</td><td>Performance counters – jak fungují, jak se používají při profilování.</td></tr>
+      <tr><td><a href="02-bentley-kompilator-profiling.html">P2</a></td><td>C</td><td>AST – jak vzniká a jak ho používá CPU; ukaž AST pro malou funkci.</td></tr>
+      <tr><td><a href="03-benchmarking-statistika-wcet.html">P3</a></td><td>C</td><td>Vzorky měření před/po optimalizaci vč. 95% intervalu spolehlivosti: vypočítej speedup, urči opakovatelnost.</td></tr>
+      <tr><td><a href="03-benchmarking-statistika-wcet.html">P3</a></td><td>C</td><td>Výpočet speedup ze dvou sad časů; zpřesnění odhadu.</td></tr>
+      <tr><td><a href="04-skalovatelna-synchronizace.html">P4</a></td><td>C</td><td>RCU vs. RW-lock – v čem se liší? Porovnej výkon a škálování a) read-side b) write-side.</td></tr>
+      <tr><td><a href="04-skalovatelna-synchronizace.html">P4</a></td><td>C</td><td>RCU – jak implementovat finální fázi syncu, co nesmí readers dělat, aby RCU dobře škálovalo, jak je implementace efektivní (QSBR).</td></tr>
+      <tr><td><a href="04-skalovatelna-synchronizace.html">P4</a></td><td>C</td><td>Jak updateři poznají, kdy uvolnit obsah v RCU? Vysvětli detailně. Jaké mechanismy se používají pro efektivní čtení?</td></tr>
+      <tr><td><a href="04-skalovatelna-synchronizace.html">P4</a></td><td>C</td><td>Porovnání RCU vs. RW-lock na 1024 CPU – proč je RCU výhodné při častých čteních.</td></tr>
+      <tr><td><a href="05-pamet-cache-numa.html">P5</a></td><td>C</td><td>Kód s vysokými cache misses – navrhni úpravy, odůvodni.</td></tr>
+      <tr><td><a href="05-pamet-cache-numa.html">P5</a></td><td>C</td><td>Kód, kde perf zaměřený na TLB našel hotspot – kde je problém a jak ho zlepšit při zachování funkčnosti.</td></tr>
+      <tr><td><a href="05-pamet-cache-numa.html">P5</a></td><td>Java</td><td>Organizace cache, true sharing, false sharing.</td></tr>
+      <tr><td><a href="05-pamet-cache-numa.html">P5</a></td><td>C</td><td>Kód s cache misses na partial_sums – problém a řešení zachovávající funkčnost.</td></tr>
+      <tr><td><a href="06-serializace.html">P6</a></td><td>C</td><td>Jaký formát místo JSON? Napiš formát, popiš binární reprezentaci, porovnej s JSON (rychlost serializace, paměť, rozšiřitelnost).</td></tr>
+      <tr><td><a href="07-beh-programu-jit.html">P7</a> / <a href="10-jvm-analyza-pameti.html">P10</a></td><td>Java</td><td>Popiš paměť v JVM. Co má vlákno vlastní a co je společné? Stack-oriented execution? Co obsahují frames? Shallow vs retained size?</td></tr>
+      <tr><td><a href="07-beh-programu-jit.html">P7</a> / <a href="10-jvm-analyza-pameti.html">P10</a></td><td>Java</td><td>Sampling a tracing? Aspoň 2 programy pro profiling v Javě. Jak bys postupoval při optimalizaci Java aplikace?</td></tr>
+      <tr><td><a href="07-beh-programu-jit.html">P7</a></td><td>Java</td><td>Které optimalizace probíhají v C1, C2, tiered kompilaci.</td></tr>
+      <tr><td><a href="07-beh-programu-jit.html">P7</a></td><td>Java</td><td>Safepoint – aspoň 2 použití; co je TTSP (time-to-safepoint) a proč na něm záleží.</td></tr>
+      <tr><td><a href="08-konkurence-dat-jvm.html">P8</a></td><td>Java</td><td>Napiš non-blocking stack, pop a push. Jaký je rozdíl mezi non-blocking a wait-free?</td></tr>
+      <tr><td><a href="08-konkurence-dat-jvm.html">P8</a></td><td>Java</td><td>Data race: definice, volatile v JVM, 2 atomické instrukce.</td></tr>
+      <tr><td><a href="09-efektivni-servery-c10k.html">P9</a></td><td>Java</td><td>Thread-pooling? Popiš virtuální vlákna. Jedna výhoda a jedna nevýhoda oproti systémovým vláknům.</td></tr>
+      <tr><td><a href="09-efektivni-servery-c10k.html">P9</a></td><td>Java</td><td>C10k: popis problému, 2 přístupy ke zpracování spojení, neblokující I/O v Javě a C.</td></tr>
+      <tr><td><a href="10-jvm-analyza-pameti.html">P10</a></td><td>Java</td><td>Proč jsou kontejnery v Javě neefektivní? Jak to řeší nestandardní kontejnery? V čem je efektivní open hashing? 2 příklady řešení kolizí.</td></tr>
+      <tr><td><a href="10-jvm-analyza-pameti.html">P10</a></td><td>Java</td><td>Profiling: 2 režimy + rozdíl static/dynamic analýza + shallow vs retained size.</td></tr>
+      <tr><td><a href="11-jvm-alokace-objektu.html">P11</a></td><td>Java</td><td>Escape analysis – proč by nás to mělo zajímat? Kdy se děje? Pomáhá JIT inlining? Napsat jednotlivé cases.</td></tr>
+      <tr><td><a href="11-jvm-alokace-objektu.html">P11</a></td><td>Java</td><td>4 typy non-strong referencí: vyjmenuj a popiš využití.</td></tr>
+      <tr><td><a href="11-jvm-alokace-objektu.html">P11</a></td><td>Java</td><td>Bloom filter.</td></tr>
+      <tr><td><a href="12-virtualizace.html">P12</a></td><td>C</td><td>Co je IOMMU a k čemu se používá?</td></tr>
+      <tr><td><a href="12-virtualizace.html">P12</a></td><td>C</td><td>Více VM přistupuje k jedné síťové kartě – přístupy, HW požadavky, efektivita.</td></tr>
+      <tr><td><a href="13-jvm-garbage-collectors.html">P13</a> / <a href="11-jvm-alokace-objektu.html">P11</a></td><td>Java</td><td>NUMA: co to je, proč na ni dbát, TLAB, podpora v JVM.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="ustni">Ústní zkouška (nepovinná)</h2>
+  <div class="box poznamka">
+    <p class="box-title">🎤 Jak probíhá ústní</p>
+    <ul>
+      <li>Je <strong>nepovinná</strong> (max +10 b), tentýž den ~2–3 h po písemce.</li>
+      <li><strong>Java:</strong> první téma si vybíráš ty – cokoli, co <em>nebylo</em> v testu; druhé je
+        náhodné z probrané látky (např. typy referencí nebo alokace paměti – TLAB, escape analysis, eden).</li>
+      <li><strong>C:</strong> zkoušející se dívá na tvůj test a doptává se na to, co ho nepřesvědčilo;
+        rozvedeš odpověď a on pokračuje dalšími dotazy.</li>
+    </ul>
+  </div>
+
+  <h2 id="checklist">Checklist témat ke zkoušce</h2>
+  <p>Než půjdeš ke zkoušce, měl bys umět vysvětlit každý z těchto bodů (odkaz vede na výklad):</p>
+  <table>
+    <thead><tr><th><span class="badge badge-c">C/C++ část</span></th><th><span class="badge badge-java">Java/JVM část</span></th></tr></thead>
+    <tbody>
+      <tr>
+        <td>
+          <ul>
+            <li>Fáze kompilace, AST, IR, optimalizace, PGO – <a href="02-bentley-kompilator-profiling.html">P2</a></li>
+            <li>Bentleyho pravidla, perf, performance counters – <a href="02-bentley-kompilator-profiling.html">P2</a></li>
+            <li>Interval spolehlivosti, speedup, opakovatelnost, WCET, timestamping – <a href="03-benchmarking-statistika-wcet.html">P3</a></li>
+            <li>Mutex/spinlock/RW-lock, atomiky, bariéry, RCU, QSBR, TM – <a href="04-skalovatelna-synchronizace.html">P4</a></li>
+            <li>Typy cache miss, asociativita, TLB, true/false sharing, malloc, NUMA – <a href="05-pamet-cache-numa.html">P5</a></li>
+            <li>JSON vs. binární formáty (Protobuf/Avro/Cap'n Proto), IDL – <a href="06-serializace.html">P6</a></li>
+            <li>Hypervizory, trap-and-emulate, EPT, IOMMU, SR-IOV, virtio – <a href="12-virtualizace.html">P12</a></li>
+          </ul>
+        </td>
+        <td>
+          <ul>
+            <li>JVM paměť, bytecode, stack execution, frames – <a href="07-beh-programu-jit.html">P7</a></li>
+            <li>JIT C1/C2/tiered, OSR, safepoint, TTSP – <a href="07-beh-programu-jit.html">P7</a></li>
+            <li>Data race, volatile (lock addl), non-blocking, wait-free, CAS – <a href="08-konkurence-dat-jvm.html">P8</a></li>
+            <li>Thread pooling, virtuální vlákna, epoll, NIO, C10k – <a href="09-efektivni-servery-c10k.html">P9</a></li>
+            <li>Shallow vs retained size, autoboxing, open hashing, Trove/FastUtil – <a href="10-jvm-analyza-pameti.html">P10</a></li>
+            <li>TLAB, escape analysis (3 cases), bloom filter, typy referencí – <a href="11-jvm-alokace-objektu.html">P11</a></li>
+            <li>Generační hypotéza, GC (Parallel/G1/ZGC), marking, layout objektu – <a href="13-jvm-garbage-collectors.html">P13</a></li>
+          </ul>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <footer class="page-foot">
+    <span><a href="index.html">← Zpět na obsah</a></span>
+    <span>Hodně štěstí u zkoušky! 🍀</span>
+  </footer>
+
+</div>
+</body>
+</html>

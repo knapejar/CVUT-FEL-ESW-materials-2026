@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>True / False Sharing — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#1a0a22; --bg-bot:#070310; --panel:#160c1f; --text:#fdeaf4; --muted:#b48fb0;
+    --accent:#FF2D8B; --accent2:#FFC14D; --core0:#FFB03A; --core1:#3AD7FF; --seat:#cfe8ff;
+    --hot:#FF4747; --good:#5BE08A; --ink:#100617; --border:#2a1430;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(255,45,139,.16);border:1px solid rgba(255,45,139,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#04020a;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.80),rgba(0,0,0,.36) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(255,45,139,.92)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 18px rgba(255,45,139,.98)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#f0c8e2;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(40,16,52,.85),rgba(7,3,16,.94));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#FF2D8B,#FFC14D);color:#100617;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(255,45,139,.5)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#fbe0ef} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#3a1c40 var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">True / False Sharing</span>
+    <span class="badge">IMMERSIVE VIDEO 🚐🎸</span>
+    <span class="hints">space = play/pauza · ←/→ = ±5s · R = od začátku</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">True a false sharing — pop-punková videolekce k B4M36ESW. Cache line = tour van na 64 sedaček; dotkneš se jedné, roadie přitáhne celý van. True sharing = pranice o stejnou sedačku, false sharing = různá data náhodou na jednom řádku — neviditelné ve zdrojáku, žere výkon.<small>~3 min 20 s · zpívaná videolekce · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="199.820" step="0.01" value="0">
+    <span class="time" id="tDur">3:20</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-true-false-sharing.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){ showErr('pixi-filters not loaded after pixi'); }
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/True False Sharing.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:199820,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=199.820;            // MP3 / stage length (fallback when audio.duration unavailable)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (storyboard §2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};            // quadratic out
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // Beat (178 BPM fast pop-punk)
+  const BPM=178;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  function beatHit(t){ const bp=(t*BPM/60)%1; return (bp<0.06||bp>0.94)?1:0; }
+  // GLOBAL beat gates (default 1.0; S16/S15 ramps both to 0 over 198.14->199.82)
+  function beatAmp(t){ return 1-easeInOut(ph(t,198.14,199.82)); }
+  function lampWaveAmp(t){ return 1-easeInOut(ph(t,198.14,199.82)); }
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+
+  // ============================================================
+  //  2) PALETTE + CANONICAL WORLD COORDS (storyboard §2)
+  // ============================================================
+  const C={
+    bgTop:0x1a0a22, bgBot:0x070310,
+    bgTopCold:0x0e1420, bgBotCold:0x05080f,   // S8/S9 mystery cool
+    bgTopWarm:0x241033, bgBotWarm:0x0a0518,    // S12/S15 fix warm
+    panel:0x160c1f, accent:0xFF2D8B, accent2:0xFFC14D,
+    core0:0xFFB03A, core1:0x3AD7FF, seat:0xcfe8ff, hot:0xFF4747,
+    good:0x5BE08A, text:0xfdeaf4, muted:0xb48fb0, ink:0x100617, white:0xffffff
+  };
+  const W=1280,H=720;
+  // The van (cache line)
+  const VAN=[640,300];
+  const N_SEATS=64;
+  const SEAT_X0=360, SEAT_X1=920, SEAT_SPAN=SEAT_X1-SEAT_X0; // 560
+  const SEAT_W=SEAT_SPAN/N_SEATS;                            // ~8.75
+  const seatX=s=>SEAT_X0+(s+0.5)*SEAT_W;
+  // Hot seats
+  const SEAT_SAME=31, SEAT_A=3, SEAT_B=61;
+  // Cores / amps
+  const N_CORES=4;
+  const AMP0=[210,470], AMP1=[1070,470], AMP2=[210,200], AMP3=[1070,200];
+  // van tow extents
+  const VAN_LX=360, VAN_RX=920;
+  // HUD positions
+  const HUD_CHIP=[950,70];
+  const GAUGE=[1150,110], GAUGE_R=58, GAUGE_NEEDLE=52;
+  const highAngle=-2.356, lowAngle=-0.785, midAngle=-1.571;
+  const restAngle=lerp(highAngle,lowAngle,0.25); // -1.963
+  // villain
+  const VILLAIN_IDLE=[640,560], VILLAIN_UP=[640,420];
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list (NEVER reassigned wholesale)
+  const _ofx=[]; // {name, filter}
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §7)
+  //  Optional keyed PNGs layer low-alpha OVER the always-drawn vector actors.
+  //  With NO images (window.ASSETS undefined) the video is a COMPLETE, visually
+  //  unchanged vector masterpiece. Fire-and-forget; never affects f(t)/__seek.
+  // ============================================================
+  const IMG={};
+  const IMG_SPRITES={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,contain){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1;
+    let sc=targetW/tw;
+    if(contain){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc);
+    s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s);
+    return s;
+  }
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    const SLUGS=['van-cacheline','amp-core0','amp-core1','rocker-silhouette','garage-bg','bench-gauge'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{
+      if(!tex) return; IMG[slug]=tex;
+      try{
+        if(slug==='garage-bg'){
+          const s=heroSprite(bgLayer,'garage-bg',W/2,H/2,W,0.22,true);
+          if(s){ bgLayer.setChildIndex(s,Math.min(2,bgLayer.children.length-1)); IMG_SPRITES['garage-bg']=s; }
+        } else if(slug==='van-cacheline'){
+          const s=heroSprite(vanRoot,'van-cacheline',0,0,600,0.9,false); if(s){ s.zIndex=10; IMG_SPRITES['van-cacheline']=s; }
+        } else if(slug==='amp-core0'){
+          const s=heroSprite(amp0Root,'amp-core0',0,0,150,0.9,false); if(s) IMG_SPRITES['amp-core0']=s;
+        } else if(slug==='amp-core1'){
+          const s=heroSprite(amp1Root,'amp-core1',0,0,150,0.9,false); if(s) IMG_SPRITES['amp-core1']=s;
+        } else if(slug==='rocker-silhouette'){
+          for(const A of [amp0Root,amp1Root]){ const s=heroSprite(A,'rocker-silhouette',0,-70,90,0.85,false); if(s) A._img=s; }
+        } else if(slug==='bench-gauge'){
+          const s=heroSprite(gaugeRoot,'bench-gauge',0,0,130,0.85,false); if(s) IMG_SPRITES['bench-gauge']=s;
+        }
+      }catch(e){ showErr('img '+slug+': '+e.message); }
+    }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={magenta:radialTex(0xFF2D8B),amber:radialTex(0xFFB03A),cyan:radialTex(0x3AD7FF),good:radialTex(0x5BE08A),white:radialTex(0xffffff),hot:radialTex(0xFF4747),seat:radialTex(0xcfe8ff)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={hot:lineTex(0xFF4747),good:lineTex(0x5BE08A),accent:lineTex(0xFF2D8B),muted:lineTex(0xb48fb0)};
+  // baked dot + seat-slot for particle swarms
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  const _seatG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,Math.max(4,SEAT_W-1.6),26,2).endFill();
+  const SEAT_TEX=app.renderer.generateTexture(_seatG,{resolution:2}); _seatG.destroy();
+  // baked radial-noise sprite for DisplacementFilter fallback
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const img=g.createImageData(256,256);for(let i=0;i<img.data.length;i+=4){img.data[i]=Math.random()*255;img.data[i+1]=Math.random()*255;img.data[i+2]=128;img.data[i+3]=255;}
+    g.putImageData(img,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+  // scanline tile (S9 mystery)
+  function scanlineTex(){const c=document.createElement('canvas');c.width=4;c.height=4;const g=c.getContext('2d');
+    g.fillStyle='rgba(0,0,0,0)';g.fillRect(0,0,4,4);g.fillStyle='rgba(0,0,0,0.9)';g.fillRect(0,0,4,1);return PIXI.Texture.from(c);}
+  const SCAN_TEX=scanlineTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (room gradient + back-wall RAM + haze + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:false,kawase:false};
+
+  // back-wall RAM = van-stack silhouette (cacheAsBitmap)
+  const backWall=new PIXI.Graphics();
+  backWall.lineStyle(2,0x2a1430,0.6);
+  for(let r=0;r<3;r++){ const y=44+r*36;
+    for(let x=120;x<=1100;x+=110){ backWall.beginFill(0x140a1c,0.5).lineStyle(1.5,0x33183a,0.7).drawRoundedRect(x,y,96,28,4).endFill();
+      backWall.lineStyle(1,0x3a1c40,0.5); for(let s=0;s<5;s++){ backWall.drawRect(x+6+s*18,y+5,12,18); } } }
+  backWall.lineStyle(0).beginFill(0x1a0c22,0.22).drawRect(110,36,1080,120).endFill();
+  bgLayer.addChild(backWall); backWall.cacheAsBitmap=true;
+
+  // tiling stage-haze (slow upward drift)
+  const hazeTile=new PIXI.TilingSprite(GLOW.magenta,W,H);
+  hazeTile.alpha=0.05; hazeTile.blendMode=PIXI.BLEND_MODES.ADD; hazeTile.tint=0xFF2D8B;
+  hazeTile.tileScale.set(2.4,2.4);
+  bgLayer.addChild(hazeTile);
+
+  // wet-stage-floor reflection band
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x1a0a22,0.20).drawRect(0,640,W,80).endFill();
+  bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,5],waveLength:[40,120],alpha:[0.3,0.3],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,640,W,80); }
+  // persistent warm stage work-light godray (intent-composed onto bgLayer in render)
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:30,gain:0.4,lacunarity:2.2,time:0,parallel:true}); }
+
+  // ============================================================
+  //  6) AMBIENT MOTES (persistent ParticleContainer) + spark bursts
+  // ============================================================
+  const MOTE_COUNT=220;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:false},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const s=new PIXI.Sprite(GLOW.magenta);s.anchor.set(0.5);s.tint=0xFF7FB8;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.05+Math.random()*0.14);s.alpha=0;motePC.addChild(s);
+    motes.push({s,vx:(Math.random()-.5)*8,vy:-(5+Math.random()*16),phs:Math.random()*TAU,sp:0.5+Math.random()});}
+  let RT=0;
+  let moteEnvelope=0;
+  let moteVisibleRatio=1;
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:-Math.abs(Math.sin(a)*v)-v*0.4,life:0,max:0.8+Math.random()*1.0});}
+  }
+
+  // ============================================================
+  //  7) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  // amp cabinet + band member at local 0,0 (origin = amp top-center, cabinet below)
+  function buildAmp(coreCol){
+    const c=new PIXI.Container();
+    const g=new PIXI.Graphics();
+    // cabinet
+    g.beginFill(0x140a1c,0.96).lineStyle(3,coreCol,0.9).drawRoundedRect(-46,-10,92,120,8).endFill();
+    // grille
+    g.lineStyle(1,coreCol,0.25); for(let yy=4;yy<104;yy+=10){ g.moveTo(-40,yy).lineTo(40,yy); }
+    // head unit on top
+    g.beginFill(0x1c0e26,0.98).lineStyle(2,coreCol,0.9).drawRoundedRect(-40,-34,80,26,5).endFill();
+    // knob
+    g.beginFill(coreCol,0.85).drawCircle(22,-21,5).endFill();
+    c.addChild(g);
+    // power LED
+    const led=new PIXI.Graphics(); c.addChild(led); c._led=led; c._coreCol=coreCol;
+    // band-member silhouette (head + shoulders + guitar neck)
+    const fig=new PIXI.Graphics();
+    fig.beginFill(C.ink,0.92).drawCircle(0,-78,12).endFill();
+    fig.beginFill(C.ink,0.86); fig.moveTo(-22,-44).quadraticCurveTo(0,-66,22,-44).lineTo(18,-30).lineTo(-18,-30).closePath(); fig.endFill();
+    fig.lineStyle(4,C.ink,0.8).moveTo(-18,-40).lineTo(36,-58); // guitar neck
+    fig.lineStyle(2,coreCol,0.5).moveTo(-18,-40).lineTo(36,-58);
+    c.addChildAt(fig,0); c._fig=fig;
+    const ledGlow=glow('white',0,-10,0.5,0.0,coreCol); c.addChild(ledGlow); c._ledGlow=ledGlow;
+    return c;
+  }
+  function drawLed(amp,col,a){ amp._led.clear(); amp._led.beginFill(col,clamp01(a)).drawCircle(-30,-22,4).endFill();
+    amp._ledGlow.tint=col; amp._ledGlow.alpha=clamp01(a)*0.5; amp._ledGlow.y=-22; amp._ledGlow.x=-30; amp._ledGlow.scale.set(0.4+0.3*clamp01(a)); }
+
+  // gauge needle (round HUD) at local 0,0 = pivot
+  function buildGauge(){
+    const c=new PIXI.Container();
+    const face=new PIXI.Graphics();
+    face.beginFill(0x100617,0.85).lineStyle(3,C.muted,0.8).drawCircle(0,0,GAUGE_R).endFill();
+    // arc scale up-left(good) -> up-right(hot)
+    face.lineStyle(5,C.good,0.7).arc(0,0,GAUGE_R-9,highAngle,midAngle,false);
+    face.lineStyle(5,C.hot,0.7).arc(0,0,GAUGE_R-9,midAngle,lowAngle,false);
+    const lbl=txt('throughput',12,C.muted,'700'); lbl.position.set(0,GAUGE_R+12); face.addChild(lbl);
+    c.addChild(face);
+    const needle=new PIXI.Graphics(); c.addChild(needle); c._needle=needle;
+    const hub=new PIXI.Graphics().beginFill(C.text,0.9).drawCircle(0,0,5).endFill(); c.addChild(hub);
+    return c;
+  }
+  function drawNeedle(gauge,angle,col){
+    const n=gauge._needle; n.clear();
+    n.lineStyle(4,col,1).moveTo(0,0).lineTo(Math.cos(angle)*GAUGE_NEEDLE,Math.sin(angle)*GAUGE_NEEDLE);
+    n.beginFill(col,0.9).drawCircle(Math.cos(angle)*GAUGE_NEEDLE,Math.sin(angle)*GAUGE_NEEDLE,4).endFill();
+  }
+
+  // SimpleRope tow-rope / beam helpers
+  function makeRope(tex,n){ const pts=[]; for(let i=0;i<(n||16);i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(tex,pts); r.blendMode=PIXI.BLEND_MODES.ADD; r._pts=pts; return r; }
+  function setRopeAlongPath(rope,path){
+    const p=rope._pts; const segs=path.length-1;
+    for(let i=0;i<p.length;i++){
+      const f=i/(p.length-1)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si;
+      p[i].x=lerp(path[si][0],path[si+1][0],lf); p[i].y=lerp(path[si][1],path[si+1][1],lf);
+    }
+  }
+  // 3-point rope with sag/taut control: from AMP0 through hub to AMP1
+  function setRopeTow(rope,hubX,hubY,sag){
+    const p=rope._pts; const n=p.length;
+    const a=AMP0, b=AMP1;
+    for(let i=0;i<n;i++){ const f=i/(n-1);
+      let x,y;
+      if(f<0.5){ const ff=f/0.5; x=lerp(a[0],hubX,ff); y=lerp(a[1]-20,hubY,ff); }
+      else { const ff=(f-0.5)/0.5; x=lerp(hubX,b[0],ff); y=lerp(hubY,b[1]-20,ff); }
+      // add catenary sag
+      y+=sag*Math.sin(f*Math.PI);
+      p[i].x=x; p[i].y=y;
+    }
+  }
+
+  // magnifier glyph
+  function drawMagnifier(g,cx,cy,r,col,a){
+    g.lineStyle(4,col,a).drawCircle(cx,cy,r);
+    g.lineStyle(5,col,a).moveTo(cx+r*0.7,cy+r*0.7).lineTo(cx+r*1.5,cy+r*1.5);
+  }
+
+  // ============================================================
+  //  8) PERSISTENT GARAGE SET (van + 2 amps + rope + gauge + HUD chip + villain)
+  // ============================================================
+  const garageRoot=new PIXI.Container(); sceneLayer.addChild(garageRoot);
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot);
+  garageRoot.sortableChildren=true;
+
+  // the tow-rope (behind van)
+  const ROPE=makeRope(TRAIL.muted,18); ROPE.zIndex=2; ROPE.alpha=0.35; ROPE.tint=0xb48fb0; garageRoot.addChild(ROPE);
+
+  // amps
+  const amp0Root=buildAmp(C.core0); amp0Root.position.set(AMP0[0],AMP0[1]); amp0Root.zIndex=3; garageRoot.addChild(amp0Root);
+  const amp1Root=buildAmp(C.core1); amp1Root.position.set(AMP1[0],AMP1[1]); amp1Root.zIndex=3; garageRoot.addChild(amp1Root);
+  // bridge amps (hidden by default)
+  const amp2Root=buildAmp(C.core0); amp2Root.position.set(AMP2[0],AMP2[1]); amp2Root.zIndex=3; amp2Root.alpha=0; garageRoot.addChild(amp2Root);
+  const amp3Root=buildAmp(C.core1); amp3Root.position.set(AMP3[0],AMP3[1]); amp3Root.zIndex=3; amp3Root.alpha=0; garageRoot.addChild(amp3Root);
+
+  // villain (persistent, idle-hidden)
+  const villainRoot=new PIXI.Container(); villainRoot.zIndex=4; villainRoot.position.set(VILLAIN_IDLE[0],VILLAIN_IDLE[1]); villainRoot.alpha=0; garageRoot.addChild(villainRoot);
+  const villainG=new PIXI.Graphics(); villainRoot.addChild(villainG);
+  (function drawVillain(){
+    const g=villainG;
+    g.beginFill(C.ink,0.95).lineStyle(2,C.hot,0.5);
+    // hooded silhouette
+    g.moveTo(0,-90); g.bezierCurveTo(-46,-90,-50,-30,-40,10);
+    g.lineTo(-30,70); g.lineTo(30,70); g.lineTo(40,10);
+    g.bezierCurveTo(50,-30,46,-90,0,-90); g.closePath(); g.endFill();
+    // face shadow
+    g.beginFill(0x05010a,1).drawEllipse(0,-44,22,28).endFill();
+    // hot eyes
+    g.beginFill(C.hot,0.9).drawCircle(-9,-46,3).drawCircle(9,-46,3).endFill();
+  })();
+  const villainLabel=txt('= FALSE SHARING',18,C.accent,'800'); villainLabel.position.set(0,-110); villainLabel.alpha=0; legible(villainLabel); villainRoot.addChild(villainLabel);
+
+  // THE VAN (cache line) — 64 seat-slots in a row, neon rim
+  const vanRoot=new PIXI.Container(); vanRoot.position.set(VAN[0],VAN[1]); vanRoot.zIndex=6; vanRoot.sortableChildren=true; garageRoot.addChild(vanRoot);
+  const vanBodyG=new PIXI.Graphics(); vanBodyG.zIndex=1; vanRoot.addChild(vanBodyG);
+  const seatsG=new PIXI.Graphics(); seatsG.zIndex=2; vanRoot.addChild(seatsG);
+  const vanRimGlow=glow('magenta',0,0,2.6,0.0,0xFF2D8B); vanRimGlow.zIndex=0; vanRoot.addChild(vanRimGlow);
+  let vanGlowF=null;
+  if(hasF('GlowFilter')){ vanGlowF=new F.GlowFilter({distance:14,outerStrength:1.5,innerStrength:0,color:C.accent,quality:0.35}); vanRoot.filters=[vanGlowF]; }
+  // draw the van body + 64 seats (local coords centered at hub). seatTints[s] optional override.
+  function drawVan(seatTintFn){
+    vanBodyG.clear(); seatsG.clear();
+    const halfSpan=SEAT_SPAN/2;
+    // van body (rounded chassis behind seats)
+    vanBodyG.beginFill(0x140a1c,0.92).lineStyle(3,C.accent,0.95).drawRoundedRect(-halfSpan-16,-26,SEAT_SPAN+32,52,10).endFill();
+    // wheels
+    vanBodyG.beginFill(0x0a0510,1).lineStyle(2,C.accent,0.5).drawCircle(-halfSpan+30,30,11).drawCircle(halfSpan-30,30,11).endFill();
+    // tow hook
+    vanBodyG.lineStyle(3,C.accent2,0.8).moveTo(-halfSpan-16,0).lineTo(-halfSpan-30,0); vanBodyG.drawCircle(-halfSpan-34,0,5);
+    // 64 seats
+    for(let s=0;s<N_SEATS;s++){
+      const x=seatX(s)-VAN[0];
+      let col=C.seat, a=0.5;
+      if(seatTintFn){ const r=seatTintFn(s); if(r){ col=r.col; a=r.a; } }
+      seatsG.beginFill(col,a).lineStyle(0.6,0x33183a,0.5).drawRoundedRect(x-SEAT_W/2+0.8,-13,Math.max(3,SEAT_W-1.6),26,2).endFill();
+    }
+  }
+  drawVan(null);
+
+  // gauge HUD
+  const gaugeRoot=buildGauge(); gaugeRoot.position.set(GAUGE[0],GAUGE[1]); gaugeRoot.zIndex=8; garageRoot.addChild(gaugeRoot);
+  drawNeedle(gaugeRoot,restAngle,C.good);
+
+  // HUD chip "64 B / x86" (parks at HUD_CHIP after S1; starts hidden, S1 flies it in)
+  const hudChip=new PIXI.Container(); hudChip.position.set(HUD_CHIP[0],HUD_CHIP[1]); hudChip.zIndex=8; hudChip.alpha=0; garageRoot.addChild(hudChip);
+  const hudChipG=new PIXI.Graphics();
+  hudChipG.beginFill(C.panel,0.92).lineStyle(2,C.accent,0.7).drawRoundedRect(-60,-28,120,56,8).endFill();
+  hudChip.addChild(hudChipG);
+  const hudByte=txt('64 B',18,C.accent,'800'); hudByte.position.set(0,-12); hudChip.addChild(hudByte);
+  const hudX86=txt('x86',16,C.core0,'800'); hudX86.position.set(0,12); hudChip.addChild(hudX86);
+
+  // ============================================================
+  //  9) GARAGE-LEVEL STATE driven by f(t) (van position, owner, gauge, amps)
+  //  These are mutated each frame by scenes via the shared "garage" object,
+  //  then rendered by renderGarage(t). Defaults are reset every frame.
+  // ============================================================
+  const garage={
+    vanX:VAN[0], vanY:VAN[1], vanScale:1, vanSplit:0,   // vanSplit 0=one van, 1=two vans
+    vanXa:440, vanXb:840,                                // split van x positions
+    ropeSag:0, ropeTaut:0,                               // 0 slack ... 1 taut(hot)
+    gaugeAngle:restAngle, gaugeCol:C.good,
+    seatTintFn:null,
+    showAmp23:0,
+    hudPulse:0
+  };
+  function resetGarage(){
+    garage.vanX=VAN[0]; garage.vanY=VAN[1]; garage.vanScale=1; garage.vanSplit=0;
+    garage.ropeSag=0; garage.ropeTaut=0;
+    garage.gaugeAngle=restAngle; garage.gaugeCol=C.good;
+    garage.seatTintFn=null; garage.showAmp23=0; garage.hudPulse=0;
+  }
+
+  // ---- THE YANK primitive (storyboard §2). Pure function of t per window. ----
+  // vanXFromYank(t,a,b,n) returns hub x oscillating VAN_LX<->VAN_RX, n traversals over [a,b].
+  function vanXFromYank(t,a,b,n){
+    const u=ph(t,a,b); const phase=u*n; // 0..n
+    const tri=Math.abs((phase%2)-1);    // 0..1..0 sawtooth-triangle, period 2 => one round trip = 2 units
+    // we want each traversal to be one half (LX<->RX). use phase%1 alternating direction:
+    const seg=Math.floor(phase); const f=easeInOut(phase-seg);
+    const fromLeft=(seg%2===0);
+    return fromLeft? lerp(VAN_LX, VAN_RX, f) : lerp(VAN_RX, VAN_LX, f);
+  }
+  // flip times for n flips over [a,b]
+  function flipTimes(a,b,n){ const arr=[]; for(let k=1;k<=n;k++) arr.push(lerp(a,b,k/n)); return arr; }
+  // fire a yank FX bundle (transient, name-keyed). Called from scene updates with a fired Set.
+  function yankFx(t,id,intensity){
+    const px=(intensity||8);
+    if(FILT.rgb){ FILT.rgb.red=[px,0]; FILT.rgb.green=[0,0]; FILT.rgb.blue=[-px,0]; addOverlayFx('yankSplit',FILT.rgb); FILT._yankSplitFire=t; }
+    if(FILT.glitch){ FILT.glitch.seed=hash01(Math.floor(t*120)); FILT.glitch.offset=10; FILT.glitch.slices=6; addOverlayFx('yankGlitch',FILT.glitch); FILT._yankGlitchFire=t; }
+    FILT._yankShakeFire=t; FILT._yankShakeAmp=8;
+  }
+  function updateYankFx(t){
+    if(hasOverlayFx('yankSplit') && FILT.rgb){ const k=1-ph(t,FILT._yankSplitFire,FILT._yankSplitFire+0.14); const px=(FILT._yankSplitPx||8)*k; FILT.rgb.red=[px,0]; FILT.rgb.blue=[-px,0]; if(t-FILT._yankSplitFire>0.14) removeOverlayFx('yankSplit'); }
+    if(hasOverlayFx('yankGlitch') && FILT.glitch){ FILT.glitch.offset=10*(1-ph(t,FILT._yankGlitchFire,FILT._yankGlitchFire+0.1)); FILT.glitch.seed=hash01(Math.floor(t*120)); if(t-FILT._yankGlitchFire>0.1) removeOverlayFx('yankGlitch'); }
+  }
+
+  // ============================================================
+  //  10) CAMERA RIG (GOLDEN RULE: all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  // Scheduled one-shot camera shakes (yank shakes are dynamic via FILT._yankShakeFire).
+  function shakeAmp(t){
+    let a=0;
+    // yank shake (set by yankFx) — decays over 200ms
+    if(FILT._yankShakeFire!=null){ a+=shakeEnv(t,FILT._yankShakeFire,FILT._yankShakeAmp||8); }
+    // S1 haul micro-punch
+    a+=shakeEnv(t,4.61,4)*0.5;
+    // chorus zoom punches share yank shakes
+    return a<0.05?0:a;
+  }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function updateCamera(t){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.016*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  11) SCENE MANAGER (REFERENCE §10)
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy)prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c); prev.inst.c.destroy({children:true}); }catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ============================================================
+  //  12) SHARED FILTER INSTANCES (built once; mutated per-frame)
+  // ============================================================
+  const FILT={_shockFire:0,_yankShakeFire:null};
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:24,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flash=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashGood=new F.ColorOverlayFilter(C.good,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashWarm=new F.ColorOverlayFilter(C.accent2,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashHot=new F.ColorOverlayFilter(C.hot,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,300],innerRadius:0});
+  if(hasF('ZoomBlurFilter')) FILT.zoomHeld=new F.ZoomBlurFilter({strength:0,center:[640,300],innerRadius:60});
+  if(hasF('BulgePinchFilter')) FILT.bulge=new F.BulgePinchFilter({center:[640/1280,300/720],radius:240,strength:0});
+  else FILT.bulgeDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('TwistFilter')) FILT.twist=new F.TwistFilter({radius:300,angle:0,offset:[640,300],padding:20});
+  else FILT.twistDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('CRTFilter')) FILT.crt=new F.CRTFilter({curvature:1.2,lineWidth:1.2,lineContrast:0.3,vignetting:0.4,noise:0.10,time:0});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('GlitchFilter')) FILT.glitch=new F.GlitchFilter({slices:6,offset:10,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('RGBSplitFilter')) FILT.rgb=new F.RGBSplitFilter({red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('MotionBlurFilter')) FILT.motion=new F.MotionBlurFilter({velocity:[0,0],kernelSize:7,offset:0});
+
+  // sceneRoot transient flash filter management
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0)return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);}
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+
+  // ============================================================
+  //  13) RENDER the persistent garage (van/amps/rope/gauge/hud/villain) per f(t)
+  // ============================================================
+  function renderGarage(t){
+    // van breathing + position
+    const bAmp=beatAmp(t);
+    vanRoot.scale.set(garage.vanScale*(1+0.02*bAmp*beat(t)));
+    if(garage.vanSplit<=0.001){
+      vanRoot.position.set(garage.vanX,garage.vanY);
+      vanRoot.visible=true;
+      drawVan(garage.seatTintFn);
+      vanRimGlow.alpha=0.18+0.12*beat(t)+0.2*garage.ropeTaut;
+    } else {
+      // split: draw two padded vans (handled by scene-side; here keep hub centered, dim main van off)
+      vanRoot.position.set(garage.vanX,garage.vanY);
+      vanRoot.visible=(garage.vanSplit<0.999);
+      vanRoot.alpha=1-garage.vanSplit;
+      drawVan(garage.seatTintFn);
+      vanRimGlow.alpha=(0.18+0.12*beat(t))*(1-garage.vanSplit);
+    }
+    if(vanGlowF) vanGlowF.outerStrength=1.5+1.2*beat(t)+1.5*garage.ropeTaut;
+    // rope: slack(muted) when ropeTaut~0, hot+taut when 1
+    const hubX=garage.vanX, hubY=garage.vanY;
+    const sag=lerp(70,4,garage.ropeTaut)+garage.ropeSag;
+    setRopeTow(ROPE,hubX,hubY,sag);
+    ROPE.tint=lerpColor(0xb48fb0,C.hot,garage.ropeTaut);
+    ROPE.alpha=lerp(0.30,0.85,garage.ropeTaut);
+    // amps LEDs (antiphase pulse), figures nod
+    const lw=lampWaveAmp(t);
+    drawLed(amp0Root,C.core0,0.55+lw*0.45*beat(t));
+    drawLed(amp1Root,C.core1,0.55+lw*0.45*beat(t+0.17));
+    amp0Root._fig.rotation=0.03*Math.sin(t*TAU*BPM/120);
+    amp1Root._fig.rotation=0.03*Math.sin(t*TAU*BPM/120+0.5);
+    // bridge amps
+    amp2Root.alpha=garage.showAmp23; amp3Root.alpha=garage.showAmp23;
+    if(garage.showAmp23>0.01){ drawLed(amp2Root,C.core0,0.5+0.4*beat(t+0.3)); drawLed(amp3Root,C.core1,0.5+0.4*beat(t+0.4)); }
+    // gauge
+    drawNeedle(gaugeRoot,garage.gaugeAngle,garage.gaugeCol);
+    if(IMG_SPRITES['bench-gauge']) IMG_SPRITES['bench-gauge'].rotation=0; // hero overlay static; needle drawn on top
+    // HUD chip pulse
+    hudChip.scale.set(1+0.04*garage.hudPulse*beat(t));
+    // villain rendered by scenes via villainState(t)
+    const vs=villainState(t);
+    villainRoot.position.set(vs.x,vs.y); villainRoot.scale.set(vs.scale); villainRoot.alpha=vs.alpha;
+    villainLabel.alpha=vs.labelAlpha;
+  }
+
+  // villain rise/fall is a pure function of t (the ONLY four appearances, storyboard §2)
+  function villainState(t){
+    let alpha=0, scale=0.9, labelAlpha=0;
+    // S5 rise 46.72->48.81, hold dim through S5 tail (until 50.62)
+    if(t>=46.72 && t<50.62){ alpha=easeOut(ph(t,46.72,48.81))*0.85; scale=lerp(0.9,1.15,ph(t,46.72,48.81)); }
+    // S10 rise 111.86->114.86 with label @113.83, hold to 116.80
+    else if(t>=111.86 && t<116.80){ alpha=easeOut(ph(t,111.86,114.86)); scale=lerp(0.9,1.15,ph(t,111.86,114.86)); labelAlpha=easeOut(ph(t,113.83,114.4)); }
+    // S12 dissolve 159.67->161.0
+    else if(t>=158.68 && t<161.0){ alpha=(1-easeIn(ph(t,159.67,161.0)))*0.9; scale=lerp(1.15,0.6,ph(t,159.67,161.0)); if(t<159.67){alpha=0.9; scale=1.15;} }
+    // S14 aim-and-miss 194.44->197.6
+    else if(t>=194.44 && t<197.6){ alpha=easeOut(ph(t,194.44,195.6)); if(t>=196.11) alpha=1-easeIn(ph(t,196.11,197.6)); scale=1.15; labelAlpha=0; }
+    const x=VILLAIN_IDLE[0];
+    const y=(alpha>0.001)? lerp(VILLAIN_IDLE[1],VILLAIN_UP[1],clamp01(scale<1?0:(scale-0.9)/0.25)) : VILLAIN_IDLE[1];
+    return {x, y:(alpha>0.001?VILLAIN_UP[1]:VILLAIN_IDLE[1]), scale, alpha:clamp01(alpha), labelAlpha:clamp01(labelAlpha)};
+  }
+
+  // ============================================================
+  //  SCENES — tile 0 .. 199.820 with NO gaps (storyboard §3)
+  // ============================================================
+
+  // ---------- S1 : INTRO 0.00-10.38 (FACT 1) ----------
+  scene(0,10.38,'INTRO','garage',(S)=>{
+    const c=new PIXI.Container();
+    const title=txt('TRUE / FALSE SHARING',58,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('cache line · 64 B · x86',24,C.muted,'700'); sub.position.set(640,382); legible(sub);
+    c.addChild(title,sub);
+    const tag1=txt('nejmenší kus = 1 řádek',18,C.muted,'700'); tag1.position.set(640,210); tag1.alpha=0; legible(tag1); c.addChild(tag1);
+    const tagRow=txt('celý řádek · 64 B',20,C.accent,'800'); tagRow.position.set(640,210); tagRow.alpha=0; legible(tagRow); c.addChild(tagRow);
+    // haul beam (back-wall -> van)
+    const haul=makeRope(TRAIL.accent,10); haul.alpha=0; haul.tint=0xFF2D8B; c.addChild(haul);
+    // counter (1->64) + x86 stamp that fly into HUD chip
+    const counter=txt('1',46,C.accent,'900'); counter.position.set(940,90); legible(counter);
+    if(hasF('GlowFilter')){ counter._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.accent,quality:0.4}); counter.filters=(counter.filters||[]).concat([counter._g]); }
+    c.addChild(counter);
+    const x86stamp=new PIXI.Container(); c.addChild(x86stamp); x86stamp.position.set(940,150); x86stamp.alpha=0;
+    const x86g=new PIXI.Graphics().beginFill(C.panel,0.92).lineStyle(2,C.core0,0.7).drawRoundedRect(-44,-20,88,40,7).endFill(); x86stamp.addChild(x86g);
+    const x86t=txt('x86',22,C.core0,'800'); x86stamp.addChild(x86t);
+    const receipt=txt('chtěl 1 B · přijelo 64 B',16,C.muted,'700'); receipt.position.set(940,200); receipt.alpha=0; legible(receipt); c.addChild(receipt);
+    // godray (intent set in render)
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage();
+      const tin=easeOut(ph(t,0.0,1.6));
+      title.alpha=tin*(1-ph(t,8.6,10.3)); title.y=342-tin*12; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // seat-count sweep @2.48
+      const sweep=ph(t,2.48,3.06);
+      garage.seatTintFn=(s=>{
+        const f=s/(N_SEATS-1);
+        let lit=(sweep>0 && sweep<1 && f<=sweep);
+        let col=C.seat,a=0.5;
+        if(lit){ col=C.accent; a=0.9; }
+        if(s===SEAT_A && t>=4.61){ col=C.hot; a=0.95; } // pre-lit "1 byte requested"
+        return {col,a};
+      });
+      tag1.alpha=easeOut(ph(t,2.48,2.9))*(1-ph(t,3.8,4.2));
+      // THE HAUL @4.61: van slides from back-wall to center
+      if(t>=4.61 && t<5.6){
+        const hp=easeOutBack(ph(t,4.61,5.6));
+        garage.vanX=640; garage.vanY=lerp(110,300,hp); garage.vanScale=lerp(0.5,1.0,hp);
+        haul.alpha=0.7*(1-ph(t,5.2,5.8)); setRopeAlongPath(haul,[[640,60],[640,lerp(110,300,hp)]]);
+      } else { haul.alpha=0; }
+      tagRow.alpha=easeOut(ph(t,4.61,5.1))*(1-ph(t,6.6,7.0));
+      // x86 stamp slam @5.45
+      if(t>=5.45 && !S.fired.has('x86')){ S.fired.add('x86');
+        if(FILT.shock){ const gp=x86stamp.toGlobal(new PIXI.Point(0,0)); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s1shock',FILT.shock); }
+        if(FILT.flash){ FILT.flash.color=0xffffff; FILT.flash.alpha=0.5; sceneFlash(FILT.flash,true); }
+      }
+      x86stamp.alpha=easeOutBack(ph(t,5.45,5.9))*(1-ph(t,8.6,9.0));
+      if(t>=8.6){ const fly=easeInOut(ph(t,8.6,9.0)); x86stamp.position.set(lerp(940,HUD_CHIP[0],fly),lerp(150,HUD_CHIP[1]+12,fly)); }
+      if(FILT.flash){ FILT.flash.alpha=0.5*(1-ph(t,5.45,5.62)); if(t>5.62) sceneFlash(FILT.flash,false); }
+      if(FILT.shock && hasOverlayFx('s1shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>0.8) removeOverlayFx('s1shock'); }
+      // 64 counter @7.46-8.54
+      const n=Math.round(easeOut(ph(t,7.46,8.54))*63)+1; counter.text=String(Math.min(64,n));
+      if(counter._g) counter._g.outerStrength=2+1.5*beat(t);
+      counter.alpha=(1-ph(t,8.6,9.0));
+      if(t>=8.54 && !S.fired.has('cpunch')){ S.fired.add('cpunch');
+        if(FILT.zoom){ FILT.zoom.center=[940,90]; FILT.zoom.strength=0.20; addOverlayFx('s1zoom',FILT.zoom); }
+        burst(940,90,C.accent,14,3,0.18);
+      }
+      if(FILT.zoom && hasOverlayFx('s1zoom')){ FILT.zoom.strength=0.20*(1-ph(t,8.54,8.76)); if(t>8.77) removeOverlayFx('s1zoom'); }
+      if(t>=8.6){ const fly=easeInOut(ph(t,8.6,9.0)); counter.position.set(lerp(940,HUD_CHIP[0],fly),lerp(90,HUD_CHIP[1]-12,fly)); counter.scale.set(lerp(1,0.4,fly)); }
+      receipt.alpha=easeOut(ph(t,8.54,9.0))*(1-ph(t,9.8,10.0));
+      // HUD chip appears parked @9.0
+      hudChip.alpha=clamp01(ph(t,8.9,9.2));
+    }};
+  });
+
+  // ---------- S2 : INSTRUMENTAL groove-hold 10.38-19.76 ----------
+  scene(10.38,19.76,'INTRO','garage',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      resetGarage();
+      camDollyScale=1+0.03*easeInOut(triWave(t,10.38,19.76));
+      moteEnvelope=0.40;
+      hudChip.alpha=1;
+      // slow L->R accent chase on seat rims (eye-candy)
+      const chase=(t*0.6)%1;
+      garage.seatTintFn=(s=>{ const f=s/(N_SEATS-1); const d=Math.abs(f-chase); if(d<0.06) return {col:C.accent,a:0.8}; return null; });
+    }};
+  });
+
+  // ---------- S3 : VERSE 1a 19.76-30.12 (FACT 1 restated: whole-van haul) ----------
+  scene(19.76,30.12,'VERSE 1','garage',(S)=>{
+    const c=new PIXI.Container();
+    const cap1=txt('sáhneš na 1 bajt',18,C.muted,'700'); cap1.position.set(640,200); cap1.alpha=0; legible(cap1); c.addChild(cap1);
+    const capRow=txt('celý řádek · 64 B',20,C.accent,'800'); capRow.position.set(640,210); capRow.alpha=0; legible(capRow); c.addChild(capRow);
+    const bracket=new PIXI.Graphics(); c.addChild(bracket);
+    const bLbl=txt('64 B',16,C.accent2,'800'); bLbl.position.set(640,248); bLbl.alpha=0; legible(bLbl); c.addChild(bLbl);
+    // pointer finger from AMP0 tap on SEAT_A
+    const finger=new PIXI.Graphics(); c.addChild(finger);
+    // 1-byte ghost struck through
+    const ghost=new PIXI.Graphics(); c.addChild(ghost);
+    const ghostLbl=txt('jen 1 B?',16,C.muted,'700'); ghostLbl.position.set(640,560); ghostLbl.alpha=0; legible(ghostLbl); c.addChild(ghostLbl);
+    const haul=makeRope(TRAIL.accent,10); haul.alpha=0; haul.tint=0xFF2D8B; c.addChild(haul);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      cap1.alpha=easeOut(ph(t,21.11,21.6))*(1-ph(t,23.0,23.4));
+      // ONE seat lit @21.11
+      const sweep=ph(t,22.76,24.76);
+      garage.seatTintFn=(s=>{
+        if(t>=21.11 && t<24.0 && s===SEAT_A){ return {col:C.hot,a:0.95}; }
+        const f=s/(N_SEATS-1);
+        if(sweep>0 && sweep<1 && f<=sweep) return {col:C.accent,a:0.9};
+        if(t>=24.0 && t<27.5) return {col:C.accent,a:0.55+0.25*beat(t)};
+        if(s===SEAT_A) return {col:C.hot,a:0.6};
+        return null;
+      });
+      // finger tap
+      finger.clear();
+      if(t>=21.11 && t<22.8){ const fa=easeOut(ph(t,21.11,21.5))*(1-ph(t,22.4,22.8));
+        finger.lineStyle(4,C.core0,fa).moveTo(AMP0[0],AMP0[1]-90).lineTo(seatX(SEAT_A),300+20);
+        finger.beginFill(C.core0,fa).drawCircle(seatX(SEAT_A),320,5).endFill(); }
+      // whole-van haul @22.76 (single one-way to AMP0, no yank fight)
+      if(t>=22.76 && t<24.76){ const hp=easeInOut(ph(t,22.76,24.76)); garage.vanX=lerp(640,VAN_LX+0,hp);
+        haul.alpha=0.6*(1-ph(t,24.3,24.8)); setRopeAlongPath(haul,[[640,60],[garage.vanX,300]]); garage.ropeTaut=0.3; }
+      else if(t>=24.76){ garage.vanX=lerp(VAN_LX,640,easeInOut(ph(t,24.76,26.0))); }
+      capRow.alpha=easeOut(ph(t,24.11,24.6))*(1-ph(t,26.6,27.0));
+      // bracket across all 64 @24.76-27.05
+      bracket.clear();
+      const ba=easeOut(ph(t,24.76,25.3))*(1-ph(t,27.0,27.4));
+      if(ba>0.01){ bracket.lineStyle(2.5,C.accent2,ba).moveTo(SEAT_X0,236).lineTo(SEAT_X0,228).lineTo(SEAT_X1,228).lineTo(SEAT_X1,236); }
+      bLbl.alpha=ba;
+      // 1-byte ghost struck through @27.05-30.12
+      ghost.clear();
+      const gp=easeOut(ph(t,27.05,27.6))*(1-ph(t,29.0,30.0));
+      if(gp>0.01){ ghost.beginFill(C.muted,gp*0.4).lineStyle(2,C.muted,gp).drawRoundedRect(610,420,60,40,5).endFill();
+        const sl=ph(t,28.96,30.0); if(sl>0){ ghost.lineStyle(5,C.hot,gp).moveTo(606,416).lineTo(674,464); } }
+      ghostLbl.alpha=gp;
+      // true-sharing seed: AMP1 reaches toward van at boundary
+      if(t>=29.5){ const ra=ph(t,29.5,30.12); garage.ropeTaut=0.2*ra; }
+    }};
+  });
+
+  // ---------- S4 : VERSE 1b 30.12-40.28 (TRUE SHARING — first full ping-pong, FACT 2) ----------
+  scene(30.12,40.28,'VERSE 1','garage',(S)=>{
+    const c=new PIXI.Container();
+    const stamp=txt('TRUE SHARING',34,C.accent,'900'); stamp.position.set(640,150); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    if(hasF('GlowFilter')){ stamp._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); stamp.filters=(stamp.filters||[]).concat([stamp._g]); }
+    const tag=txt('stejná proměnná',18,C.muted,'700'); tag.position.set(640,192); tag.alpha=0; legible(tag); c.addChild(tag);
+    const halo=new PIXI.Graphics(); c.addChild(halo);
+    const arms=new PIXI.Graphics(); c.addChild(arms);
+    const ref=new PIXI.Graphics(); c.addChild(ref); // referee invalidate ✕
+    const serial=txt('běh se serializuje',18,C.hot,'800'); serial.position.set(640,560); serial.alpha=0; legible(serial); c.addChild(serial);
+    const flips=flipTimes(34.82,38.17,5);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      stamp.alpha=easeOutBack(ph(t,30.12,30.57))*(1-ph(t,38.5,39.5));
+      if(stamp._g) stamp._g.outerStrength=2+1.5*beat(t);
+      tag.alpha=easeOut(ph(t,30.12,30.7))*(1-ph(t,38.5,39.0));
+      // both arms reach SEAT_SAME @31.81; it pulses hot
+      arms.clear();
+      const arm=easeOut(ph(t,31.81,33.0));
+      if(arm>0.01){ arms.lineStyle(4,C.core0,arm*0.8).moveTo(AMP0[0],AMP0[1]-90).lineTo(seatX(SEAT_SAME)-6,318);
+        arms.lineStyle(4,C.core1,arm*0.8).moveTo(AMP1[0],AMP1[1]-90).lineTo(seatX(SEAT_SAME)+6,318); }
+      halo.clear();
+      const haloA=easeOut(ph(t,31.81,33.0))*(1-ph(t,38.17,38.6));
+      if(haloA>0.01){ halo.lineStyle(2.5,C.hot,haloA*(0.6+0.4*beat(t))).drawCircle(seatX(SEAT_SAME),300,22); }
+      garage.seatTintFn=(s=> s===SEAT_SAME ? {col:C.hot,a:0.7+0.3*beat(t)} : null );
+      // THE PING-PONG @34.82
+      if(t>=34.82 && t<38.6){
+        garage.vanX=vanXFromYank(t,34.82,38.17,5); garage.ropeTaut=1;
+        // bulge pop on first yank
+        if(t>=34.82 && !S.fired.has('bulge')){ S.fired.add('bulge');
+          if(FILT.bulge){ FILT.bulge.center=[640/1280,300/720]; FILT.bulge.strength=0.4; addOverlayFx('yankBulge',FILT.bulge); }
+          else if(FILT.bulgeDisp){ FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=24; addOverlayFx('yankBulge',FILT.bulgeDisp); }
+          FILT._bulgeFire=t;
+        }
+        flips.forEach((ft,k)=>{ if(t>=ft && !S.fired.has('flip'+k)){ S.fired.add('flip'+k); FILT._yankSplitPx=8; yankFx(t,'s4'+k,8);
+          ref.clear(); } });
+      } else { garage.vanX=640; }
+      if(hasOverlayFx('yankBulge')){ const k=0.4*(1-ph(t,FILT._bulgeFire,FILT._bulgeFire+0.28)); if(FILT.bulge)FILT.bulge.strength=k; else if(FILT.bulgeDisp)FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=k/0.4*24; if(t-FILT._bulgeFire>0.6) removeOverlayFx('yankBulge'); }
+      updateYankFx(t);
+      // gauge sags @38.31
+      garage.gaugeAngle=lerp(restAngle,lowAngle,easeOut(ph(t,38.31,40.28)));
+      garage.gaugeCol=lerpColor(C.good,C.hot,ph(t,38.31,40.28));
+      serial.alpha=easeOut(ph(t,39.17,39.6))*(1-ph(t,40.0,40.28));
+    },destroy(){ removeOverlayFx('yankBulge'); removeOverlayFx('yankSplit'); removeOverlayFx('yankGlitch'); }};
+  });
+
+  // ---------- S5 : PRE-CHORUS 1 40.28-50.62 (ping-pong montage + villain tease) ----------
+  scene(40.28,50.62,'PRE-CHORUS','garage',(S)=>{
+    const c=new PIXI.Container();
+    const brake=txt('brzdí běh',20,C.hot,'800'); brake.position.set(640,210); brake.alpha=0; legible(brake); c.addChild(brake);
+    const mag=new PIXI.Graphics(); c.addChild(mag);
+    const flips=flipTimes(41.84,43.64,6);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      // max-tempo montage @41.84-43.64
+      if(t>=41.84 && t<43.64){
+        garage.vanX=vanXFromYank(t,41.84,43.64,6); garage.ropeTaut=1;
+        flips.forEach((ft,k)=>{ if(t>=ft && !S.fired.has('flip'+k)){ S.fired.add('flip'+k); FILT._yankSplitPx=8; yankFx(t,'s5'+k,8); } });
+        // motion blur whoosh
+        if(FILT.motion){ const dir=Math.cos((t-41.84)/0.30*Math.PI)*30; FILT.motion.velocity=[dir,0]; addOverlayFx('vanMotion',FILT.motion); }
+        garage.gaugeAngle=lerp(restAngle,lowAngle,0.6+0.4*beat(t)); garage.gaugeCol=C.hot;
+      } else if(t>=43.76){
+        // hard brake to center @43.76
+        garage.vanX=lerp(garage.vanX,640,1); garage.vanX=lerp(VAN_LX,640,easeOutBack(ph(t,43.76,44.6)));
+        if(t<44.0) garage.vanX=easeOutBack(ph(t,43.76,44.6))*640+(1-easeOutBack(ph(t,43.76,44.6)))*VAN_RX;
+        removeOverlayFx('vanMotion');
+        garage.gaugeAngle=lowAngle; garage.gaugeCol=C.hot;
+      } else { garage.vanX=640; }
+      updateYankFx(t);
+      brake.alpha=easeOut(ph(t,43.76,44.2))*(1-ph(t,45.4,45.8));
+      // villain tease (CRT flicker) @45.70-48.81
+      if(t>=45.70 && t<50.62){
+        if(FILT.crt && !hasOverlayFx('crtTease')){ addOverlayFx('crtTease',FILT.crt); }
+        if(FILT.crt){ FILT.crt.time=t; FILT.crt.noise=0.08*easeOut(ph(t,45.70,47.0))*(1-ph(t,49.5,50.62)); }
+      }
+      if(t>=50.5){ removeOverlayFx('crtTease'); }
+      // magnifier sweep @48.81
+      mag.clear();
+      const ma=easeOut(ph(t,48.81,49.4))*(1-ph(t,50.3,50.62));
+      if(ma>0.01){ const mx=lerp(SEAT_X0,SEAT_X1,(t-48.81)/1.8%1); drawMagnifier(mag,mx,300,24,C.hot,ma); }
+    },destroy(){ removeOverlayFx('vanMotion'); removeOverlayFx('crtTease'); removeOverlayFx('yankSplit'); removeOverlayFx('yankGlitch'); }};
+  });
+
+  // ============================================================
+  //  REUSABLE CHORUS SCENE (storyboard §4) — built once, occ 1/2/3
+  // ============================================================
+  function buildChorus(occ,S){
+    const c=new PIXI.Container();
+    const bloomGain={1:0.5,2:0.7,3:0.9}[occ];
+    const yankPx={1:8,2:10,3:12}[occ];
+    let bloomF=null;
+    if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const stamp=txt('TRUE SHARING',30,C.accent,'900'); stamp.position.set(640,150); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    if(hasF('GlowFilter')){ stamp._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); stamp.filters=(stamp.filters||[]).concat([stamp._g]); }
+    const halo=new PIXI.Graphics(); c.addChild(halo);
+    const link=new PIXI.Graphics(); c.addChild(link);   // broken-link / bracket
+    const linkLbl=txt('logicky cizí',16,C.muted,'700'); linkLbl.position.set(640,210); linkLbl.alpha=0; legible(linkLbl); c.addChild(linkLbl);
+    const mag=new PIXI.Graphics(); c.addChild(mag);
+    const okStamp=txt('✓ kód správně',18,C.good,'800'); okStamp.position.set(180,90); okStamp.alpha=0; legible(okStamp); c.addChild(okStamp);
+    const srcPanel=new PIXI.Container(); c.addChild(srcPanel); srcPanel.position.set(300,480); srcPanel.alpha=0;
+    const srcG=new PIXI.Graphics().beginFill(C.panel,0.92).lineStyle(2,C.muted,0.6).drawRoundedRect(-110,-40,220,80,8).endFill(); srcPanel.addChild(srcG);
+    const ca=txt('int a;',18,C.seat,'700'); ca.anchor.set(0,0.5); ca.position.set(-90,-14); srcPanel.addChild(ca);
+    const cb=txt('int b;',18,C.seat,'700'); cb.anchor.set(0,0.5); cb.position.set(-90,16); srcPanel.addChild(cb);
+    const splitLbl=txt('vlastní řádek · 64 B',18,C.good,'800'); splitLbl.position.set(640,210); splitLbl.alpha=0; legible(splitLbl); c.addChild(splitLbl);
+    c._ch={occ,bloomGain,yankPx,bloomF,stamp,halo,link,linkLbl,mag,okStamp,srcPanel,splitLbl};
+    return c;
+  }
+  function updateChorus(c,t,LS,occ,S){
+    camDollyScale=1; resetGarage(); hudChip.alpha=1;
+    const X=c._ch;
+    const {bloomGain,yankPx,bloomF,stamp,halo,link,linkLbl,mag,okStamp,srcPanel,splitLbl}=X;
+    const L1=LS.L1,L2=LS.L2,L3=LS.L3,L4=LS.L4;
+    const sceneEnd=SC[activeIdx].t1;
+    if(bloomF) bloomF.bloomScale=1.0+bloomGain*beat(t);
+    // persistent ✓ correct stamp ON the whole chorus (no data race)
+    okStamp.alpha=0.9;
+    if(stamp._g) stamp._g.outerStrength=2+1.5*beat(t);
+
+    // ---- L1: drop + true-sharing yank ----
+    if(t>=L1 && t<L2){
+      if(t>=L1 && !S.fired.has('dropZ'+occ)){ S.fired.add('dropZ'+occ);
+        if(FILT.zoom){ FILT.zoom.center=[640,300]; FILT.zoom.strength=0.30; addOverlayFx('chDrop',FILT.zoom); FILT._chDropFire=t; } }
+      stamp.text='TRUE SHARING'; stamp.style.fill=C.accent;
+      stamp.alpha=easeOutBack(ph(t,L1,L1+0.45))*(1-ph(t,L2-0.3,L2));
+      // stejná proměnná -> SEAT_SAME pulses
+      const stejna=L1+ (occ===1?1.39:occ===2?1.43:1.69); // "stejná"
+      halo.clear();
+      const hp=ph(t,stejna,stejna+0.8);
+      if(hp>0.01){ halo.lineStyle(2.5,C.hot,hp*(0.6+0.4*beat(t))).drawCircle(seatX(SEAT_SAME),300,22); }
+      garage.seatTintFn=(s=> s===SEAT_SAME ? {col:C.hot,a:0.7+0.3*beat(t)} : null );
+      // yank on "perou"
+      const perou=L1+ (occ===1?4.34:occ===2?4.43:5.25);
+      const yA=perou, yB=L2;
+      if(t>=yA){ garage.vanX=vanXFromYank(t,yA,yB,3); garage.ropeTaut=1;
+        flipTimes(yA,yB,3).forEach((ft,k)=>{ if(t>=ft && !S.fired.has('chL1f'+occ+k)){ S.fired.add('chL1f'+occ+k); FILT._yankSplitPx=yankPx; yankFx(t,'chL1'+occ+k,yankPx); } });
+      }
+    }
+    if(FILT.zoom && hasOverlayFx('chDrop')){ FILT.zoom.strength=0.30*(1-ph(t,FILT._chDropFire,FILT._chDropFire+0.22)); if(t-FILT._chDropFire>0.23) removeOverlayFx('chDrop'); }
+
+    // ---- L2: false sharing = different seats, same van ----
+    if(t>=L2 && t<L3){
+      stamp.text='FALSE SHARING'; stamp.style.fill=C.accent;
+      stamp.alpha=easeOutBack(ph(t,L2,L2+0.45))*(1-ph(t,L3-0.3,L3));
+      const ruzna=L2+ (occ===1?1.12:occ===2?1.18:1.18);
+      garage.seatTintFn=(s=>{ if(s===SEAT_A) return {col:C.core0,a:0.7+0.3*beat(t)}; if(s===SEAT_B) return {col:C.core1,a:0.7+0.3*beat(t+0.2)}; return null; });
+      // broken-link between SEAT_A and SEAT_B
+      link.clear();
+      const lp=ph(t,ruzna,ruzna+0.6);
+      if(lp>0.01){ link.lineStyle(2,C.muted,lp*0.7).moveTo(seatX(SEAT_A),268).lineTo(580,250);
+        link.moveTo(700,250).lineTo(seatX(SEAT_B),268);
+        link.lineStyle(3,C.hot,lp).moveTo(620,242).lineTo(640,258); link.moveTo(660,242).lineTo(640,258); }
+      linkLbl.alpha=lp*(1-ph(t,L3-0.3,L3));
+      // same-van reveal on "náhodou leží" -> bracket binds both, both hot
+      const nahodou=L2+ (occ===1?2.32:occ===2?2.45:2.45);
+      const revEnd=L3;
+      if(t>=nahodou){
+        const rp=easeInOut(ph(t,nahodou,revEnd));
+        mag.clear(); const mx=lerp(seatX(SEAT_A),seatX(SEAT_B),rp); drawMagnifier(mag,mx,300,26,C.hot,0.9*(1-ph(t,L3-0.3,L3)));
+        link.lineStyle(2.5,C.hot,(1-ph(t,L3-0.3,L3))).moveTo(seatX(SEAT_A),250).lineTo(seatX(SEAT_A),236).lineTo(seatX(SEAT_B),236).lineTo(seatX(SEAT_B),250);
+        garage.seatTintFn=(s=>{ if(s===SEAT_A||s===SEAT_B) return {col:C.hot,a:0.8+0.2*beat(t)}; return null; });
+      }
+    } else { mag.clear(); }
+
+    // ---- L3: trap restated + yank even though unrelated ----
+    if(t>=L3 && t<L4){
+      const nesouvisi=L3+ (occ===1?1.44:occ===2?1.28:1.23);
+      link.clear();
+      const lp=ph(t,nesouvisi,nesouvisi+0.7);
+      if(lp>0.01){ link.lineStyle(3,C.hot,lp*(0.6+0.4*beat(t))).moveTo(620,242).lineTo(640,258); link.moveTo(660,242).lineTo(640,258); }
+      linkLbl.alpha=lp*(1-ph(t,L4-0.3,L4));
+      garage.seatTintFn=(s=>{ if(s===SEAT_A) return {col:C.core0,a:0.6}; if(s===SEAT_B) return {col:C.core1,a:0.6}; return null; });
+      // cache line honí -> n=2 yank
+      const cacheW=L3+ (occ===1?3.84:occ===2?3.49:3.26);
+      if(t>=cacheW){ garage.vanX=vanXFromYank(t,cacheW,L4,2); garage.ropeTaut=1;
+        flipTimes(cacheW,L4,2).forEach((ft,k)=>{ if(t>=ft && !S.fired.has('chL3f'+occ+k)){ S.fired.add('chL3f'+occ+k); FILT._yankSplitPx=yankPx; yankFx(t,'chL3'+occ+k,yankPx); } });
+        garage.gaugeAngle=lerp(highAngle,lowAngle,ph(t,cacheW,cacheW+0.5));
+        garage.gaugeCol=lerpColor(C.good,C.hot,ph(t,cacheW,cacheW+0.5));
+        if(t>=L4-0.4){ garage.gaugeAngle=lerp(lowAngle,restAngle,ph(t,L4-0.4,L4)); }
+      }
+    }
+
+    // ---- L4: own-line fix preview (van splits into two) ----
+    if(t>=L4){
+      stamp.alpha=0;
+      // source panel "ve zdrojáku to nevidíš"
+      const nevidis=L4+ (occ===1?1.23:occ===2?1.23:1.36);
+      srcPanel.alpha=easeOut(ph(t,nevidis,nevidis+0.5))*(1-ph(t,sceneEnd-0.3,sceneEnd));
+      // van splits on "zarovnej"
+      const zarovnej=L4+ (occ===1?2.27:occ===2?2.32:2.50);
+      const splitEnd=(occ===1?72.62:occ===2?138.88:184.84);
+      const splP=easeOutBack(ph(t,zarovnej,zarovnej+2.05));
+      if(t>=zarovnej){
+        garage.vanSplit=clamp01(splP);
+        garage.gaugeAngle=lerp(restAngle,highAngle,clamp01(splP)); garage.gaugeCol=lerpColor(C.muted,C.good,clamp01(splP));
+        garage.ropeTaut=0; garage.ropeSag=20*clamp01(splP);
+        // draw two padded vans via the split overlay
+        drawSplitVans(splP);
+        splitLbl.alpha=easeOut(ph(t,zarovnej,zarovnej+0.5));
+      }
+    }
+  }
+  // two-van split overlay (drawn into a dedicated Graphics in garageRoot)
+  const splitVansG=new PIXI.Graphics(); splitVansG.zIndex=6; garageRoot.addChild(splitVansG);
+  function drawSplitVans(p){
+    splitVansG.clear();
+    if(p<=0.001){ splitVansG.alpha=0; return; }
+    splitVansG.alpha=clamp01(p);
+    const xa=440, xb=840, half=120;
+    [[xa,C.core0,SEAT_A],[xb,C.core1,SEAT_B]].forEach(([cx,col,hot])=>{
+      splitVansG.beginFill(0x140a1c,0.92).lineStyle(3,C.good,0.9).drawRoundedRect(cx-half/2-12,300-22,half+24,44,8).endFill();
+      // ~14 seats per mini-van, one hot
+      for(let s=0;s<14;s++){ const x=cx-half/2+(s+0.5)*(half/14);
+        const isHot=(s===(hot===SEAT_A?3:10));
+        splitVansG.beginFill(isHot?col:C.muted,isHot?0.9:0.4).drawRoundedRect(x-3,300-9,6,18,2).endFill(); }
+    });
+  }
+  function chorusScene(occ,LS){
+    return (S)=>{ const c=buildChorus(occ,S); return {c,update(lt,t){ updateChorus(c,t,LS,occ,S); }, destroy(){ removeOverlayFx('chDrop'); removeOverlayFx('yankSplit'); removeOverlayFx('yankGlitch'); splitVansG.clear(); splitVansG.alpha=0; }}; };
+  }
+
+  // ---------- S6 : CHORUS 1 50.62-72.62 ----------
+  scene(50.62,72.62,'CHORUS','garage',chorusScene(1,{L1:50.62,L2:56.02,L3:60.70,L4:66.18}));
+
+  // ---------- S7 : VERSE 2a 72.62-86.48 (false sharing = unrelated vars, FACT 3) ----------
+  scene(72.62,86.48,'VERSE 2','garage',(S)=>{
+    const c=new PIXI.Container();
+    const stamp=txt('FALSE SHARING',36,C.accent,'900'); stamp.position.set(640,150); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    if(hasF('GlowFilter')){ stamp._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); stamp.filters=(stamp.filters||[]).concat([stamp._g]); }
+    const srcPanel=new PIXI.Container(); c.addChild(srcPanel); srcPanel.position.set(300,470); srcPanel.alpha=0;
+    const srcG=new PIXI.Graphics().beginFill(C.panel,0.92).lineStyle(2,C.muted,0.6).drawRoundedRect(-115,-44,230,88,8).endFill(); srcPanel.addChild(srcG);
+    const ca=txt('int a;',18,C.seat,'700'); ca.anchor.set(0,0.5); ca.position.set(-95,-16); srcPanel.addChild(ca);
+    const cb=txt('int b;',18,C.seat,'700'); cb.anchor.set(0,0.5); cb.position.set(-95,16); srcPanel.addChild(cb);
+    const brk=new PIXI.Graphics(); srcPanel.addChild(brk); brk.lineStyle(3,C.hot,0.8).moveTo(-6,-2).lineTo(6,8); brk.moveTo(6,-2).lineTo(-6,8); brk.position.set(0,0);
+    const cizi=txt('logicky cizí',14,C.muted,'700'); cizi.position.set(0,36); srcPanel.addChild(cizi);
+    const mag=new PIXI.Graphics(); c.addChild(mag);
+    const bind=txt('sdílí jeden řádek',20,C.hot,'800'); bind.position.set(640,210); bind.alpha=0; legible(bind); c.addChild(bind);
+    const lineLbl=txt('1 cache line',16,C.accent,'800'); lineLbl.position.set(640,244); lineLbl.alpha=0; legible(lineLbl); c.addChild(lineLbl);
+    const ok=txt('✓ kód správně',18,C.good,'800'); ok.position.set(180,90); ok.alpha=0; legible(ok); c.addChild(ok);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      stamp.alpha=easeOutBack(ph(t,72.62,73.1))*(1-ph(t,80.0,81.0));
+      if(stamp._g) stamp._g.outerStrength=2+1.5*beat(t);
+      // held "sharing" zoom pull-in @74.08-77.50
+      if(t>=74.08 && t<78.0){
+        if(FILT.zoomHeld && !hasOverlayFx('zoomHeld')){ FILT.zoomHeld.center=[640,300]; addOverlayFx('zoomHeld',FILT.zoomHeld); }
+        if(FILT.zoomHeld){ let st; if(t<77.50) st=0.16*easeInOut(ph(t,74.08,77.50)); else st=0.16*(1-ph(t,77.50,78.0)); FILT.zoomHeld.strength=clamp01(st); }
+      }
+      if(t>=78.0) removeOverlayFx('zoomHeld');
+      // source panel @77.50
+      srcPanel.alpha=easeOut(ph(t,77.50,78.1))*(1-ph(t,85.0,86.0));
+      // same-van reveal @81.42: a->SEAT_A, b->SEAT_B
+      garage.seatTintFn=(s=>{
+        if(t>=81.42){
+          if(s===SEAT_A) return {col:C.hot,a:0.8+0.2*beat(t)};
+          if(s===SEAT_B) return {col:C.hot,a:0.8+0.2*beat(t+0.2)};
+        }
+        return null;
+      });
+      mag.clear();
+      if(t>=81.42 && t<84.0){ const rp=easeInOut(ph(t,81.42,84.0)); const mx=lerp(seatX(SEAT_A),seatX(SEAT_B),rp); drawMagnifier(mag,mx,300,26,C.hot,0.9); }
+      // bracket binds both seats @84.00
+      if(t>=84.0){ mag.lineStyle(2.5,C.hot,0.9).moveTo(seatX(SEAT_A),250).lineTo(seatX(SEAT_A),236).lineTo(seatX(SEAT_B),236).lineTo(seatX(SEAT_B),250); }
+      bind.alpha=easeOut(ph(t,84.0,84.5))*(1-ph(t,86.0,86.48));
+      lineLbl.alpha=easeOut(ph(t,84.0,84.5))*(1-ph(t,86.0,86.48));
+      // ✓ kód správně slams @85.88 and persists GREEN
+      ok.alpha=easeOutBack(ph(t,85.88,86.33))*0.9;
+    },destroy(){ removeOverlayFx('zoomHeld'); }};
+  });
+
+  // ---------- S8 : VERSE 2b 86.48-96.66 (each core writes own neighbour seat; coherence pinks whole line) ----------
+  scene(86.48,96.66,'VERSE 2','garage',(S)=>{
+    const c=new PIXI.Container();
+    const okStamp=txt('✓ kód správně',18,C.good,'800'); okStamp.position.set(180,90); okStamp.alpha=0.9; legible(okStamp); c.addChild(okStamp);
+    const pinka=txt('pinká CELÝ řádek',18,C.hot,'800'); pinka.position.set(640,210); pinka.alpha=0; legible(pinka); c.addChild(pinka);
+    const wp=new PIXI.Graphics(); c.addChild(wp); // write-pulse arms
+    const flips=flipTimes(90.34,94.18,5);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      // CORE0 writes SEAT_A @86.48; CORE1 writes SEAT_B @88.46
+      wp.clear();
+      if(t>=86.48 && t<90.5){
+        const a0=easeOut(ph(t,86.48,87.0))*(1-ph(t,90.0,90.5));
+        wp.lineStyle(4,C.core0,a0*0.8).moveTo(AMP0[0],AMP0[1]-90).lineTo(seatX(SEAT_A),320);
+        if(t>=88.46){ const a1=easeOut(ph(t,88.46,89.0))*(1-ph(t,90.0,90.5));
+          wp.lineStyle(4,C.core1,a1*0.8).moveTo(AMP1[0],AMP1[1]-90).lineTo(seatX(SEAT_B),320); }
+      }
+      garage.seatTintFn=(s=>{
+        if(s===SEAT_A && t>=86.48) return {col:C.core0,a:0.7+0.3*beat(t)};
+        if(s===SEAT_B && t>=88.46) return {col:C.core1,a:0.7+0.3*beat(t+0.2)};
+        return null;
+      });
+      // coherence pinks the WHOLE line @90.34
+      if(t>=90.34 && t<94.5){
+        garage.vanX=vanXFromYank(t,90.34,94.18,5); garage.ropeTaut=1;
+        flips.forEach((ft,k)=>{ if(t>=ft && !S.fired.has('flip'+k)){ S.fired.add('flip'+k); FILT._yankSplitPx=8; yankFx(t,'s8'+k,8);
+          // invalidate flash
+          if(FILT.flashHot){ FILT.flashHot.alpha=0.12; sceneFlash(FILT.flashHot,true); FILT._invFire=t; } } });
+        // whole-van dim/hot
+        garage.seatTintFn=(s=>{
+          if(s===SEAT_A) return {col:C.core0,a:0.7};
+          if(s===SEAT_B) return {col:C.core1,a:0.7};
+          return {col:C.hot,a:0.25+0.15*beat(t)};
+        });
+      } else { garage.vanX=640; }
+      if(FILT.flashHot && FILT._invFire!=null){ FILT.flashHot.alpha=0.12*(1-ph(t,FILT._invFire,FILT._invFire+0.1)); if(t-FILT._invFire>0.1) sceneFlash(FILT.flashHot,false); }
+      updateYankFx(t);
+      pinka.alpha=easeOut(ph(t,90.34,90.8))*(1-ph(t,94.0,94.4));
+      // gauge sags hard @94.35
+      garage.gaugeAngle=lerp(restAngle,lowAngle,easeOut(ph(t,94.35,96.66)));
+      garage.gaugeCol=lerpColor(C.good,C.hot,ph(t,94.35,96.66));
+      // CRT mystery creep @94.35 (carried into S9)
+      if(t>=94.35){ if(FILT.crt && !hasOverlayFx('crtMystery')){ addOverlayFx('crtMystery',FILT.crt); } if(FILT.crt){ FILT.crt.time=t; FILT.crt.noise=0.10*ph(t,94.35,96.66); } }
+    },destroy(){ if(FILT.flashHot) sceneFlash(FILT.flashHot,false); removeOverlayFx('yankSplit'); removeOverlayFx('yankGlitch'); }};
+  });
+
+  // ---------- S9 : VERSE 2c 96.66-106.86 (no data race, mystery sag) ----------
+  scene(96.66,106.86,'VERSE 2','garage',(S)=>{
+    const c=new PIXI.Container();
+    const noRace=txt('✓ ŽÁDNÝ DATA RACE',24,C.good,'800'); noRace.position.set(640,150); noRace.alpha=0; legible(noRace); c.addChild(noRace);
+    if(hasF('GlowFilter')){ noRace._g=new F.GlowFilter({distance:12,outerStrength:1.5,color:C.good,quality:0.4}); noRace.filters=(noRace.filters||[]).concat([noRace._g]); }
+    const okStamp=txt('✓ kód správně',18,C.good,'800'); okStamp.position.set(180,90); okStamp.alpha=0.9; legible(okStamp); c.addChild(okStamp);
+    const srcPanel=new PIXI.Container(); c.addChild(srcPanel); srcPanel.position.set(330,470); srcPanel.alpha=0;
+    const srcG=new PIXI.Graphics().beginFill(C.panel,0.92).lineStyle(2,C.good,0.5).drawRoundedRect(-100,-36,200,72,8).endFill(); srcPanel.addChild(srcG);
+    const sct=txt('// úplně správně',16,C.good,'700'); sct.position.set(0,-12); srcPanel.addChild(sct);
+    const sct2=txt('a++; b++;',16,C.seat,'700'); sct2.position.set(0,14); srcPanel.addChild(sct2);
+    const q=txt('?!',30,C.hot,'900'); q.position.set(900,300); q.alpha=0; legible(q); c.addChild(q);
+    const mag=new PIXI.Graphics(); c.addChild(mag);
+    const reveal=txt('příčina = hranice řádku, ne kód',16,C.muted,'700'); reveal.position.set(640,560); reveal.alpha=0; legible(reveal); c.addChild(reveal);
+    // scanline overlay (S9 only)
+    const scan=new PIXI.TilingSprite(SCAN_TEX,W,H); scan.alpha=0; scan.tileScale.set(1,4); c.addChild(scan);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      noRace.alpha=easeOutBack(ph(t,96.66,97.1))*(1-ph(t,100.5,101.2));
+      if(noRace._g) noRace._g.outerStrength=1.5+1.0*beat(t);
+      // hold CRT mystery from S8
+      if(FILT.crt){ FILT.crt.time=t; FILT.crt.noise=0.10; }
+      // scanline roll
+      scan.alpha=0.12*ph(t,96.66,97.5)*(1-ph(t,106.0,106.86));
+      scan.tilePosition.y=(t*0.3*100)%16;
+      // src panel @99.62
+      srcPanel.alpha=easeOut(ph(t,99.62,100.2))*(1-ph(t,105.5,106.5));
+      // gauge sags mysteriously w/ jitter @102.22
+      if(t>=102.22){ const base=lerp(restAngle,lowAngle,easeOut(ph(t,102.22,104.76))); garage.gaugeAngle=base+0.06*Math.sin(t*30); garage.gaugeCol=C.hot; }
+      else { garage.gaugeAngle=lerp(restAngle,lowAngle,0.6); garage.gaugeCol=lerpColor(C.good,C.hot,0.6); }
+      q.alpha=easeOut(ph(t,102.22,102.7))*(1-ph(t,104.5,104.9)); q.y=300-((t*20)%30);
+      // mystery glitch micro-stutter
+      if(t>=103.06 && t<104.76){ if(FILT.glitch && !hasOverlayFx('mysteryGlitch')){ FILT.glitch.slices=4; addOverlayFx('mysteryGlitch',FILT.glitch); } if(FILT.glitch){ FILT.glitch.offset=4*Math.sin(t*40); FILT.glitch.seed=hash01(Math.floor(t*30)); } }
+      else removeOverlayFx('mysteryGlitch');
+      // magnifier searches source @104.90, finds nothing
+      mag.clear();
+      if(t>=104.90 && t<106.5){ const mx=lerp(250,420,(t-104.90)/1.6%1); drawMagnifier(mag,mx,470,22,C.muted,0.8); }
+      reveal.alpha=easeOut(ph(t,104.90,105.4))*(1-ph(t,106.4,106.86));
+      // detach mystery filters by 106.86
+      if(t>=106.7){ removeOverlayFx('crtMystery'); removeOverlayFx('mysteryGlitch'); }
+    },destroy(){ removeOverlayFx('crtMystery'); removeOverlayFx('mysteryGlitch'); }};
+  });
+
+  // ---------- S10 : PRE-CHORUS 2 106.86-116.80 (reprise montage + villain named) ----------
+  scene(106.86,116.80,'PRE-CHORUS','garage',(S)=>{
+    const c=new PIXI.Container();
+    const mag=new PIXI.Graphics(); c.addChild(mag);
+    const flips=flipTimes(108.42,109.98,6);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      // warm flash @106.86 (re-warm from mystery)
+      if(t>=106.86 && !S.fired.has('warm')){ S.fired.add('warm'); if(FILT.flashWarm){ FILT.flashWarm.alpha=0.4; sceneFlash(FILT.flashWarm,true); } }
+      if(FILT.flashWarm && S.fired.has('warm')){ FILT.flashWarm.alpha=0.4*(1-ph(t,106.86,107.4)); if(t>107.4) sceneFlash(FILT.flashWarm,false); }
+      // montage @108.42
+      if(t>=108.42 && t<109.98){
+        garage.vanX=vanXFromYank(t,108.42,109.98,6); garage.ropeTaut=1;
+        flips.forEach((ft,k)=>{ if(t>=ft && !S.fired.has('flip'+k)){ S.fired.add('flip'+k); FILT._yankSplitPx=8; yankFx(t,'s10'+k,8); } });
+        if(FILT.motion){ const dir=Math.cos((t-108.42)/0.26*Math.PI)*30; FILT.motion.velocity=[dir,0]; addOverlayFx('vanMotion',FILT.motion); }
+        garage.gaugeAngle=lerp(restAngle,lowAngle,0.6+0.4*beat(t)); garage.gaugeCol=C.hot;
+      } else if(t>=110.09){ removeOverlayFx('vanMotion'); garage.vanX=lerp(VAN_RX,640,easeOutBack(ph(t,110.09,111.0))); garage.gaugeAngle=lowAngle; garage.gaugeCol=C.hot; }
+      else garage.vanX=640;
+      updateYankFx(t);
+      // magnifier sweep @114.86
+      mag.clear();
+      if(t>=114.86){ const mx=lerp(SEAT_X0,SEAT_X1,(t-114.86)/1.8%1); drawMagnifier(mag,mx,300,24,C.hot,0.8*(1-ph(t,116.4,116.8))); }
+    },destroy(){ removeOverlayFx('vanMotion'); if(FILT.flashWarm) sceneFlash(FILT.flashWarm,false); removeOverlayFx('yankSplit'); removeOverlayFx('yankGlitch'); }};
+  });
+
+  // ---------- S11 : CHORUS 2 116.80-138.88 ----------
+  scene(116.80,138.88,'CHORUS','garage',chorusScene(2,{L1:116.80,L2:122.20,L3:127.42,L4:132.55}));
+
+  // ---------- S12 : BRIDGE / THE FIX 138.88-161.78 (FACT 4) ----------
+  scene(138.88,161.78,'BRIDGE-FIX','garage',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const fixT=txt('OPRAVA',30,C.good,'900'); fixT.position.set(640,150); fixT.alpha=0; legible(fixT); c.addChild(fixT);
+    if(hasF('GlowFilter')){ fixT._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.good,quality:0.4}); fixT.filters=(fixT.filters||[]).concat([fixT._g]); }
+    const padLbl=txt('padding · align 64 B',18,C.good,'800'); padLbl.position.set(945,200); padLbl.alpha=0; legible(padLbl); c.addChild(padLbl);
+    const memCost=txt('+ paměť (prázdná místa jsou reálná)',14,C.muted,'700'); memCost.position.set(640,560); memCost.alpha=0; legible(memCost); c.addChild(memCost);
+    const tlLbl=txt('thread-local · vlastní kopie',18,C.good,'800'); tlLbl.position.set(640,210); tlLbl.alpha=0; legible(tlLbl); c.addChild(tlLbl);
+    const noOcc=new PIXI.Graphics(); c.addChild(noOcc); // ✕ over second occupant
+    const goneT=txt('✓ false sharing zmizel',22,C.good,'800'); goneT.position.set(640,250); goneT.alpha=0; legible(goneT); c.addChild(goneT);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      fixT.alpha=easeOutBack(ph(t,138.88,139.35))*(1-ph(t,142.5,143.5));
+      if(fixT._g) fixT._g.outerStrength=2+1.5*beat(t);
+      // van mitosis @141.00 with twist
+      if(t>=141.00){
+        const splP=easeOutBack(ph(t,141.00,143.0));
+        garage.vanSplit=clamp01(splP);
+        drawSplitVans(splP);
+        garage.ropeTaut=0; garage.ropeSag=20*clamp01(splP);
+        // twist wring @141.00
+        if(t>=141.00 && !S.fired.has('twist')){ S.fired.add('twist'); if(FILT.twist){ FILT.twist.offset=[640,300]; addOverlayFx('splitTwist',FILT.twist); } else if(FILT.twistDisp){ addOverlayFx('splitTwist',FILT.twistDisp); } FILT._twistFire=t; }
+        if(hasOverlayFx('splitTwist')){ let ang; if(t<142.0) ang=0.4*easeInOut(ph(t,141.0,142.0)); else ang=0.4*(1-ph(t,142.0,143.0)); if(FILT.twist) FILT.twist.angle=ang; else if(FILT.twistDisp) FILT.twistDisp.scale.x=FILT.twistDisp.scale.y=ang*60; if(t>=143.0) removeOverlayFx('splitTwist'); }
+      }
+      // padding @144.66 (mini-vans show empty seats around the one hot)
+      padLbl.alpha=easeOut(ph(t,144.66,145.2))*(1-ph(t,149.5,150.1));
+      noOcc.clear();
+      if(t>=147.62 && t<150.0){ const na=easeOut(ph(t,147.62,148.1))*(1-ph(t,149.5,150.0));
+        noOcc.lineStyle(4,C.hot,na).moveTo(424,288).lineTo(456,312); noOcc.moveTo(456,288).lineTo(424,312);
+        noOcc.moveTo(824,288).lineTo(856,312); noOcc.moveTo(856,288).lineTo(824,312); }
+      memCost.alpha=easeOut(ph(t,144.66,145.4))*(1-ph(t,149.5,150.1));
+      // thread-local @150.12: two vans drive to corners, ropes slack
+      tlLbl.alpha=easeOut(ph(t,151.48,152.0))*(1-ph(t,155.0,155.6));
+      if(t>=150.12){ garage.vanSplit=1; drawSplitVans(1); garage.ropeTaut=0; garage.ropeSag=30; }
+      // gauge climbs @155.93
+      if(t>=155.93){ garage.gaugeAngle=lerp(lowAngle,highAngle,easeOut(ph(t,155.93,158.57))); garage.gaugeCol=lerpColor(C.hot,C.good,ph(t,155.93,158.57)); }
+      else if(t>=141.00){ garage.gaugeAngle=lerp(restAngle,highAngle,easeOut(ph(t,141.0,150.0)))*0.5+restAngle*0.5; garage.gaugeAngle=lerp(restAngle,midAngle,ph(t,141.0,155.0)); garage.gaugeCol=lerpColor(C.muted,C.good,ph(t,141.0,155.0)); }
+      // resolve @158.68: good flash + bloom + villain dissolve sparks
+      if(t>=159.67 && !S.fired.has('resolve')){ S.fired.add('resolve');
+        if(FILT.flashGood){ FILT.flashGood.alpha=0.4; sceneFlash(FILT.flashGood,true); }
+        burst(640,420,C.good,60,3,0.2);
+      }
+      if(FILT.flashGood && S.fired.has('resolve')){ FILT.flashGood.alpha=0.4*(1-ph(t,159.67,159.97)); if(t>159.98) sceneFlash(FILT.flashGood,false); }
+      goneT.alpha=easeOut(ph(t,158.68,159.3))*(1-ph(t,161.0,161.78));
+    },destroy(){ removeOverlayFx('splitTwist'); if(FILT.flashGood) sceneFlash(FILT.flashGood,false); }};
+  });
+
+  // ---------- S13 : CHORUS 3 161.78-184.84 (climactic) ----------
+  scene(161.78,184.84,'CHORUS','garage',chorusScene(3,{L1:161.78,L2:168.16,L3:173.36,L4:178.34}));
+
+  // ---------- S14 : OUTRO 184.84-198.14 (F1 callback + F4 stamp) ----------
+  scene(184.84,198.14,'OUTRO','garage',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const haul=makeRope(TRAIL.accent,10); haul.alpha=0; haul.tint=0xFF2D8B; c.addChild(haul);
+    const padLbl=txt('padding · vlastní řádek',20,C.good,'800'); padLbl.position.set(640,210); padLbl.alpha=0; legible(padLbl); c.addChild(padLbl);
+    const lostT=txt('FALSE SHARING ZTRATIL CÍL',30,C.good,'900'); lostT.position.set(640,300); lostT.alpha=0; legible(lostT); c.addChild(lostT);
+    if(hasF('GlowFilter')){ lostT._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.good,quality:0.4}); lostT.filters=(lostT.filters||[]).concat([lostT._g]); }
+    const title=txt('TRUE / FALSE SHARING',50,C.accent,'900'); title.position.set(640,330); title.alpha=0; legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:16,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('padding · align 64 B · thread-local',22,C.muted,'700'); sub.position.set(640,378); sub.alpha=0; legible(sub); c.addChild(sub);
+    c.addChild(title);
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1; garage.hudPulse=1;
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      // final whole-van haul @184.84-188.24
+      if(t>=184.84 && t<188.24){
+        const hp=easeOutBack(ph(t,184.84,186.5));
+        garage.vanY=lerp(110,300,hp); garage.vanScale=lerp(0.6,1.0,hp);
+        haul.alpha=0.6*(1-ph(t,187.0,188.0)); setRopeAlongPath(haul,[[640,60],[640,garage.vanY]]);
+        garage.seatTintFn=(s=>{ const f=s/(N_SEATS-1); if(f<=ph(t,184.84,187.0)) return {col:C.accent,a:0.85}; return null; });
+      } else if(t>=188.24 && t<191.0){
+        // ONE seat highlighted "jen díl"
+        garage.seatTintFn=(s=> s===SEAT_A ? {col:C.hot,a:0.9} : {col:C.seat,a:0.5} );
+      } else if(t>=191.0){
+        // two separate vans return, padded
+        garage.vanSplit=1; drawSplitVans(1); garage.ropeTaut=0; garage.ropeSag=30;
+        garage.gaugeAngle=highAngle; garage.gaugeCol=C.good;
+      }
+      padLbl.alpha=easeOut(ph(t,191.0,191.6))*(1-ph(t,194.0,194.6));
+      // ztratil cíl @194.44
+      if(t>=194.44 && !S.fired.has('lost')){ S.fired.add('lost');
+        if(FILT.flashGood){ FILT.flashGood.alpha=0.4; sceneFlash(FILT.flashGood,true); }
+        if(FILT.shock){ const gp=vanRoot.toGlobal(new PIXI.Point(0,0)); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s14shock',FILT.shock); }
+        burst(640,420,C.good,50,3,0.2);
+      }
+      if(FILT.flashGood && S.fired.has('lost')){ FILT.flashGood.alpha=0.4*(1-ph(t,194.44,194.74)); if(t>194.75) sceneFlash(FILT.flashGood,false); }
+      if(FILT.shock && hasOverlayFx('s14shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s14shock'); }
+      lostT.alpha=easeOut(ph(t,194.44,195.0))*(1-ph(t,197.4,198.14));
+      if(lostT._g) lostT._g.outerStrength=2+1.5*beat(t);
+      // title return @194.44
+      title.alpha=easeOut(ph(t,194.44,196.0))*(1-ph(t,197.8,198.14));
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      sub.alpha=easeOut(ph(t,195.5,196.5))*(1-ph(t,197.8,198.14));
+    },destroy(){ removeOverlayFx('s14shock'); if(FILT.flashGood) sceneFlash(FILT.flashGood,false); }};
+  });
+
+  // ---------- S15/S16 : TAIL + END-CARD 198.14-199.82 ----------
+  scene(198.14,199.820,'OUTRO','garage',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const title=txt('TRUE / FALSE SHARING',50,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:16,outerStrength:1.5,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('padding · align 64 B · thread-local',22,C.muted,'700'); sub.position.set(640,378); legible(sub);
+    const badge=txt('🚐🎸  True / False sharing · ESW B4M36ESW',20,C.muted,'700'); badge.position.set(640,560); legible(badge);
+    c.addChild(title,sub,badge);
+    const ohPops=[198.14,198.61,199.08,199.55];
+    return {c,update(lt,t){
+      camDollyScale=1; resetGarage(); hudChip.alpha=1;
+      // hold two-van victory frame
+      garage.vanSplit=1; drawSplitVans(1); garage.ropeTaut=0; garage.ropeSag=30;
+      garage.gaugeAngle=highAngle; garage.gaugeCol=C.good;
+      // four bloom pops on the four "Oh"
+      let pop=0; ohPops.forEach(ot=>{ pop+=Math.exp(-Math.pow((t-ot)*8,2)); });
+      if(bloomF) bloomF.bloomScale=1.0+0.5*pop;
+      if(title._g) title._g.outerStrength=lerp(1.5,0.2,easeInOut(ph(t,198.14,199.82)));
+      // thin motes
+      moteVisibleRatio=lerp(1.0,0.20,easeInOut(ph(t,198.14,199.82)));
+      moteEnvelope=lerp(0.35,0.12,easeInOut(ph(t,198.14,199.82)));
+    },destroy(){ moteVisibleRatio=1; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='VERSE 2' && t>=94.35 && t<106.86){
+      const cool=ph(t,94.35,96.0)*(1-ph(t,106.0,106.86));
+      bgGrade.saturate(-0.35*cool,false);
+      bgGrade.brightness(1-0.10*cool,true);
+    } else if(sec==='BRIDGE-FIX'){
+      bgGrade.saturate(0.16,false); bgGrade.brightness(1.04,true);
+    } else if(sec==='CHORUS'){
+      bgGrade.saturate(0.2,false);
+    } else if(sec==='OUTRO'){
+      bgGrade.saturate(0.1,false);
+    } else {
+      bgGrade.saturate(0.12,false);
+    }
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM, storyboard §5 — exact picker)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=0, LAST_WORD_END=199820;
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;
+    let best=null;
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+450){ if(!best||ln.start_ms>best.start_ms) best=ln; } }
+    return best;
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    bgIntent.kawase=false;
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='VERSE 2' && t>=94.35 && t<106.86){ const cool=ph(t,94.35,96.0)*(1-ph(t,106.0,106.86)); top=lerpColor(C.bgTop,C.bgTopCold,cool); bot=lerpColor(C.bgBot,C.bgBotCold,cool); }
+    else if(sec==='BRIDGE-FIX'){ const warm=ph(t,138.88,140.0); top=lerpColor(C.bgTop,C.bgTopWarm,warm); bot=lerpColor(C.bgBot,C.bgBotWarm,warm); }
+    else if(sec==='OUTRO' && t>=191.0){ const warm=ph(t,191.0,192.5); top=lerpColor(C.bgTop,C.bgTopWarm,warm); bot=lerpColor(C.bgBot,C.bgBotWarm,warm); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // haze drift + reflection
+    hazeTile.tilePosition.y=(-(t*18))%256; hazeTile.alpha=0.05*Math.max(0.6,moteEnvelope/0.35);
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time=t; }
+    bgIntent.godray=(sec==='INTRO'||sec==='CHORUS'||sec==='OUTRO');
+
+    // ----- scene manager (with backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      // punk-fast cross-fade in on entry (lerp 0.16/frame). When the audio is paused (or seeking
+      // headlessly), snap fully open so a paused frame is 100% static (no inter-frame settle).
+      const paused = player.paused || player.ended;
+      cur.inst.c.alpha = paused ? 1 : lerp(cur.inst.c.alpha,1,0.16);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame from intent flags -----
+    { const arr=[bgGrade];
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+
+    // bridge: show extra amps during the contention scaling (none in this song's bridge; FIX bridge keeps 2)
+    // (showAmp23 left at 0 by scenes; available for future)
+
+    // ----- render persistent garage -----
+    renderGarage(t);
+
+    // ----- camera -----
+    updateCamera(t);
+
+    // ----- karaoke -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — motes + sparks (non-load-bearing, PAUSE-FREEZE gate)
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    const playing = !player.paused && !player.ended;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y<-20){ m.s.y=H+20; m.s.x=Math.random()*W; } }
+      const visible=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      m.s.alpha=visible? moteEnvelope*(0.7+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>

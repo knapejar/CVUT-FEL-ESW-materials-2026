@@ -1,0 +1,568 @@
+{
+  "song": "True False Sharing",
+  "title": "True a false sharing",
+  "source": "04-true-false-sharing.md",
+  "language": "cs",
+  "duration_ms": 199820,
+  "lines": [
+    {
+      "start_ms": 0,
+      "end_ms": 10380,
+      "text": "Cache line je nejmenší kus, co procesor z paměti tahá, na x86 64 bajtů sahá.",
+      "words": [
+        { "w": "Cache", "start_ms": 0, "end_ms": 510 },
+        { "w": "line", "start_ms": 510, "end_ms": 1000 },
+        { "w": "je", "start_ms": 1000, "end_ms": 1250 },
+        { "w": "nejmenší", "start_ms": 1250, "end_ms": 2480 },
+        { "w": "kus,", "start_ms": 2480, "end_ms": 3060 },
+        { "w": "co", "start_ms": 3060, "end_ms": 3220 },
+        { "w": "procesor", "start_ms": 3220, "end_ms": 3920 },
+        { "w": "z", "start_ms": 3920, "end_ms": 4010 },
+        { "w": "paměti", "start_ms": 4010, "end_ms": 4610 },
+        { "w": "tahá,", "start_ms": 4610, "end_ms": 5140 },
+        { "w": "na", "start_ms": 5140, "end_ms": 5450 },
+        { "w": "x86", "start_ms": 5450, "end_ms": 7460 },
+        { "w": "64", "start_ms": 7460, "end_ms": 8540 },
+        { "w": "bajtů", "start_ms": 8540, "end_ms": 9460 },
+        { "w": "sahá.", "start_ms": 9460, "end_ms": 10380 }
+      ]
+    },
+    {
+      "start_ms": 19760,
+      "end_ms": 30120,
+      "text": "Když sáhneš na jeden bajt, procesor přitáhne celý řádek 64 bajtů kolem, nejen ten kousek, co jsi řek.",
+      "words": [
+        { "w": "Když", "start_ms": 19760, "end_ms": 20210 },
+        { "w": "sáhneš", "start_ms": 20210, "end_ms": 20930 },
+        { "w": "na", "start_ms": 20930, "end_ms": 21110 },
+        { "w": "jeden", "start_ms": 21110, "end_ms": 21580 },
+        { "w": "bajt,", "start_ms": 21580, "end_ms": 22040 },
+        { "w": "procesor", "start_ms": 22040, "end_ms": 22760 },
+        { "w": "přitáhne", "start_ms": 22760, "end_ms": 23660 },
+        { "w": "celý", "start_ms": 23660, "end_ms": 24110 },
+        { "w": "řádek", "start_ms": 24110, "end_ms": 24760 },
+        { "w": "64", "start_ms": 24760, "end_ms": 25490 },
+        { "w": "bajtů", "start_ms": 25490, "end_ms": 26210 },
+        { "w": "kolem,", "start_ms": 26210, "end_ms": 27050 },
+        { "w": "nejen", "start_ms": 27050, "end_ms": 27650 },
+        { "w": "ten", "start_ms": 27650, "end_ms": 28010 },
+        { "w": "kousek,", "start_ms": 28010, "end_ms": 28960 },
+        { "w": "co", "start_ms": 28960, "end_ms": 29210 },
+        { "w": "jsi", "start_ms": 29210, "end_ms": 29570 },
+        { "w": "řek.", "start_ms": 29570, "end_ms": 30120 }
+      ]
+    },
+    {
+      "start_ms": 30120,
+      "end_ms": 38170,
+      "text": "True sharing je, když dvě jádra píšou do jedné proměnné,",
+      "words": [
+        { "w": "True", "start_ms": 30120, "end_ms": 30460 },
+        { "w": "sharing", "start_ms": 30460, "end_ms": 31050 },
+        { "w": "je,", "start_ms": 31050, "end_ms": 31390 },
+        { "w": "když", "start_ms": 31390, "end_ms": 31810 },
+        { "w": "dvě", "start_ms": 31810, "end_ms": 32140 },
+        { "w": "jádra", "start_ms": 32140, "end_ms": 32640 },
+        { "w": "píšou", "start_ms": 32640, "end_ms": 33230 },
+        { "w": "do", "start_ms": 33230, "end_ms": 33400 },
+        { "w": "jedné", "start_ms": 33400, "end_ms": 33900 },
+        { "w": "proměnné", "start_ms": 33900, "end_ms": 38170 }
+      ]
+    },
+    {
+      "start_ms": 34820,
+      "end_ms": 40280,
+      "text": "cache line se honí mezi nimi a běh se zadrhne.",
+      "words": [
+        { "w": "cache", "start_ms": 34820, "end_ms": 35400 },
+        { "w": "line", "start_ms": 35400, "end_ms": 35990 },
+        { "w": "se", "start_ms": 35990, "end_ms": 36280 },
+        { "w": "honí", "start_ms": 36280, "end_ms": 37010 },
+        { "w": "mezi", "start_ms": 37010, "end_ms": 37590 },
+        { "w": "nimi", "start_ms": 37590, "end_ms": 38170 },
+        { "w": "a", "start_ms": 38170, "end_ms": 38310 },
+        { "w": "běh", "start_ms": 38310, "end_ms": 38880 },
+        { "w": "se", "start_ms": 38880, "end_ms": 39170 },
+        { "w": "zadrhne.", "start_ms": 39170, "end_ms": 40280 }
+      ]
+    },
+    {
+      "start_ms": 40280,
+      "end_ms": 45700,
+      "text": "Řádek lítá z jádra do jádra a brzdí tvůj běh,",
+      "words": [
+        { "w": "Řádek", "start_ms": 40280, "end_ms": 41120 },
+        { "w": "lítá", "start_ms": 41120, "end_ms": 41840 },
+        { "w": "z", "start_ms": 41840, "end_ms": 41960 },
+        { "w": "jádra", "start_ms": 41960, "end_ms": 42680 },
+        { "w": "do", "start_ms": 42680, "end_ms": 42920 },
+        { "w": "jádra", "start_ms": 42920, "end_ms": 43640 },
+        { "w": "a", "start_ms": 43640, "end_ms": 43760 },
+        { "w": "brzdí", "start_ms": 43760, "end_ms": 44600 },
+        { "w": "tvůj", "start_ms": 44600, "end_ms": 45200 },
+        { "w": "běh,", "start_ms": 45200, "end_ms": 45700 }
+      ]
+    },
+    {
+      "start_ms": 45700,
+      "end_ms": 50620,
+      "text": "a teď pozor, přichází nepřítel, co schoval se ti v cache.",
+      "words": [
+        { "w": "a", "start_ms": 45700, "end_ms": 45780 },
+        { "w": "teď", "start_ms": 45780, "end_ms": 46120 },
+        { "w": "pozor,", "start_ms": 46120, "end_ms": 46720 },
+        { "w": "přichází", "start_ms": 46720, "end_ms": 47670 },
+        { "w": "nepřítel,", "start_ms": 47670, "end_ms": 48810 },
+        { "w": "co", "start_ms": 48810, "end_ms": 49010 },
+        { "w": "schoval", "start_ms": 49010, "end_ms": 49690 },
+        { "w": "se", "start_ms": 49690, "end_ms": 49890 },
+        { "w": "ti", "start_ms": 49890, "end_ms": 50090 },
+        { "w": "v", "start_ms": 50090, "end_ms": 50190 },
+        { "w": "cache.", "start_ms": 50190, "end_ms": 50620 }
+      ]
+    },
+    {
+      "start_ms": 50620,
+      "end_ms": 56020,
+      "text": "True sharing je stejná proměnná, o tu se jádra perou,",
+      "words": [
+        { "w": "True", "start_ms": 50620, "end_ms": 51050 },
+        { "w": "sharing", "start_ms": 51050, "end_ms": 51800 },
+        { "w": "je", "start_ms": 51800, "end_ms": 52010 },
+        { "w": "stejná", "start_ms": 52010, "end_ms": 52740 },
+        { "w": "proměnná,", "start_ms": 52740, "end_ms": 53920 },
+        { "w": "o", "start_ms": 53920, "end_ms": 54050 },
+        { "w": "tu", "start_ms": 54050, "end_ms": 54310 },
+        { "w": "se", "start_ms": 54310, "end_ms": 54570 },
+        { "w": "jádra", "start_ms": 54570, "end_ms": 54960 },
+        { "w": "perou,", "start_ms": 54960, "end_ms": 56020 }
+      ]
+    },
+    {
+      "start_ms": 56020,
+      "end_ms": 60700,
+      "text": "false sharing je různá data, co náhodou leží na jednom řádku.",
+      "words": [
+        { "w": "false", "start_ms": 56020, "end_ms": 56420 },
+        { "w": "sharing", "start_ms": 56420, "end_ms": 56980 },
+        { "w": "je", "start_ms": 56980, "end_ms": 57140 },
+        { "w": "různá", "start_ms": 57140, "end_ms": 57700 },
+        { "w": "data,", "start_ms": 57700, "end_ms": 58180 },
+        { "w": "co", "start_ms": 58180, "end_ms": 58340 },
+        { "w": "náhodou", "start_ms": 58340, "end_ms": 58980 },
+        { "w": "leží", "start_ms": 58980, "end_ms": 59460 },
+        { "w": "na", "start_ms": 59460, "end_ms": 59620 },
+        { "w": "jednom", "start_ms": 59620, "end_ms": 60100 },
+        { "w": "řádku.", "start_ms": 60100, "end_ms": 60700 }
+      ]
+    },
+    {
+      "start_ms": 60700,
+      "end_ms": 66180,
+      "text": "Logicky spolu nesouvisí, a přesto se cache line honí,",
+      "words": [
+        { "w": "Logicky", "start_ms": 60700, "end_ms": 61540 },
+        { "w": "spolu", "start_ms": 61540, "end_ms": 62140 },
+        { "w": "nesouvisí,", "start_ms": 62140, "end_ms": 63340 },
+        { "w": "a", "start_ms": 63340, "end_ms": 63460 },
+        { "w": "přesto", "start_ms": 63460, "end_ms": 64300 },
+        { "w": "se", "start_ms": 64300, "end_ms": 64540 },
+        { "w": "cache", "start_ms": 64540, "end_ms": 65020 },
+        { "w": "line", "start_ms": 65020, "end_ms": 65500 },
+        { "w": "honí,", "start_ms": 65500, "end_ms": 66180 }
+      ]
+    },
+    {
+      "start_ms": 66180,
+      "end_ms": 72620,
+      "text": "ve zdrojáku to nevidíš, zarovnej každou proměnnou na vlastní řádek.",
+      "words": [
+        { "w": "ve", "start_ms": 66180, "end_ms": 66370 },
+        { "w": "zdrojáku", "start_ms": 66370, "end_ms": 67220 },
+        { "w": "to", "start_ms": 67220, "end_ms": 67410 },
+        { "w": "nevidíš,", "start_ms": 67410, "end_ms": 68450 },
+        { "w": "zarovnej", "start_ms": 68450, "end_ms": 69230 },
+        { "w": "každou", "start_ms": 69230, "end_ms": 69890 },
+        { "w": "proměnnou", "start_ms": 69890, "end_ms": 70920 },
+        { "w": "na", "start_ms": 70920, "end_ms": 71120 },
+        { "w": "vlastní", "start_ms": 71120, "end_ms": 71900 },
+        { "w": "řádek.", "start_ms": 71900, "end_ms": 72620 }
+      ]
+    },
+    {
+      "start_ms": 72620,
+      "end_ms": 81420,
+      "text": "False sharing nepoznáš ze zdrojáku, proměnné jsou cizí,",
+      "words": [
+        { "w": "False", "start_ms": 72620, "end_ms": 74080 },
+        { "w": "sharing", "start_ms": 74080, "end_ms": 77500 },
+        { "w": "nepoznáš", "start_ms": 77500, "end_ms": 78350 },
+        { "w": "ze", "start_ms": 78350, "end_ms": 78520 },
+        { "w": "zdrojáku,", "start_ms": 78520, "end_ms": 79520 },
+        { "w": "proměnné", "start_ms": 79520, "end_ms": 80450 },
+        { "w": "jsou", "start_ms": 80450, "end_ms": 80860 },
+        { "w": "cizí,", "start_ms": 80860, "end_ms": 81420 }
+      ]
+    },
+    {
+      "start_ms": 81420,
+      "end_ms": 86480,
+      "text": "ale sedí na stejné cache line, sdílí jeden řádek v cache.",
+      "words": [
+        { "w": "ale", "start_ms": 81420, "end_ms": 81710 },
+        { "w": "sedí", "start_ms": 81710, "end_ms": 82190 },
+        { "w": "na", "start_ms": 82190, "end_ms": 82380 },
+        { "w": "stejné", "start_ms": 82380, "end_ms": 83050 },
+        { "w": "cache", "start_ms": 83050, "end_ms": 83520 },
+        { "w": "line,", "start_ms": 83520, "end_ms": 84000 },
+        { "w": "sdílí", "start_ms": 84000, "end_ms": 84650 },
+        { "w": "jeden", "start_ms": 84650, "end_ms": 85130 },
+        { "w": "řádek", "start_ms": 85130, "end_ms": 85790 },
+        { "w": "v", "start_ms": 85790, "end_ms": 85880 },
+        { "w": "cache.", "start_ms": 85880, "end_ms": 86480 }
+      ]
+    },
+    {
+      "start_ms": 86480,
+      "end_ms": 90340,
+      "text": "Jedno jádro píše do své, druhé do té hned vedle,",
+      "words": [
+        { "w": "Jedno", "start_ms": 86480, "end_ms": 86930 },
+        { "w": "jádro", "start_ms": 86930, "end_ms": 87380 },
+        { "w": "píše", "start_ms": 87380, "end_ms": 87920 },
+        { "w": "do", "start_ms": 87920, "end_ms": 88100 },
+        { "w": "své,", "start_ms": 88100, "end_ms": 88460 },
+        { "w": "druhé", "start_ms": 88460, "end_ms": 89000 },
+        { "w": "do", "start_ms": 89000, "end_ms": 89225 },
+        { "w": "té", "start_ms": 89225, "end_ms": 89450 },
+        { "w": "hned", "start_ms": 89450, "end_ms": 89810 },
+        { "w": "vedle,", "start_ms": 89810, "end_ms": 90340 }
+      ]
+    },
+    {
+      "start_ms": 90340,
+      "end_ms": 96660,
+      "text": "koherence pinká celý řádek a výkon ti sedne.",
+      "words": [
+        { "w": "koherence", "start_ms": 90340, "end_ms": 91600 },
+        { "w": "pinká", "start_ms": 91600, "end_ms": 92440 },
+        { "w": "celý", "start_ms": 92440, "end_ms": 93140 },
+        { "w": "řádek", "start_ms": 93140, "end_ms": 94180 },
+        { "w": "a", "start_ms": 94180, "end_ms": 94350 },
+        { "w": "výkon", "start_ms": 94350, "end_ms": 95390 },
+        { "w": "ti", "start_ms": 95390, "end_ms": 95740 },
+        { "w": "sedne.", "start_ms": 95740, "end_ms": 96660 }
+      ]
+    },
+    {
+      "start_ms": 96660,
+      "end_ms": 101760,
+      "text": "Žádný data race se neděje, kód máš úplně správně,",
+      "words": [
+        { "w": "Žádný", "start_ms": 96660, "end_ms": 97410 },
+        { "w": "data", "start_ms": 97410, "end_ms": 97800 },
+        { "w": "race", "start_ms": 97800, "end_ms": 98190 },
+        { "w": "se", "start_ms": 98190, "end_ms": 98380 },
+        { "w": "neděje,", "start_ms": 98380, "end_ms": 99240 },
+        { "w": "kód", "start_ms": 99240, "end_ms": 99620 },
+        { "w": "máš", "start_ms": 99620, "end_ms": 100100 },
+        { "w": "úplně", "start_ms": 100100, "end_ms": 100770 },
+        { "w": "správně,", "start_ms": 100770, "end_ms": 101760 }
+      ]
+    },
+    {
+      "start_ms": 101760,
+      "end_ms": 106860,
+      "text": "jen ti benchmark záhadně zpomalí a hledáš marně.",
+      "words": [
+        { "w": "jen", "start_ms": 101760, "end_ms": 102040 },
+        { "w": "ti", "start_ms": 102040, "end_ms": 102220 },
+        { "w": "benchmark", "start_ms": 102220, "end_ms": 103060 },
+        { "w": "záhadně", "start_ms": 103060, "end_ms": 103920 },
+        { "w": "zpomalí", "start_ms": 103920, "end_ms": 104760 },
+        { "w": "a", "start_ms": 104760, "end_ms": 104900 },
+        { "w": "hledáš", "start_ms": 104900, "end_ms": 105990 },
+        { "w": "marně.", "start_ms": 105990, "end_ms": 106860 }
+      ]
+    },
+    {
+      "start_ms": 106860,
+      "end_ms": 111860,
+      "text": "Řádek lítá z jádra do jádra a brzdí tvůj běh.",
+      "words": [
+        { "w": "Řádek", "start_ms": 106860, "end_ms": 107640 },
+        { "w": "lítá", "start_ms": 107640, "end_ms": 108310 },
+        { "w": "z", "start_ms": 108310, "end_ms": 108420 },
+        { "w": "jádra", "start_ms": 108420, "end_ms": 109090 },
+        { "w": "do", "start_ms": 109090, "end_ms": 109310 },
+        { "w": "jádra", "start_ms": 109310, "end_ms": 109980 },
+        { "w": "a", "start_ms": 109980, "end_ms": 110090 },
+        { "w": "brzdí", "start_ms": 110090, "end_ms": 110750 },
+        { "w": "tvůj", "start_ms": 110750, "end_ms": 111300 },
+        { "w": "běh.", "start_ms": 111300, "end_ms": 111860 }
+      ]
+    },
+    {
+      "start_ms": 111860,
+      "end_ms": 116800,
+      "text": "A teď pozor, přichází nepřítel, co schoval se ti v cache.",
+      "words": [
+        { "w": "A", "start_ms": 111860, "end_ms": 111940 },
+        { "w": "teď", "start_ms": 111940, "end_ms": 112280 },
+        { "w": "pozor,", "start_ms": 112280, "end_ms": 112880 },
+        { "w": "přichází", "start_ms": 112880, "end_ms": 113830 },
+        { "w": "nepřítel,", "start_ms": 113830, "end_ms": 114860 },
+        { "w": "co", "start_ms": 114860, "end_ms": 115030 },
+        { "w": "schoval", "start_ms": 115030, "end_ms": 115630 },
+        { "w": "se", "start_ms": 115630, "end_ms": 115800 },
+        { "w": "ti", "start_ms": 115800, "end_ms": 115970 },
+        { "w": "v", "start_ms": 115970, "end_ms": 116050 },
+        { "w": "cache.", "start_ms": 116050, "end_ms": 116800 }
+      ]
+    },
+    {
+      "start_ms": 116800,
+      "end_ms": 122200,
+      "text": "True sharing je stejná proměnná, o tu se jádra perou.",
+      "words": [
+        { "w": "True", "start_ms": 116800, "end_ms": 117240 },
+        { "w": "sharing", "start_ms": 117240, "end_ms": 118010 },
+        { "w": "je", "start_ms": 118010, "end_ms": 118230 },
+        { "w": "stejná", "start_ms": 118230, "end_ms": 118970 },
+        { "w": "proměnná,", "start_ms": 118970, "end_ms": 120040 },
+        { "w": "o", "start_ms": 120040, "end_ms": 120150 },
+        { "w": "tu", "start_ms": 120150, "end_ms": 120370 },
+        { "w": "se", "start_ms": 120370, "end_ms": 120590 },
+        { "w": "jádra", "start_ms": 120590, "end_ms": 121230 },
+        { "w": "perou.", "start_ms": 121230, "end_ms": 122200 }
+      ]
+    },
+    {
+      "start_ms": 122200,
+      "end_ms": 127420,
+      "text": "False sharing je různá data, co náhodou leží na jednom řádku.",
+      "words": [
+        { "w": "False", "start_ms": 122200, "end_ms": 122620 },
+        { "w": "sharing", "start_ms": 122620, "end_ms": 123210 },
+        { "w": "je", "start_ms": 123210, "end_ms": 123380 },
+        { "w": "různá", "start_ms": 123380, "end_ms": 123970 },
+        { "w": "data,", "start_ms": 123970, "end_ms": 124480 },
+        { "w": "co", "start_ms": 124480, "end_ms": 124650 },
+        { "w": "náhodou", "start_ms": 124650, "end_ms": 125320 },
+        { "w": "leží", "start_ms": 125320, "end_ms": 125830 },
+        { "w": "na", "start_ms": 125830, "end_ms": 126000 },
+        { "w": "jednom", "start_ms": 126000, "end_ms": 126500 },
+        { "w": "řádku.", "start_ms": 126500, "end_ms": 127420 }
+      ]
+    },
+    {
+      "start_ms": 127420,
+      "end_ms": 132550,
+      "text": "Logicky spolu nesouvisí, a přesto se cache line honí,",
+      "words": [
+        { "w": "Logicky", "start_ms": 127420, "end_ms": 128170 },
+        { "w": "spolu", "start_ms": 128170, "end_ms": 128700 },
+        { "w": "nesouvisí,", "start_ms": 128700, "end_ms": 129840 },
+        { "w": "a", "start_ms": 129840, "end_ms": 129950 },
+        { "w": "přesto", "start_ms": 129950, "end_ms": 130700 },
+        { "w": "se", "start_ms": 130700, "end_ms": 130910 },
+        { "w": "cache", "start_ms": 130910, "end_ms": 131340 },
+        { "w": "line", "start_ms": 131340, "end_ms": 131770 },
+        { "w": "honí,", "start_ms": 131770, "end_ms": 132550 }
+      ]
+    },
+    {
+      "start_ms": 132550,
+      "end_ms": 138880,
+      "text": "ve zdrojáku to nevidíš, zarovnej každou proměnnou na vlastní řádek.",
+      "words": [
+        { "w": "ve", "start_ms": 132550, "end_ms": 132740 },
+        { "w": "zdrojáku", "start_ms": 132740, "end_ms": 133590 },
+        { "w": "to", "start_ms": 133590, "end_ms": 133780 },
+        { "w": "nevidíš,", "start_ms": 133780, "end_ms": 134870 },
+        { "w": "zarovnej", "start_ms": 134870, "end_ms": 135640 },
+        { "w": "každou", "start_ms": 135640, "end_ms": 136300 },
+        { "w": "proměnnou", "start_ms": 136300, "end_ms": 137160 },
+        { "w": "na", "start_ms": 137160, "end_ms": 137350 },
+        { "w": "vlastní", "start_ms": 137350, "end_ms": 138120 },
+        { "w": "řádek.", "start_ms": 138120, "end_ms": 138880 }
+      ]
+    },
+    {
+      "start_ms": 138880,
+      "end_ms": 144660,
+      "text": "Oprava je jednoduchá, dej každé proměnné vlastní řádek,",
+      "words": [
+        { "w": "Oprava", "start_ms": 138880, "end_ms": 139490 },
+        { "w": "je", "start_ms": 139490, "end_ms": 139680 },
+        { "w": "jednoduchá,", "start_ms": 139680, "end_ms": 141000 },
+        { "w": "dej", "start_ms": 141000, "end_ms": 141310 },
+        { "w": "každé", "start_ms": 141310, "end_ms": 142010 },
+        { "w": "proměnné", "start_ms": 142010, "end_ms": 142930 },
+        { "w": "vlastní", "start_ms": 142930, "end_ms": 143750 },
+        { "w": "řádek,", "start_ms": 143750, "end_ms": 144660 }
+      ]
+    },
+    {
+      "start_ms": 144660,
+      "end_ms": 150120,
+      "text": "přidej padding, ať na cache line nesedí nikdo další.",
+      "words": [
+        { "w": "přidej", "start_ms": 144660, "end_ms": 145380 },
+        { "w": "padding,", "start_ms": 145380, "end_ms": 146300 },
+        { "w": "ať", "start_ms": 146300, "end_ms": 146600 },
+        { "w": "na", "start_ms": 146600, "end_ms": 146800 },
+        { "w": "cache", "start_ms": 146800, "end_ms": 147210 },
+        { "w": "line", "start_ms": 147210, "end_ms": 147620 },
+        { "w": "nesedí", "start_ms": 147620, "end_ms": 148320 },
+        { "w": "nikdo", "start_ms": 148320, "end_ms": 148830 },
+        { "w": "další.", "start_ms": 148830, "end_ms": 150120 }
+      ]
+    },
+    {
+      "start_ms": 150120,
+      "end_ms": 155380,
+      "text": "Nebo drž data jako thread-local, ať jádro má jen svoji kopii.",
+      "words": [
+        { "w": "Nebo", "start_ms": 150120, "end_ms": 150460 },
+        { "w": "drž", "start_ms": 150460, "end_ms": 150970 },
+        { "w": "data", "start_ms": 150970, "end_ms": 151140 },
+        { "w": "jako", "start_ms": 151140, "end_ms": 151480 },
+        { "w": "thread-local,", "start_ms": 151480, "end_ms": 152640 },
+        { "w": "ať", "start_ms": 152640, "end_ms": 152940 },
+        { "w": "jádro", "start_ms": 152940, "end_ms": 153560 },
+        { "w": "má", "start_ms": 153560, "end_ms": 153870 },
+        { "w": "jen", "start_ms": 153870, "end_ms": 154170 },
+        { "w": "svoji", "start_ms": 154170, "end_ms": 154770 },
+        { "w": "kopii.", "start_ms": 154770, "end_ms": 155380 }
+      ]
+    },
+    {
+      "start_ms": 155380,
+      "end_ms": 161780,
+      "text": "Pak se žádný řádek nesdílí a falešné sdílení zmizí.",
+      "words": [
+        { "w": "Pak", "start_ms": 155380, "end_ms": 155710 },
+        { "w": "se", "start_ms": 155710, "end_ms": 155930 },
+        { "w": "žádný", "start_ms": 155930, "end_ms": 156810 },
+        { "w": "řádek", "start_ms": 156810, "end_ms": 157580 },
+        { "w": "nesdílí", "start_ms": 157580, "end_ms": 158570 },
+        { "w": "a", "start_ms": 158570, "end_ms": 158680 },
+        { "w": "falešné", "start_ms": 158680, "end_ms": 159670 },
+        { "w": "sdílení", "start_ms": 159670, "end_ms": 160660 },
+        { "w": "zmizí.", "start_ms": 160660, "end_ms": 161780 }
+      ]
+    },
+    {
+      "start_ms": 161780,
+      "end_ms": 168160,
+      "text": "True sharing je stejná proměnná, o tu se jádra perou.",
+      "words": [
+        { "w": "True", "start_ms": 161780, "end_ms": 162300 },
+        { "w": "sharing", "start_ms": 162300, "end_ms": 163210 },
+        { "w": "je", "start_ms": 163210, "end_ms": 163470 },
+        { "w": "stejná", "start_ms": 163470, "end_ms": 164350 },
+        { "w": "proměnná,", "start_ms": 164350, "end_ms": 165620 },
+        { "w": "o", "start_ms": 165620, "end_ms": 165750 },
+        { "w": "tu", "start_ms": 165750, "end_ms": 166010 },
+        { "w": "se", "start_ms": 166010, "end_ms": 166280 },
+        { "w": "jádra", "start_ms": 166280, "end_ms": 167030 },
+        { "w": "perou.", "start_ms": 167030, "end_ms": 168160 }
+      ]
+    },
+    {
+      "start_ms": 168160,
+      "end_ms": 173360,
+      "text": "False sharing je různá data, co náhodou leží na jednom řádku.",
+      "words": [
+        { "w": "False", "start_ms": 168160, "end_ms": 168580 },
+        { "w": "sharing", "start_ms": 168580, "end_ms": 169170 },
+        { "w": "je", "start_ms": 169170, "end_ms": 169340 },
+        { "w": "různá", "start_ms": 169340, "end_ms": 169930 },
+        { "w": "data,", "start_ms": 169930, "end_ms": 170440 },
+        { "w": "co", "start_ms": 170440, "end_ms": 170610 },
+        { "w": "náhodou", "start_ms": 170610, "end_ms": 171280 },
+        { "w": "leží", "start_ms": 171280, "end_ms": 171790 },
+        { "w": "na", "start_ms": 171790, "end_ms": 171960 },
+        { "w": "jednom", "start_ms": 171960, "end_ms": 172460 },
+        { "w": "řádku.", "start_ms": 172460, "end_ms": 173360 }
+      ]
+    },
+    {
+      "start_ms": 173360,
+      "end_ms": 178340,
+      "text": "Logicky spolu nesouvisí a přesto se cache line honí.",
+      "words": [
+        { "w": "Logicky", "start_ms": 173360, "end_ms": 174080 },
+        { "w": "spolu", "start_ms": 174080, "end_ms": 174590 },
+        { "w": "nesouvisí", "start_ms": 174590, "end_ms": 175600 },
+        { "w": "a", "start_ms": 175600, "end_ms": 175700 },
+        { "w": "přesto", "start_ms": 175700, "end_ms": 176420 },
+        { "w": "se", "start_ms": 176420, "end_ms": 176620 },
+        { "w": "cache", "start_ms": 176620, "end_ms": 177030 },
+        { "w": "line", "start_ms": 177030, "end_ms": 177440 },
+        { "w": "honí.", "start_ms": 177440, "end_ms": 178340 }
+      ]
+    },
+    {
+      "start_ms": 178340,
+      "end_ms": 184840,
+      "text": "Ve zdrojáku to nevidíš, zarovnej každou proměnnou na vlastní řádek.",
+      "words": [
+        { "w": "Ve", "start_ms": 178340, "end_ms": 178550 },
+        { "w": "zdrojáku", "start_ms": 178550, "end_ms": 179490 },
+        { "w": "to", "start_ms": 179490, "end_ms": 179700 },
+        { "w": "nevidíš,", "start_ms": 179700, "end_ms": 180840 },
+        { "w": "zarovnej", "start_ms": 180840, "end_ms": 181570 },
+        { "w": "každou", "start_ms": 181570, "end_ms": 182200 },
+        { "w": "proměnnou", "start_ms": 182200, "end_ms": 183120 },
+        { "w": "na", "start_ms": 183120, "end_ms": 183320 },
+        { "w": "vlastní", "start_ms": 183320, "end_ms": 184120 },
+        { "w": "řádek.", "start_ms": 184120, "end_ms": 184840 }
+      ]
+    },
+    {
+      "start_ms": 184840,
+      "end_ms": 191000,
+      "text": "64 bajtů táhneš naráz, i když chceš jen díl.",
+      "words": [
+        { "w": "64", "start_ms": 184840, "end_ms": 185570 },
+        { "w": "bajtů,", "start_ms": 185570, "end_ms": 186540 },
+        { "w": "táhneš", "start_ms": 186540, "end_ms": 187390 },
+        { "w": "naráz,", "start_ms": 187390, "end_ms": 188240 },
+        { "w": "i", "start_ms": 188240, "end_ms": 188360 },
+        { "w": "když", "start_ms": 188360, "end_ms": 188960 },
+        { "w": "chceš", "start_ms": 188960, "end_ms": 189690 },
+        { "w": "jen", "start_ms": 189690, "end_ms": 190050 },
+        { "w": "díl.", "start_ms": 190050, "end_ms": 191000 }
+      ]
+    },
+    {
+      "start_ms": 191000,
+      "end_ms": 198140,
+      "text": "Padding na vlastní řádek a false sharing ztratil cíl.",
+      "words": [
+        { "w": "Padding", "start_ms": 191000, "end_ms": 191970 },
+        { "w": "na", "start_ms": 191970, "end_ms": 192250 },
+        { "w": "vlastní", "start_ms": 192250, "end_ms": 193350 },
+        { "w": "řádek", "start_ms": 193350, "end_ms": 194300 },
+        { "w": "a", "start_ms": 194300, "end_ms": 194440 },
+        { "w": "false", "start_ms": 194440, "end_ms": 195140 },
+        { "w": "sharing", "start_ms": 195140, "end_ms": 196110 },
+        { "w": "ztratil", "start_ms": 196110, "end_ms": 197060 },
+        { "w": "cíl.", "start_ms": 197060, "end_ms": 198140 }
+      ]
+    },
+    {
+      "start_ms": 198140,
+      "end_ms": 199820,
+      "text": "Oh, oh, oh, oh",
+      "words": [
+        { "w": "Oh,", "start_ms": 198140, "end_ms": 198610 },
+        { "w": "oh,", "start_ms": 198610, "end_ms": 199080 },
+        { "w": "oh,", "start_ms": 199080, "end_ms": 199550 },
+        { "w": "oh", "start_ms": 199550, "end_ms": 199820 }
+      ]
+    }
+  ]
+}

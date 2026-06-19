@@ -1,0 +1,1398 @@
+/* AUTO-GENERATED from Blum Filter.json — do not edit by hand. */
+window.KARAOKE = {
+ "song": "Blum Filter",
+ "title": "Možná tam je",
+ "source": "19-bloom-filter.md",
+ "language": "cs",
+ "duration_ms": 134660,
+ "lines": [
+  {
+   "start_ms": 160,
+   "end_ms": 8820,
+   "text": "Malé bitové pole, pár hešovacích funkcí, otázka jediná, je ten prvek v množině",
+   "words": [
+    {
+     "w": "Malé",
+     "start_ms": 160,
+     "end_ms": 610
+    },
+    {
+     "w": "bitové",
+     "start_ms": 610,
+     "end_ms": 1470
+    },
+    {
+     "w": "pole,",
+     "start_ms": 1470,
+     "end_ms": 2230
+    },
+    {
+     "w": "pár",
+     "start_ms": 2230,
+     "end_ms": 2500
+    },
+    {
+     "w": "hešovacích",
+     "start_ms": 2500,
+     "end_ms": 3520
+    },
+    {
+     "w": "funkcí,",
+     "start_ms": 3520,
+     "end_ms": 4390
+    },
+    {
+     "w": "otázka",
+     "start_ms": 4390,
+     "end_ms": 5250
+    },
+    {
+     "w": "jediná,",
+     "start_ms": 5250,
+     "end_ms": 6390
+    },
+    {
+     "w": "je",
+     "start_ms": 6390,
+     "end_ms": 6640
+    },
+    {
+     "w": "ten",
+     "start_ms": 6640,
+     "end_ms": 7020
+    },
+    {
+     "w": "prvek",
+     "start_ms": 7020,
+     "end_ms": 7640
+    },
+    {
+     "w": "v",
+     "start_ms": 7640,
+     "end_ms": 7760
+    },
+    {
+     "w": "množině",
+     "start_ms": 7760,
+     "end_ms": 8820
+    }
+   ]
+  },
+  {
+   "start_ms": 8820,
+   "end_ms": 19800,
+   "text": "Bloom filter je struktura, co skoro nic neváží, rychlý test, jestli prvek v množině je",
+   "words": [
+    {
+     "w": "Bloom",
+     "start_ms": 8820,
+     "end_ms": 9630
+    },
+    {
+     "w": "filter",
+     "start_ms": 9630,
+     "end_ms": 10610
+    },
+    {
+     "w": "je",
+     "start_ms": 10610,
+     "end_ms": 10980
+    },
+    {
+     "w": "struktura,",
+     "start_ms": 10980,
+     "end_ms": 12680
+    },
+    {
+     "w": "co",
+     "start_ms": 12680,
+     "end_ms": 13000
+    },
+    {
+     "w": "skoro",
+     "start_ms": 13000,
+     "end_ms": 13850
+    },
+    {
+     "w": "nic",
+     "start_ms": 13850,
+     "end_ms": 14300
+    },
+    {
+     "w": "neváží,",
+     "start_ms": 14300,
+     "end_ms": 16140
+    },
+    {
+     "w": "rychlý",
+     "start_ms": 16140,
+     "end_ms": 16800
+    },
+    {
+     "w": "test,",
+     "start_ms": 16800,
+     "end_ms": 17370
+    },
+    {
+     "w": "jestli",
+     "start_ms": 17370,
+     "end_ms": 17940
+    },
+    {
+     "w": "prvek",
+     "start_ms": 17940,
+     "end_ms": 18410
+    },
+    {
+     "w": "v",
+     "start_ms": 18410,
+     "end_ms": 18500
+    },
+    {
+     "w": "množině",
+     "start_ms": 18500,
+     "end_ms": 19260
+    },
+    {
+     "w": "je",
+     "start_ms": 19260,
+     "end_ms": 19800
+    }
+   ]
+  },
+  {
+   "start_ms": 19800,
+   "end_ms": 28400,
+   "text": "Máš bitové pole a pár hešovacích funkcí, vložíš prvek, heše ho proženou, pár bitů skočí na jedno",
+   "words": [
+    {
+     "w": "Máš",
+     "start_ms": 19800,
+     "end_ms": 20220
+    },
+    {
+     "w": "bitové",
+     "start_ms": 20220,
+     "end_ms": 20820
+    },
+    {
+     "w": "pole",
+     "start_ms": 20820,
+     "end_ms": 21170
+    },
+    {
+     "w": "a",
+     "start_ms": 21170,
+     "end_ms": 21250
+    },
+    {
+     "w": "pár",
+     "start_ms": 21250,
+     "end_ms": 21590
+    },
+    {
+     "w": "hešovacích",
+     "start_ms": 21590,
+     "end_ms": 22620
+    },
+    {
+     "w": "funkcí,",
+     "start_ms": 22620,
+     "end_ms": 23390
+    },
+    {
+     "w": "vložíš",
+     "start_ms": 23390,
+     "end_ms": 24150
+    },
+    {
+     "w": "prvek,",
+     "start_ms": 24150,
+     "end_ms": 24740
+    },
+    {
+     "w": "heše",
+     "start_ms": 24740,
+     "end_ms": 25170
+    },
+    {
+     "w": "ho",
+     "start_ms": 25170,
+     "end_ms": 25340
+    },
+    {
+     "w": "proženou,",
+     "start_ms": 25340,
+     "end_ms": 26500
+    },
+    {
+     "w": "pár",
+     "start_ms": 26500,
+     "end_ms": 26820
+    },
+    {
+     "w": "bitů",
+     "start_ms": 26820,
+     "end_ms": 27220
+    },
+    {
+     "w": "skočí",
+     "start_ms": 27220,
+     "end_ms": 27780
+    },
+    {
+     "w": "na",
+     "start_ms": 27780,
+     "end_ms": 27940
+    },
+    {
+     "w": "jedno",
+     "start_ms": 27940,
+     "end_ms": 28400
+    }
+   ]
+  },
+  {
+   "start_ms": 28400,
+   "end_ms": 32240,
+   "text": "A když se ptám, proženu prvek stejnýma hešema",
+   "words": [
+    {
+     "w": "A",
+     "start_ms": 28400,
+     "end_ms": 28590
+    },
+    {
+     "w": "když",
+     "start_ms": 28590,
+     "end_ms": 29000
+    },
+    {
+     "w": "se",
+     "start_ms": 29000,
+     "end_ms": 29190
+    },
+    {
+     "w": "ptám,",
+     "start_ms": 29190,
+     "end_ms": 29740
+    },
+    {
+     "w": "proženu",
+     "start_ms": 29740,
+     "end_ms": 30300
+    },
+    {
+     "w": "prvek",
+     "start_ms": 30300,
+     "end_ms": 30680
+    },
+    {
+     "w": "stejnýma",
+     "start_ms": 30680,
+     "end_ms": 31580
+    },
+    {
+     "w": "hešema",
+     "start_ms": 31580,
+     "end_ms": 32240
+    }
+   ]
+  },
+  {
+   "start_ms": 32240,
+   "end_ms": 36060,
+   "text": "Když svítí všechny bity, možná tam je",
+   "words": [
+    {
+     "w": "Když",
+     "start_ms": 32240,
+     "end_ms": 32640
+    },
+    {
+     "w": "svítí",
+     "start_ms": 32640,
+     "end_ms": 33220
+    },
+    {
+     "w": "všechny",
+     "start_ms": 33220,
+     "end_ms": 33880
+    },
+    {
+     "w": "bity,",
+     "start_ms": 33880,
+     "end_ms": 34530
+    },
+    {
+     "w": "možná",
+     "start_ms": 34530,
+     "end_ms": 35400
+    },
+    {
+     "w": "tam",
+     "start_ms": 35400,
+     "end_ms": 35780
+    },
+    {
+     "w": "je",
+     "start_ms": 35780,
+     "end_ms": 36060
+    }
+   ]
+  },
+  {
+   "start_ms": 36060,
+   "end_ms": 40380,
+   "text": "Když je aspoň jeden bit nula, určitě tam není",
+   "words": [
+    {
+     "w": "Když",
+     "start_ms": 36060,
+     "end_ms": 36560
+    },
+    {
+     "w": "je",
+     "start_ms": 36560,
+     "end_ms": 36830
+    },
+    {
+     "w": "aspoň",
+     "start_ms": 36830,
+     "end_ms": 37360
+    },
+    {
+     "w": "jeden",
+     "start_ms": 37360,
+     "end_ms": 37860
+    },
+    {
+     "w": "bit",
+     "start_ms": 37860,
+     "end_ms": 38160
+    },
+    {
+     "w": "nula,",
+     "start_ms": 38160,
+     "end_ms": 38760
+    },
+    {
+     "w": "určitě",
+     "start_ms": 38760,
+     "end_ms": 39600
+    },
+    {
+     "w": "tam",
+     "start_ms": 39600,
+     "end_ms": 39860
+    },
+    {
+     "w": "není",
+     "start_ms": 39860,
+     "end_ms": 40380
+    }
+   ]
+  },
+  {
+   "start_ms": 40380,
+   "end_ms": 43820,
+   "text": "Když jsou všechny bity jedna, možná tam je",
+   "words": [
+    {
+     "w": "Když",
+     "start_ms": 40380,
+     "end_ms": 40800
+    },
+    {
+     "w": "jsou",
+     "start_ms": 40800,
+     "end_ms": 41140
+    },
+    {
+     "w": "všechny",
+     "start_ms": 41140,
+     "end_ms": 41800
+    },
+    {
+     "w": "bity",
+     "start_ms": 41800,
+     "end_ms": 42140
+    },
+    {
+     "w": "jedna,",
+     "start_ms": 42140,
+     "end_ms": 42730
+    },
+    {
+     "w": "možná",
+     "start_ms": 42730,
+     "end_ms": 43340
+    },
+    {
+     "w": "tam",
+     "start_ms": 43340,
+     "end_ms": 43570
+    },
+    {
+     "w": "je",
+     "start_ms": 43570,
+     "end_ms": 43820
+    }
+   ]
+  },
+  {
+   "start_ms": 43820,
+   "end_ms": 47880,
+   "text": "Když řekne není, tak tam fakt není",
+   "words": [
+    {
+     "w": "Když",
+     "start_ms": 43820,
+     "end_ms": 44420
+    },
+    {
+     "w": "řekne",
+     "start_ms": 44420,
+     "end_ms": 45140
+    },
+    {
+     "w": "není,",
+     "start_ms": 45140,
+     "end_ms": 45980
+    },
+    {
+     "w": "tak",
+     "start_ms": 45980,
+     "end_ms": 46340
+    },
+    {
+     "w": "tam",
+     "start_ms": 46340,
+     "end_ms": 46700
+    },
+    {
+     "w": "fakt",
+     "start_ms": 46700,
+     "end_ms": 47190
+    },
+    {
+     "w": "není",
+     "start_ms": 47190,
+     "end_ms": 47880
+    }
+   ]
+  },
+  {
+   "start_ms": 47880,
+   "end_ms": 51580,
+   "text": "Žádné false negatives, jen false positives",
+   "words": [
+    {
+     "w": "Žádné",
+     "start_ms": 47880,
+     "end_ms": 48540
+    },
+    {
+     "w": "false",
+     "start_ms": 48540,
+     "end_ms": 48970
+    },
+    {
+     "w": "negatives,",
+     "start_ms": 48970,
+     "end_ms": 50000
+    },
+    {
+     "w": "jen",
+     "start_ms": 50000,
+     "end_ms": 50250
+    },
+    {
+     "w": "false",
+     "start_ms": 50250,
+     "end_ms": 50680
+    },
+    {
+     "w": "positives",
+     "start_ms": 50680,
+     "end_ms": 51580
+    }
+   ]
+  },
+  {
+   "start_ms": 51580,
+   "end_ms": 54700,
+   "text": "False positive vznikne z kolize bitů",
+   "words": [
+    {
+     "w": "False",
+     "start_ms": 51580,
+     "end_ms": 52090
+    },
+    {
+     "w": "positive",
+     "start_ms": 52090,
+     "end_ms": 52840
+    },
+    {
+     "w": "vznikne",
+     "start_ms": 52840,
+     "end_ms": 53490
+    },
+    {
+     "w": "z",
+     "start_ms": 53490,
+     "end_ms": 53580
+    },
+    {
+     "w": "kolize",
+     "start_ms": 53580,
+     "end_ms": 54160
+    },
+    {
+     "w": "bitů",
+     "start_ms": 54160,
+     "end_ms": 54700
+    }
+   ]
+  },
+  {
+   "start_ms": 54700,
+   "end_ms": 59780,
+   "text": "Jiný prvek je nastavil, a já si myslím, že tam je",
+   "words": [
+    {
+     "w": "Jiný",
+     "start_ms": 54700,
+     "end_ms": 55130
+    },
+    {
+     "w": "prvek",
+     "start_ms": 55130,
+     "end_ms": 55540
+    },
+    {
+     "w": "je",
+     "start_ms": 55540,
+     "end_ms": 55720
+    },
+    {
+     "w": "nastavil,",
+     "start_ms": 55720,
+     "end_ms": 56440
+    },
+    {
+     "w": "a",
+     "start_ms": 56440,
+     "end_ms": 56580
+    },
+    {
+     "w": "já",
+     "start_ms": 56580,
+     "end_ms": 57010
+    },
+    {
+     "w": "si",
+     "start_ms": 57010,
+     "end_ms": 57290
+    },
+    {
+     "w": "myslím,",
+     "start_ms": 57290,
+     "end_ms": 58580
+    },
+    {
+     "w": "že",
+     "start_ms": 58580,
+     "end_ms": 59010
+    },
+    {
+     "w": "tam",
+     "start_ms": 59010,
+     "end_ms": 59440
+    },
+    {
+     "w": "je",
+     "start_ms": 59440,
+     "end_ms": 59780
+    }
+   ]
+  },
+  {
+   "start_ms": 59780,
+   "end_ms": 63180,
+   "text": "Mazat ti to neumí, ten základní Bloom filter",
+   "words": [
+    {
+     "w": "Mazat",
+     "start_ms": 59780,
+     "end_ms": 60260
+    },
+    {
+     "w": "ti",
+     "start_ms": 60260,
+     "end_ms": 60500
+    },
+    {
+     "w": "to",
+     "start_ms": 60500,
+     "end_ms": 60740
+    },
+    {
+     "w": "neumí,",
+     "start_ms": 60740,
+     "end_ms": 61610
+    },
+    {
+     "w": "ten",
+     "start_ms": 61610,
+     "end_ms": 61850
+    },
+    {
+     "w": "základní",
+     "start_ms": 61850,
+     "end_ms": 62440
+    },
+    {
+     "w": "Bloom",
+     "start_ms": 62440,
+     "end_ms": 62760
+    },
+    {
+     "w": "filter",
+     "start_ms": 62760,
+     "end_ms": 63180
+    }
+   ]
+  },
+  {
+   "start_ms": 63180,
+   "end_ms": 68500,
+   "text": "Jeden bit sdílí víc prvků, nuluje se těžko",
+   "words": [
+    {
+     "w": "Jeden",
+     "start_ms": 63180,
+     "end_ms": 63810
+    },
+    {
+     "w": "bit",
+     "start_ms": 63810,
+     "end_ms": 64180
+    },
+    {
+     "w": "sdílí",
+     "start_ms": 64180,
+     "end_ms": 65040
+    },
+    {
+     "w": "víc",
+     "start_ms": 65040,
+     "end_ms": 65540
+    },
+    {
+     "w": "prvků,",
+     "start_ms": 65540,
+     "end_ms": 66620
+    },
+    {
+     "w": "nuluje",
+     "start_ms": 66620,
+     "end_ms": 67350
+    },
+    {
+     "w": "se",
+     "start_ms": 67350,
+     "end_ms": 67590
+    },
+    {
+     "w": "těžko",
+     "start_ms": 67590,
+     "end_ms": 68500
+    }
+   ]
+  },
+  {
+   "start_ms": 68500,
+   "end_ms": 71440,
+   "text": "Než sáhneš na disk nebo do databáze",
+   "words": [
+    {
+     "w": "Než",
+     "start_ms": 68500,
+     "end_ms": 68850
+    },
+    {
+     "w": "sáhneš",
+     "start_ms": 68850,
+     "end_ms": 69510
+    },
+    {
+     "w": "na",
+     "start_ms": 69510,
+     "end_ms": 69680
+    },
+    {
+     "w": "disk",
+     "start_ms": 69680,
+     "end_ms": 70030
+    },
+    {
+     "w": "nebo",
+     "start_ms": 70030,
+     "end_ms": 70370
+    },
+    {
+     "w": "do",
+     "start_ms": 70370,
+     "end_ms": 70540
+    },
+    {
+     "w": "databáze",
+     "start_ms": 70540,
+     "end_ms": 71440
+    }
+   ]
+  },
+  {
+   "start_ms": 71440,
+   "end_ms": 75300,
+   "text": "Zeptej se filtru levně a rychle",
+   "words": [
+    {
+     "w": "Zeptej",
+     "start_ms": 71440,
+     "end_ms": 72280
+    },
+    {
+     "w": "se",
+     "start_ms": 72280,
+     "end_ms": 72560
+    },
+    {
+     "w": "filtru",
+     "start_ms": 72560,
+     "end_ms": 73410
+    },
+    {
+     "w": "levně",
+     "start_ms": 73410,
+     "end_ms": 74250
+    },
+    {
+     "w": "a",
+     "start_ms": 74250,
+     "end_ms": 74390
+    },
+    {
+     "w": "rychle",
+     "start_ms": 74390,
+     "end_ms": 75300
+    }
+   ]
+  },
+  {
+   "start_ms": 75300,
+   "end_ms": 78940,
+   "text": "Co určitě není, odfiltruješ hned",
+   "words": [
+    {
+     "w": "Co",
+     "start_ms": 75300,
+     "end_ms": 75520
+    },
+    {
+     "w": "určitě",
+     "start_ms": 75520,
+     "end_ms": 76400
+    },
+    {
+     "w": "není,",
+     "start_ms": 76400,
+     "end_ms": 77170
+    },
+    {
+     "w": "odfiltruješ",
+     "start_ms": 77170,
+     "end_ms": 78490
+    },
+    {
+     "w": "hned",
+     "start_ms": 78490,
+     "end_ms": 78940
+    }
+   ]
+  },
+  {
+   "start_ms": 78940,
+   "end_ms": 83640,
+   "text": "Ušetříš drahé hledání a jdeš dál",
+   "words": [
+    {
+     "w": "Ušetříš",
+     "start_ms": 78940,
+     "end_ms": 80370
+    },
+    {
+     "w": "drahé",
+     "start_ms": 80370,
+     "end_ms": 81150
+    },
+    {
+     "w": "hledání",
+     "start_ms": 81150,
+     "end_ms": 82320
+    },
+    {
+     "w": "a",
+     "start_ms": 82320,
+     "end_ms": 82450
+    },
+    {
+     "w": "jdeš",
+     "start_ms": 82450,
+     "end_ms": 83100
+    },
+    {
+     "w": "dál",
+     "start_ms": 83100,
+     "end_ms": 83640
+    }
+   ]
+  },
+  {
+   "start_ms": 83640,
+   "end_ms": 87440,
+   "text": "Robot, co leze po webu, ptá se: Viděl jsem tu adresu?",
+   "words": [
+    {
+     "w": "Robot,",
+     "start_ms": 83640,
+     "end_ms": 84270
+    },
+    {
+     "w": "co",
+     "start_ms": 84270,
+     "end_ms": 84450
+    },
+    {
+     "w": "leze",
+     "start_ms": 84450,
+     "end_ms": 84810
+    },
+    {
+     "w": "po",
+     "start_ms": 84810,
+     "end_ms": 84980
+    },
+    {
+     "w": "webu,",
+     "start_ms": 84980,
+     "end_ms": 85400
+    },
+    {
+     "w": "ptá",
+     "start_ms": 85400,
+     "end_ms": 85660
+    },
+    {
+     "w": "se:",
+     "start_ms": 85660,
+     "end_ms": 85880
+    },
+    {
+     "w": "Viděl",
+     "start_ms": 85880,
+     "end_ms": 86320
+    },
+    {
+     "w": "jsem",
+     "start_ms": 86320,
+     "end_ms": 86590
+    },
+    {
+     "w": "tu",
+     "start_ms": 86590,
+     "end_ms": 86720
+    },
+    {
+     "w": "adresu?",
+     "start_ms": 86720,
+     "end_ms": 87440
+    }
+   ]
+  },
+  {
+   "start_ms": 87440,
+   "end_ms": 92040,
+   "text": "Databáze odfiltruje, co na disku nemá",
+   "words": [
+    {
+     "w": "Databáze",
+     "start_ms": 87440,
+     "end_ms": 88310
+    },
+    {
+     "w": "odfiltruje,",
+     "start_ms": 88310,
+     "end_ms": 89340
+    },
+    {
+     "w": "co",
+     "start_ms": 89340,
+     "end_ms": 89710
+    },
+    {
+     "w": "na",
+     "start_ms": 89710,
+     "end_ms": 90100
+    },
+    {
+     "w": "disku",
+     "start_ms": 90100,
+     "end_ms": 91000
+    },
+    {
+     "w": "nemá",
+     "start_ms": 91000,
+     "end_ms": 92040
+    }
+   ]
+  },
+  {
+   "start_ms": 92040,
+   "end_ms": 96140,
+   "text": "Čím víc prvků nacpeš, tím víc kolizí máš",
+   "words": [
+    {
+     "w": "Čím",
+     "start_ms": 92040,
+     "end_ms": 92380
+    },
+    {
+     "w": "víc",
+     "start_ms": 92380,
+     "end_ms": 92720
+    },
+    {
+     "w": "prvků",
+     "start_ms": 92720,
+     "end_ms": 93220
+    },
+    {
+     "w": "nacpeš,",
+     "start_ms": 93220,
+     "end_ms": 94030
+    },
+    {
+     "w": "tím",
+     "start_ms": 94030,
+     "end_ms": 94400
+    },
+    {
+     "w": "víc",
+     "start_ms": 94400,
+     "end_ms": 94760
+    },
+    {
+     "w": "kolizí",
+     "start_ms": 94760,
+     "end_ms": 95390
+    },
+    {
+     "w": "máš",
+     "start_ms": 95390,
+     "end_ms": 96140
+    }
+   ]
+  },
+  {
+   "start_ms": 96140,
+   "end_ms": 100140,
+   "text": "Menší pole, víc false positivů máš",
+   "words": [
+    {
+     "w": "Menší",
+     "start_ms": 96140,
+     "end_ms": 96980
+    },
+    {
+     "w": "pole,",
+     "start_ms": 96980,
+     "end_ms": 97540
+    },
+    {
+     "w": "víc",
+     "start_ms": 97540,
+     "end_ms": 97950
+    },
+    {
+     "w": "false",
+     "start_ms": 97950,
+     "end_ms": 98600
+    },
+    {
+     "w": "positivů",
+     "start_ms": 98600,
+     "end_ms": 99260
+    },
+    {
+     "w": "máš",
+     "start_ms": 99260,
+     "end_ms": 100140
+    }
+   ]
+  },
+  {
+   "start_ms": 100140,
+   "end_ms": 104040,
+   "text": "Větší pole a víc hashů sníží chybovost",
+   "words": [
+    {
+     "w": "Větší",
+     "start_ms": 100140,
+     "end_ms": 101020
+    },
+    {
+     "w": "pole",
+     "start_ms": 101020,
+     "end_ms": 101340
+    },
+    {
+     "w": "a",
+     "start_ms": 101340,
+     "end_ms": 101420
+    },
+    {
+     "w": "víc",
+     "start_ms": 101420,
+     "end_ms": 101790
+    },
+    {
+     "w": "hashů",
+     "start_ms": 101790,
+     "end_ms": 102220
+    },
+    {
+     "w": "sníží",
+     "start_ms": 102220,
+     "end_ms": 102880
+    },
+    {
+     "w": "chybovost",
+     "start_ms": 102880,
+     "end_ms": 104040
+    }
+   ]
+  },
+  {
+   "start_ms": 104040,
+   "end_ms": 108740,
+   "text": "Ale zaplatíš to pamětí, a to je ten obchod",
+   "words": [
+    {
+     "w": "Ale",
+     "start_ms": 104040,
+     "end_ms": 104320
+    },
+    {
+     "w": "zaplatíš",
+     "start_ms": 104320,
+     "end_ms": 105270
+    },
+    {
+     "w": "to",
+     "start_ms": 105270,
+     "end_ms": 105460
+    },
+    {
+     "w": "pamětí,",
+     "start_ms": 105460,
+     "end_ms": 106500
+    },
+    {
+     "w": "a",
+     "start_ms": 106500,
+     "end_ms": 106630
+    },
+    {
+     "w": "to",
+     "start_ms": 106630,
+     "end_ms": 107060
+    },
+    {
+     "w": "je",
+     "start_ms": 107060,
+     "end_ms": 107150
+    },
+    {
+     "w": "ten",
+     "start_ms": 107150,
+     "end_ms": 107540
+    },
+    {
+     "w": "obchod",
+     "start_ms": 107540,
+     "end_ms": 108740
+    }
+   ]
+  },
+  {
+   "start_ms": 110440,
+   "end_ms": 114400,
+   "text": "Když je aspoň jeden bit nula, určitě tam není.",
+   "words": [
+    {
+     "w": "Když",
+     "start_ms": 110440,
+     "end_ms": 110830
+    },
+    {
+     "w": "je",
+     "start_ms": 110830,
+     "end_ms": 110890
+    },
+    {
+     "w": "aspoň",
+     "start_ms": 110890,
+     "end_ms": 111270
+    },
+    {
+     "w": "jeden",
+     "start_ms": 111270,
+     "end_ms": 111600
+    },
+    {
+     "w": "bit",
+     "start_ms": 111600,
+     "end_ms": 111790
+    },
+    {
+     "w": "nula,",
+     "start_ms": 111790,
+     "end_ms": 112280
+    },
+    {
+     "w": "určitě",
+     "start_ms": 112280,
+     "end_ms": 113160
+    },
+    {
+     "w": "tam",
+     "start_ms": 113160,
+     "end_ms": 113490
+    },
+    {
+     "w": "není.",
+     "start_ms": 113490,
+     "end_ms": 114400
+    }
+   ]
+  },
+  {
+   "start_ms": 114770,
+   "end_ms": 117780,
+   "text": "Když jsou všechny bity jedna, možná tam je.",
+   "words": [
+    {
+     "w": "Když",
+     "start_ms": 114770,
+     "end_ms": 115120
+    },
+    {
+     "w": "jsou",
+     "start_ms": 115120,
+     "end_ms": 115400
+    },
+    {
+     "w": "všechny",
+     "start_ms": 115400,
+     "end_ms": 115960
+    },
+    {
+     "w": "bity",
+     "start_ms": 115960,
+     "end_ms": 116240
+    },
+    {
+     "w": "jedna,",
+     "start_ms": 116240,
+     "end_ms": 116730
+    },
+    {
+     "w": "možná",
+     "start_ms": 116730,
+     "end_ms": 117220
+    },
+    {
+     "w": "tam",
+     "start_ms": 117220,
+     "end_ms": 117430
+    },
+    {
+     "w": "je.",
+     "start_ms": 117430,
+     "end_ms": 117780
+    }
+   ]
+  },
+  {
+   "start_ms": 118280,
+   "end_ms": 121650,
+   "text": "Když řekne není, tak tam fakt není.",
+   "words": [
+    {
+     "w": "Když",
+     "start_ms": 118280,
+     "end_ms": 118750
+    },
+    {
+     "w": "řekne",
+     "start_ms": 118750,
+     "end_ms": 119310
+    },
+    {
+     "w": "není,",
+     "start_ms": 119310,
+     "end_ms": 119970
+    },
+    {
+     "w": "tak",
+     "start_ms": 119970,
+     "end_ms": 120240
+    },
+    {
+     "w": "tam",
+     "start_ms": 120240,
+     "end_ms": 120530
+    },
+    {
+     "w": "fakt",
+     "start_ms": 120530,
+     "end_ms": 120910
+    },
+    {
+     "w": "není.",
+     "start_ms": 120910,
+     "end_ms": 121650
+    }
+   ]
+  },
+  {
+   "start_ms": 122290,
+   "end_ms": 125910,
+   "text": "Žádné false negatives, jen false positives",
+   "words": [
+    {
+     "w": "Žádné",
+     "start_ms": 122290,
+     "end_ms": 123010
+    },
+    {
+     "w": "false",
+     "start_ms": 123010,
+     "end_ms": 123380
+    },
+    {
+     "w": "negatives,",
+     "start_ms": 123380,
+     "end_ms": 124280
+    },
+    {
+     "w": "jen",
+     "start_ms": 124280,
+     "end_ms": 124550
+    },
+    {
+     "w": "false",
+     "start_ms": 124550,
+     "end_ms": 124920
+    },
+    {
+     "w": "positives",
+     "start_ms": 124920,
+     "end_ms": 125910
+    }
+   ]
+  },
+  {
+   "start_ms": 126540,
+   "end_ms": 130310,
+   "text": "Malé bitové pole, pár hešovacích funkcí.",
+   "words": [
+    {
+     "w": "Malé",
+     "start_ms": 126540,
+     "end_ms": 126970
+    },
+    {
+     "w": "bitové",
+     "start_ms": 126970,
+     "end_ms": 127570
+    },
+    {
+     "w": "pole,",
+     "start_ms": 127570,
+     "end_ms": 128100
+    },
+    {
+     "w": "pár",
+     "start_ms": 128100,
+     "end_ms": 128430
+    },
+    {
+     "w": "hešovacích",
+     "start_ms": 128430,
+     "end_ms": 129450
+    },
+    {
+     "w": "funkcí.",
+     "start_ms": 129450,
+     "end_ms": 130310
+    }
+   ]
+  },
+  {
+   "start_ms": 130960,
+   "end_ms": 134660,
+   "text": "Určitě tam není, nebo možná tam je.",
+   "words": [
+    {
+     "w": "Určitě",
+     "start_ms": 130960,
+     "end_ms": 131760
+    },
+    {
+     "w": "tam",
+     "start_ms": 131760,
+     "end_ms": 132060
+    },
+    {
+     "w": "není,",
+     "start_ms": 132060,
+     "end_ms": 132760
+    },
+    {
+     "w": "nebo",
+     "start_ms": 132760,
+     "end_ms": 133150
+    },
+    {
+     "w": "možná",
+     "start_ms": 133150,
+     "end_ms": 133860
+    },
+    {
+     "w": "tam",
+     "start_ms": 133860,
+     "end_ms": 134160
+    },
+    {
+     "w": "je.",
+     "start_ms": 134160,
+     "end_ms": 134660
+    }
+   ]
+  }
+ ]
+};

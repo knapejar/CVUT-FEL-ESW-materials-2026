@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Data race, volatile a dvě atomiky — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#13091e; --bg-bot:#05060d; --panel:#0b1530; --text:#f3eafc; --muted:#9a86b4;
+    --accent:#FF3D7F; --accent2:#23e0c8; --writer:#ffb23d; --reader:#5bc8ff; --danger:#ff4d4d;
+    --safe:#5be08a; --vinyl:#1c1622; --gold:#ffd86b; --ink:#0a0612; --border:#241638;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(255,61,127,.16);border:1px solid rgba(255,61,127,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#04040a;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.80),rgba(0,0,0,.36) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(255,61,127,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 var(--kbpulse,16px) rgba(255,61,127,.95)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#d8c2f0;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(30,12,40,.85),rgba(4,4,10,.94));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#FF3D7F,#23e0c8);color:#0a0612;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(255,61,127,.5)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#ecdffb} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#2a1c42 var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">Data race, volatile a dvě atomiky</span>
+    <span class="badge">IMMERSIVE VIDEO 💥</span>
+    <span class="hints">space = play/pauza · ←/→ = ±5s · R = znovu</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">Data race, volatile a dvě atomiky — výuková lyric-video k B4M36ESW. Jeden gramofon = sdílené místo v paměti, dva MC = dvě vlákna. Bez synchronizace se výsledek rozsype; obrana = volatile, zámek, nebo atomika (CAS, fetch-and-add).<small>~3 min 27 s · zpívaná videolekce · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="207.18" step="0.01" value="0">
+    <span class="time" id="tDur">3:27</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-data-rejs.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){showErr('pixi-filters not loaded after pixi');}
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/Data Rejs.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:207180,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=207.18;             // fallback stage length until audio.duration is known
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (§2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function triWave01(q){q=clamp01(q);return 1-Math.abs(2*q-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // deterministic value-noise in [0,1) keyed on a number — reproducible from t (so seek is correct)
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  // Boom-bap beat (90 BPM)
+  const BPM=90;
+  const beatPhase=t=>(t*BPM/60)%1;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  const kick=t=>Math.pow(1-beatPhase(t),3);          // sharp downbeat envelope
+  // deterministic pseudo-random readout value for the race loop (keyed on roll index)
+  function prngFromBeat(idx){ return 90+Math.floor(hash01(idx*12.9898+3.7)*120); }
+
+  // ---- S22 DURATION GUARD (deterministic for any audio.duration) ----
+  const END_START=207.18, MIN_TAIL=1.0;
+  function tEnd(){ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; return Math.max(d, END_START+MIN_TAIL); }
+  function s22q(t){ return ph(t, END_START, tEnd()-0.7); }
+  // GLOBAL beat gates (default 1.0; ONLY S22 ramps to 0 as a function of q)
+  function beatAmp(t){ if(t<END_START) return 1; return 1-easeInOut(clamp01(s22q(t)/0.6)); }
+  function kickAmp(t){ if(t<END_START) return 1; return 1-easeInOut(clamp01(s22q(t)/0.6)); }
+
+  // ============================================================
+  //  2) PALETTE + CANONICAL WORLD COORDS
+  // ============================================================
+  const C={
+    bgTop:0x13091e, bgBot:0x05060d, bgTopTeal:0x0a1d24, bgBotTeal:0x05121a,
+    bgTopRace:0x25081a, bgBotRace:0x140510,
+    panel:0x0b1530, accent:0xFF3D7F, accent2:0x23e0c8, writer:0xffb23d, reader:0x5bc8ff,
+    danger:0xff4d4d, safe:0x5be08a, vinyl:0x1c1622, gold:0xffd86b,
+    text:0xf3eafc, muted:0x9a86b4, ink:0x0a0612, white:0xffffff
+  };
+  const W=1280,H=720;
+  const DECK=[640,250], VAL=[640,250];
+  const WRITER=[300,440], READER=[980,440];
+  const BOOTH=[640,90], CUE=[[560,120],[720,120]];
+  const CARD_X=[520,640,760], CARD_Y=250;
+  const MPC=[[470,600],[640,600],[810,600]];
+  const REC=[[380,560],[640,560],[900,560]];
+  const RAM=[1140,250];
+  const BUG=[1180,80];
+  const CORES=[[360,200],[920,200],[360,470],[920,470]];
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const setLayer=new PIXI.Container();   // persistent memory-bay set (deck, MCs, booth)
+  const sceneLayer=new PIXI.Container(); // per-scene actors (cross-faded)
+  const fxLayer=new PIXI.Container();    // particle dust + glow + sparks
+  const overlayFx=new PIXI.Container();  // persistent — owns transient/carried full-frame filters
+  cameraRoot.addChild(bgLayer,setLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list (§2 carried-filter ownership)
+  const _ofx=[];
+  function addOverlayFx(name,filter){ if(!filter) return; if(_ofx.some(o=>o.name===name)) return; _ofx.push({name,filter}); overlayFx.filters.push(filter); }
+  function removeOverlayFx(name){ const i=_ofx.findIndex(o=>o.name===name); if(i<0) return; const f=_ofx[i].filter; _ofx.splice(i,1); const j=overlayFx.filters.indexOf(f); if(j>=0) overlayFx.filters.splice(j,1); }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §8)
+  //  Optional keyed PNGs layered low-alpha over the always-drawn vector actors.
+  //  With NO images present the video is a COMPLETE, unchanged vector masterpiece.
+  //  No assets-data-rejs.js tag is shipped → window.ASSETS is undefined → vectors only.
+  // ============================================================
+  const IMG={}; const IMG_SPRITES={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null); img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,contain){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5); s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1; let sc=targetW/tw;
+    if(contain){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc); s.alpha=(alpha==null?0.95:alpha); parent.addChild(s); return s;
+  }
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    const SLUGS=['turntable','mc-writer','mc-reader','dj-booth','glass-case','club-bg'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{
+      if(!tex) return; IMG[slug]=tex;
+      try{
+        if(slug==='club-bg'){ const s=heroSprite(bgLayer,'club-bg',W/2,H/2,W,0.22,true); if(s){ bgLayer.setChildIndex(s,0); IMG_SPRITES['club-bg']=s; } }
+        else if(slug==='turntable'){ const s=heroSprite(deck,'turntable',0,0,300,0.95,false); if(s){ deck.addChildAt(s,0); IMG_SPRITES['turntable']=s; } }
+        else if(slug==='mc-writer'){ const s=heroSprite(writerMC,'mc-writer',0,0,90,0.92,false); if(s) IMG_SPRITES['mc-writer']=s; }
+        else if(slug==='mc-reader'){ const s=heroSprite(readerMC,'mc-reader',0,0,90,0.92,false); if(s) IMG_SPRITES['mc-reader']=s; }
+        else if(slug==='dj-booth'){ const s=heroSprite(booth,'dj-booth',0,0,200,0.92,false); if(s) IMG_SPRITES['dj-booth']=s; }
+        // 'glass-case' attached by scene builders that draw the case
+      }catch(e){ showErr('img '+slug+': '+e.message); }
+    }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={accent:radialTex(0xFF3D7F),accent2:radialTex(0x23e0c8),writer:radialTex(0xffb23d),reader:radialTex(0x5bc8ff),
+    gold:radialTex(0xffd86b),safe:radialTex(0x7fe6a6),danger:radialTex(0xff8a8a),white:radialTex(0xffffff)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={cyan:lineTex(0x5bc8ff),amber:lineTex(0xffb23d),teal:lineTex(0x23e0c8),red:lineTex(0xff6a6a),safe:lineTex(0x7fe6a6)};
+  const _cellG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,12,12,3).endFill();
+  const CELL_TEX=app.renderer.generateTexture(_cellG,{resolution:2}); _cellG.destroy();
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const im=g.createImageData(256,256);for(let i=0;i<im.data.length;i+=4){im.data[i]=Math.random()*255;im.data[i+1]=Math.random()*255;im.data[i+2]=128;im.data[i+3]=255;}
+    g.putImageData(im,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+
+  function txt(str,size,color,weight,mono){const t=new PIXI.Text(str,{fontFamily:mono?'ui-monospace, Consolas, monospace':'Arial, Helvetica, sans-serif',
+    fontSize:size,fill:color,fontWeight:weight||'700',align:'center',dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});
+    t.anchor.set(.5);t.resolution=2;return t;}
+  function legible(t){ const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr; return t; }
+
+  // ============================================================
+  //  5) BACKGROUND (stage gradient + truss/speakers + crackle dust + grid band + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:false,kawase:false,tilt:false};
+
+  // static club truss + speaker stacks (cacheAsBitmap)
+  const truss=new PIXI.Graphics();
+  truss.lineStyle(3,0x0b1530,0.55);
+  truss.moveTo(40,70).lineTo(1240,70); truss.moveTo(40,86).lineTo(1240,86);
+  for(let x=70;x<=1210;x+=64){ truss.moveTo(x,70).lineTo(x,86); }
+  truss.lineStyle(0);
+  // speaker stacks left + right
+  [70,120,1090,1140].forEach((sx,i)=>{ const tall=(i<2)?420:420;
+    truss.beginFill(0x0b1530,0.40).drawRoundedRect(sx,180,46,tall,6).endFill();
+    truss.lineStyle(1.5,0x1a1030,0.5);
+    for(let y=210;y<560;y+=58){ truss.drawCircle(sx+23,y,15); }
+    truss.lineStyle(0);
+  });
+  bgLayer.addChild(truss); truss.cacheAsBitmap=true;
+
+  // crackle dust tiling band (slow drift)
+  const dustTile=new PIXI.TilingSprite(GLOW.accent2,W,H);
+  dustTile.alpha=0.05; dustTile.blendMode=PIXI.BLEND_MODES.ADD; dustTile.tint=0x23e0c8; dustTile.tileScale.set(2.4,2.4);
+  bgLayer.addChild(dustTile);
+
+  // scrolling teal grid / equalizer floor band (TilingSprite)
+  function gridTex(){const c=document.createElement('canvas');c.width=128;c.height=64;const g=c.getContext('2d');
+    g.strokeStyle='rgba(35,224,200,0.5)';g.lineWidth=1.5;for(let x=0;x<=128;x+=32){g.beginPath();g.moveTo(x,0);g.lineTo(x,64);g.stroke();}
+    g.beginPath();g.moveTo(0,62);g.lineTo(128,62);g.stroke();return PIXI.Texture.from(c);}
+  const gridTile=new PIXI.TilingSprite(gridTex(),W,90); gridTile.position.set(0,630); gridTile.alpha=0.20; gridTile.blendMode=PIXI.BLEND_MODES.ADD;
+  bgLayer.addChild(gridTile);
+
+  // reflection band (bottom)
+  const reflStrip=new PIXI.Graphics(); reflStrip.beginFill(0x13091e,0.18).drawRect(0,648,W,72).endFill(); bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,4],waveLength:[40,120],alpha:[0.3,0.3],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,648,W,72); }
+
+  // godray (warm club spotlight shafts) — composed into bgLayer.filters via intent
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:30,gain:0.35,lacunarity:2.4,time:0,parallel:true}); }
+
+  // ============================================================
+  //  6) CRACKLE DUST (persistent ParticleContainer) + spark bursts
+  // ============================================================
+  const MOTE_COUNT=240;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:false},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const s=new PIXI.Sprite(GLOW.accent2);s.anchor.set(0.5);s.tint=0x23e0c8;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.04+Math.random()*0.12);s.alpha=0;motePC.addChild(s);
+    motes.push({s,vx:(Math.random()-.5)*7,vy:-(4+Math.random()*14),phs:Math.random()*TAU,sp:0.6+Math.random()});}
+  let RT=0, moteEnvelope=0, moteVisibleRatio=1, crackleDensity=1;
+
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.16),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:0,max:0.7+Math.random()*0.9});}
+  }
+
+  // ============================================================
+  //  7) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  // turntable: vinyl + grooves + tonearm + readout, pivot at hub local (0,0). platter is a child we spin.
+  function buildDeck(){
+    const c=new PIXI.Container(); c.position.set(DECK[0],DECK[1]);
+    const baseplate=new PIXI.Graphics();
+    baseplate.beginFill(0x120c1a,0.95).lineStyle(3,C.accent,0.6).drawRoundedRect(-175,-175,350,350,18).endFill();
+    c.addChild(baseplate);
+    const platter=new PIXI.Container(); c.addChild(platter);
+    const vinyl=new PIXI.Graphics();
+    vinyl.beginFill(C.vinyl,1).lineStyle(0).drawCircle(0,0,150).endFill();
+    vinyl.lineStyle(1,0x3a2c44,0.7); for(let r=24;r<150;r+=10){ vinyl.drawCircle(0,0,r); }
+    vinyl.beginFill(C.accent,0.85).drawCircle(0,0,46).endFill();             // label
+    vinyl.beginFill(C.ink,1).drawCircle(0,0,5).endFill();                    // spindle
+    platter.addChild(vinyl);
+    // a groove highlight wedge so spin is visible
+    const wedge=new PIXI.Graphics(); wedge.beginFill(0x5a4068,0.5).moveTo(0,0).arc(0,0,148,-0.18,0.18).closePath().endFill(); platter.addChild(wedge);
+    c._platter=platter;
+    // tonearm + needle (static host, dips on beat)
+    const arm=new PIXI.Graphics();
+    arm.lineStyle(7,0x2a2036,1).moveTo(150,-150).lineTo(40,-30);
+    arm.beginFill(0x3a2c48,1).drawCircle(150,-150,12).endFill();
+    c.addChild(arm); c._arm=arm;
+    const needle=new PIXI.Container(); needle.position.set(40,-30); c.addChild(needle); c._needle=needle;
+    const ng=new PIXI.Graphics(); ng.beginFill(C.gold,1).drawCircle(0,0,5).endFill(); needle.addChild(ng);
+    // value readout (in front of label)
+    const readout=txt('0',40,C.gold,'900'); readout.position.set(0,0); c.addChild(readout); c._readout=readout;
+    // address tag
+    const addr=txt('0xCAFE',16,C.muted,'700'); addr.position.set(0,170); c.addChild(addr);
+    // glow
+    if(hasF('GlowFilter')){ c._glow=new F.GlowFilter({distance:16,outerStrength:1.2,innerStrength:0,color:C.accent,quality:0.4}); platter.filters=[c._glow]; }
+    return c;
+  }
+  // an MC figure (head + shoulders + reaching arm). pivot at body local (0,0). arm endpoint re-aimed.
+  function buildMC(tone){
+    const c=new PIXI.Container();
+    const body=new PIXI.Graphics();
+    body.beginFill(tone,1).drawCircle(0,-30,14).endFill();                 // head
+    body.beginFill(tone,0.92).moveTo(-22,4).quadraticCurveTo(0,-16,22,4).lineTo(18,34).lineTo(-18,34).closePath().endFill(); // torso
+    c.addChild(body);
+    const arm=new PIXI.Graphics(); c.addChild(arm); c._arm=arm;
+    return c;
+  }
+  function drawMCArm(g,tone,fromX,fromY,toX,toY,thick){
+    g.clear(); g.lineStyle(thick||6,tone,0.95).moveTo(fromX,fromY).lineTo(toX,toY);
+    g.beginFill(tone,0.95).drawCircle(toX,toY,5).endFill();
+  }
+  // DJ booth console with two cue-card slots
+  function buildBooth(){
+    const c=new PIXI.Container(); c.position.set(BOOTH[0],BOOTH[1]);
+    const g=new PIXI.Graphics();
+    g.beginFill(0x140d22,0.95).lineStyle(2.5,C.accent2,0.7).drawRoundedRect(-130,-30,260,70,10).endFill();
+    // mixer faders
+    g.lineStyle(2,C.muted,0.6); for(let i=0;i<4;i++){ const x=-40+i*26; g.moveTo(x,18).lineTo(x,34); g.beginFill(C.accent2,0.7).drawRoundedRect(x-4,22,8,6,2).endFill(); g.lineStyle(2,C.muted,0.6); }
+    c.addChild(g);
+    const tag=txt('CPU + JIT',16,C.muted,'700'); tag.position.set(0,-46); c.addChild(tag); c._tag=tag;
+    // a small booth screen for mnemonics
+    const screen=new PIXI.Graphics(); screen.beginFill(0x05060d,0.9).lineStyle(1.5,C.gold,0.4).drawRoundedRect(-118,-22,236,22,4).endFill(); c.addChild(screen); c._screen=screen;
+    return c;
+  }
+
+  // ============================================================
+  //  8) PERSISTENT MEMORY-BAY SET (setLayer)
+  // ============================================================
+  const deck=buildDeck(); setLayer.addChild(deck);
+  const writerMC=buildMC(C.writer); setLayer.addChild(writerMC); writerMC.position.set(WRITER[0],WRITER[1]);
+  const writerLbl=txt('WRITER',16,C.writer,'800'); writerLbl.position.set(WRITER[0],WRITER[1]+60); legible(writerLbl); setLayer.addChild(writerLbl);
+  const readerMC=buildMC(C.reader); setLayer.addChild(readerMC); readerMC.position.set(READER[0],READER[1]);
+  const readerLbl=txt('READER',16,C.reader,'800'); readerLbl.position.set(READER[0],READER[1]+60); legible(readerLbl); setLayer.addChild(readerLbl);
+  const booth=buildBooth(); setLayer.addChild(booth);
+  // two cue cards A/B in the booth (world-space children of setLayer so they can swap freely)
+  const cueCards=[];
+  ['A','B'].forEach((lab,i)=>{ const cc=new PIXI.Container(); cc.position.set(CUE[i][0],CUE[i][1]);
+    const g=new PIXI.Graphics(); g.beginFill(0x1a1030,0.95).lineStyle(2,C.accent2,0.8).drawRoundedRect(-22,-26,44,52,5).endFill(); cc.addChild(g);
+    const l=txt(lab,18,C.accent2,'800'); cc.addChild(l); cc._lbl=l; setLayer.addChild(cc); cueCards.push(cc); });
+  // tether lines from each MC hand to the deck (set establish)
+  const tethers=new PIXI.Graphics(); setLayer.addChildAt(tethers,0);
+  // Heisenbug light top-right
+  const bugLamp=new PIXI.Container(); bugLamp.position.set(BUG[0],BUG[1]); setLayer.addChild(bugLamp);
+  const bugG=new PIXI.Graphics(); bugLamp.addChild(bugG);
+  const bugGlow=glow('danger',0,0,0.6,0,C.danger); bugLamp.addChild(bugGlow); bugLamp._glow=bugGlow;
+  const bugLbl=txt('Heisenbug',12,C.muted,'700'); bugLbl.position.set(0,26); bugLamp.addChild(bugLbl);
+
+  // book/value helpers for the cell readout
+  function setReadout(str,col){ deck._readout.text=str; if(col!=null) deck._readout.style.fill=col; }
+
+  // ============================================================
+  //  9) CAMERA RIG (GOLDEN RULE: all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1, camPivotX=W/2, camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  function shakeAmp(t){
+    let a=0;
+    a+=shakeEnv(t,31.59,2.5);    // S3 "= DATA RACE" stamp
+    a+=shakeEnv(t,91.12,2.5);    // S10 "nestačí" slam
+    a+=shakeEnv(t,104.45,3);     // S12 barrier slam
+    a+=shakeEnv(t,148.10,3);     // S17 atomic fuse
+    a+=shakeEnv(t,205.37,3);     // S21 thesis snap
+    // S5 race micro-shake (amp 3px) 40.47..47.0, ramps out 46.0..47.0
+    if(t>=40.47 && t<47.0){ a=Math.max(a, 3*(1-ph(t,46.0,47.0))); }
+    return a<0.05?0:a;
+  }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function updateCamera(t){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.010*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  10) SCENE MANAGER (destroy+init on change incl. backward-jump reset)
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy) prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c); prev.inst.c.destroy({children:true}); }catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot);
+
+  // ============================================================
+  //  11) SHARED FILTER INSTANCES (built once, mutated per frame)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,250],{amplitude:24,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flashWhite=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashSafe=new F.ColorOverlayFilter(C.safe,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashRed=new F.ColorOverlayFilter(C.danger,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashTeal=new F.ColorOverlayFilter(C.accent2,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashGold=new F.ColorOverlayFilter(C.gold,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,250],innerRadius:0});
+  if(hasF('ZoomBlurFilter')) FILT.zoomHeld=new F.ZoomBlurFilter({strength:0,center:[640,250],innerRadius:60});
+  if(hasF('GlitchFilter')) FILT.glitch=new F.GlitchFilter({slices:6,offset:8,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('GlitchFilter')) FILT.glitchSmall=new F.GlitchFilter({slices:4,offset:6,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('RGBSplitFilter')) FILT.rgb=new F.RGBSplitFilter({red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('CRTFilter')) FILT.crt=new F.CRTFilter({curvature:1.0,lineWidth:1.0,lineContrast:0.25,vignetting:0.35,noise:0.1,time:0});
+
+  // transient sceneRoot full-frame flash (ColorOverlay)
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H); }
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+  // fire a shockwave on overlayFx, centered at world pt, time = pure f(audio time)
+  function fireShock(name,wx,wy,t){ if(!FILT.shock) return; FILT.shock.center=[wx,wy]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx(name,FILT.shock); }
+  function tickShock(name,t){ if(FILT.shock && hasOverlayFx(name)){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx(name); } }
+
+  // ============================================================
+  //  12) PERSISTENT SET RENDER (deck spin, readout, MCs, tethers, booth, bug)
+  // ============================================================
+  let DECK_VAL='0', DECK_VAL_COL=C.gold;     // scenes set the readout; default 0
+  let writerAim=null, readerAim=null;        // [x,y] hand targets or null (idle)
+  let tetherAlpha=0;
+  let spinAmp=1;
+  function renderSet(t,sec){
+    const ka=kickAmp(t);
+    // platter spin (quantized drift + kick micro-nudge)
+    const baseSpin=(t*0.55)%TAU;
+    deck._platter.rotation = baseSpin + 0.12*kick(t)*ka*spinAmp;
+    // needle dip on the downbeat
+    deck._needle.y = -30 + 3*kick(t)*ka;
+    // readout glow punch
+    if(deck._glow){ deck._glow.outerStrength = 1.2 + 1.3*kick(t)*ka; deck._glow.color = (sec==='race'||sec==='outro-race')?C.danger:C.accent; }
+    setReadout(DECK_VAL, DECK_VAL_COL);
+    deck._readout.scale.set(1+0.05*kick(t)*ka);
+    // MC arms
+    drawMCArm(writerMC._arm,C.writer, 18,-4, writerAim?writerAim[0]-WRITER[0]:48, writerAim?writerAim[1]-WRITER[1]:-30, 6);
+    drawMCArm(readerMC._arm,C.reader, -18,-4, readerAim?readerAim[0]-READER[0]:-48, readerAim?readerAim[1]-READER[1]:-30, 6);
+    // tethers
+    tethers.clear();
+    if(tetherAlpha>0.001){
+      tethers.lineStyle(2,C.writer,0.5*tetherAlpha).moveTo(WRITER[0]+30,WRITER[1]-20).lineTo(DECK[0]-90,DECK[1]+60);
+      tethers.lineStyle(2,C.reader,0.5*tetherAlpha).moveTo(READER[0]-30,READER[1]-20).lineTo(DECK[0]+90,DECK[1]+60);
+    }
+    // Heisenbug lamp (armed dim red after S1; blinks per scene logic via bugLevel)
+    bugG.clear();
+    bugG.beginFill(lerpColor(0x2a0e14,C.danger,bugLevel),0.9).lineStyle(2,C.danger,0.5).drawCircle(0,0,11).endFill();
+    bugLamp._glow.alpha=bugLevel*0.9; bugLamp._glow.scale.set(0.5+0.4*bugLevel);
+    bugLamp.alpha=bugArmed?1:0;
+    // booth cue cards subtle idle lift (foreshadow) handled by scenes; here keep tag visible
+  }
+  let bugArmed=false, bugLevel=0;
+
+  // ============================================================
+  //  SCENES  S0 .. S22
+  // ============================================================
+
+  // ---------- S0 : COLD OPEN 0.00-0.80 ----------
+  scene(0,0.80,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      const a=easeOutCubic(ph(t,0,0.8));
+      setLayer.alpha=a;
+      moteEnvelope=0.22*ph(t,0,0.8);
+      DECK_VAL='0'; DECK_VAL_COL=C.gold;
+      writerAim=null; readerAim=null; tetherAlpha=0; bugArmed=false; bugLevel=0;
+    }};
+  });
+
+  // ---------- S1 : INTRO 0.80-11.28 ----------
+  scene(0.80,11.28,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    setLayer.alpha=1;
+    const title=txt('DATA RACE',66,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('volatile · zámek · dvě atomiky',24,C.muted,'700'); sub.position.set(640,384); legible(sub);
+    c.addChild(title,sub);
+    // teal ring highlight on the platter (paměti)
+    const ring=new PIXI.Graphics(); c.addChild(ring);
+    // referee/guard glyph struck through (nehlídá)
+    const guard=new PIXI.Container(); c.addChild(guard); guard.position.set(640,160); guard.alpha=0;
+    const gg=new PIXI.Graphics();
+    gg.lineStyle(3,C.muted,0.9).drawCircle(0,0,16); gg.beginFill(C.muted,0.8).drawRect(-3,-2,6,14).endFill();
+    gg.lineStyle(3,C.muted,0.9).moveTo(-10,-10).lineTo(10,10); guard.addChild(gg);
+    const slash=new PIXI.Graphics(); c.addChild(slash);
+    const zapis=txt('zápis',18,C.writer,'800'); zapis.position.set(640,330); zapis.alpha=0; legible(zapis); c.addChild(zapis);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      const tin=easeOut(ph(t,0.8,2.6));
+      title.alpha=tin*(1-ph(t,9.4,11.2)); title.y=342-tin*12; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // MC pop-in (Dvě @0.0, vlákna @0.6)
+      writerMC.scale.set(easeOutBack(ph(t,0.0,0.6))); readerMC.scale.set(easeOutBack(ph(t,0.6,1.2)));
+      // deck pulse-up + ring sweep (paměti @3.82)
+      ring.clear();
+      const rsweep=ph(t,3.82,4.6)*(1-ph(t,4.8,5.4));
+      if(rsweep>0.001){ ring.lineStyle(3,C.accent2,rsweep*0.8).drawCircle(DECK[0],DECK[1],150*easeOut(ph(t,3.82,4.6))); }
+      // tethers in @2.8
+      tetherAlpha=ph(t,2.8,4.0);
+      // writer scratches @6.82 (readout ticks), reader passive
+      DECK_VAL_COL=C.gold;
+      if(t>=6.82 && t<9.24){ writerAim=[DECK[0]-60,DECK[1]+40]; const n=Math.floor((t-6.82)/0.3)%2; DECK_VAL=String(n); }
+      else { writerAim=null; DECK_VAL='0'; }
+      readerAim=null;
+      if(t>=6.82 && !S.fired.has('scratch')){ S.fired.add('scratch'); burst(DECK[0]-50,DECK[1]+30,C.writer,12,2.4,0.16); if(FILT.flashWhite){ FILT.flashWhite.color=0xffffff; FILT.flashWhite.alpha=0.18; sceneFlash(FILT.flashWhite,true);} }
+      if(FILT.flashWhite && S.fired.has('scratch')){ FILT.flashWhite.alpha=0.18*(1-ph(t,6.82,7.0)); if(t>7.0) sceneFlash(FILT.flashWhite,false); }
+      zapis.alpha=easeOut(ph(t,6.82,7.2))*(1-ph(t,8.0,8.4)); zapis.y=330-easeOut(ph(t,6.82,7.6))*16;
+      // guard glyph try-appear @9.24 then struck
+      guard.alpha=ph(t,9.24,9.7)*(1-ph(t,9.9,10.6));
+      slash.clear();
+      const sa=ph(t,9.55,9.9)*(1-ph(t,10.3,10.6));
+      if(sa>0.001){ slash.lineStyle(5,C.danger,sa).moveTo(616,144).lineTo(664,176); }
+      // Heisenbug arms (dim) @9.24
+      bugArmed=(t>=9.24); bugLevel=(t>=9.24)? 0.25:0;
+    }};
+  });
+
+  // ---------- S2 : INSTRUMENTAL hold 11.28-25.10 ----------
+  scene(11.28,25.10,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      camDollyScale=1+0.03*easeInOut(triWave(t,11.28,25.10)); camPivotX=640; camPivotY=360;
+      moteEnvelope=0.30;
+      DECK_VAL='0'; DECK_VAL_COL=C.gold; writerAim=null; readerAim=null;
+      tetherAlpha=0.4+0.1*Math.sin(t*1.2);
+      bugArmed=true; bugLevel=0.18;
+      // DJ booth foreshadow: lift a cue card on each downbeat
+      cueCards[0].y=CUE[0][1]-4*kick(t); cueCards[1].y=CUE[1][1];
+    },destroy(){ cueCards[0].y=CUE[0][1]; }};
+  });
+
+  // ---------- S3 : VERSE 1a 25.10-31.88 (the 3-condition recipe) ----------
+  scene(25.10,31.88,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const slots=[]; const beams=[];
+    const recData=[['sdílené místo',C.reader],['≥1 zápis',C.writer],['žádné synchro',C.danger]];
+    recData.forEach((rd,i)=>{ const cont=new PIXI.Container(); cont.position.set(REC[i][0],REC[i][1]); c.addChild(cont);
+      const g=new PIXI.Graphics(); cont.addChild(g);
+      const l=txt(rd[0],19,rd[1],'800'); cont.addChild(l);
+      if(hasF('GlowFilter')){ cont._g=new F.GlowFilter({distance:12,outerStrength:0,color:rd[1],quality:0.3}); cont.filters=[cont._g]; }
+      slots.push({cont,g,col:rd[1]});
+      const bm=new PIXI.Graphics(); c.addChild(bm); beams.push(bm);
+    });
+    // AND labels
+    const and1=txt('AND',16,C.muted,'700'); and1.position.set((REC[0][0]+REC[1][0])/2,560); legible(and1); c.addChild(and1);
+    const and2=txt('AND',16,C.muted,'700'); and2.position.set((REC[1][0]+REC[2][0])/2,560); legible(and2); c.addChild(and2);
+    // metronome / click-track glyph struck through
+    const metro=new PIXI.Container(); metro.position.set(640,160); metro.alpha=0; c.addChild(metro);
+    const mg=new PIXI.Graphics(); mg.lineStyle(3,C.muted,0.9).moveTo(-14,16).lineTo(0,-16).lineTo(14,16).closePath(); mg.moveTo(0,-12).lineTo(8,8); metro.addChild(mg);
+    const mslash=new PIXI.Graphics(); c.addChild(mslash);
+    // = DATA RACE stamp
+    const stamp=txt('= DATA RACE',24,C.accent,'800'); stamp.position.set(640,500); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    if(hasF('GlowFilter')){ stamp._g=new F.GlowFilter({distance:14,outerStrength:0,color:C.accent,quality:0.4}); stamp.filters=(stamp.filters||[]).concat([stamp._g]); }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL='0'; DECK_VAL_COL=C.gold; writerAim=null; readerAim=null; tetherAlpha=0.4; bugArmed=true; bugLevel=0.2;
+      const lit=[ph(t,28.61,28.9),ph(t,29.42,29.7),ph(t,30.26,30.55)];
+      const tgt=[DECK,[WRITER[0]+40,WRITER[1]-20],[640,160]];
+      slots.forEach((s,i)=>{ const p=easeOutBack(lit[i]); s.cont.scale.set(0.7+0.3*p);
+        s.g.clear(); s.g.beginFill(C.ink,0.5+0.4*lit[i]).lineStyle(2,s.col,0.4+0.6*lit[i]).drawRoundedRect(-90,-22,180,44,8).endFill();
+        if(s.cont._g) s.cont._g.outerStrength=lit[i]*(1.5+1.5*beat(t));
+        beams[i].clear();
+        if(lit[i]>0.05){ beams[i].lineStyle(2.5,s.col,0.5*lit[i]*(0.7+0.3*beat(t))).moveTo(REC[i][0],REC[i][1]-24).lineTo(tgt[i][0],tgt[i][1]); }
+      });
+      and1.alpha=easeOut(ph(t,29.0,29.4))*0.9; and2.alpha=easeOut(ph(t,29.9,30.3))*0.9;
+      metro.alpha=ph(t,30.26,30.7)*(1-ph(t,30.9,31.6));
+      mslash.clear();
+      const sa=ph(t,30.55,30.9)*(1-ph(t,31.3,31.6));
+      if(sa>0.001){ mslash.lineStyle(5,C.danger,sa).moveTo(620,142).lineTo(660,178); }
+      // = DATA RACE stamp @31.59
+      if(t>=31.59 && !S.fired.has('stamp')){ S.fired.add('stamp'); fireShock('s3shock',640,500,t); if(FILT.flashRed){ FILT.flashRed.alpha=0.3; sceneFlash(FILT.flashRed,true);} }
+      stamp.alpha=easeOut(ph(t,31.59,31.85))*(1-ph(t,33.0,33.4));
+      if(stamp._g) stamp._g.outerStrength=(t>=31.59)?(2+1.5*beat(t)):0;
+      tickShock('s3shock',t);
+      if(FILT.flashRed && S.fired.has('stamp')){ FILT.flashRed.alpha=0.3*(1-ph(t,31.59,31.85)); if(t>31.86) sceneFlash(FILT.flashRed,false); }
+    },destroy(){ sceneFlash(FILT.flashRed,false); }};
+  });
+
+  // ---------- S4 : VERSE 1b 31.88-39.66 (CPU+JIT reorder) ----------
+  scene(31.88,39.66,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    let tiltF=null;
+    if(hasF('TiltShiftFilter')){ tiltF=new F.TiltShiftFilter({blur:0,gradientBlur:600,start:new PIXI.Point(0,110),end:new PIXI.Point(W,110)}); }
+    // echo words above booth
+    const eProc=txt('procesor',20,C.text,'800'); eProc.position.set(560,40); eProc.alpha=0; legible(eProc); c.addChild(eProc);
+    const eJit=txt('JIT',20,C.text,'800'); eJit.position.set(720,40); eJit.alpha=0; legible(eJit); c.addChild(eJit);
+    // re-labels on cue cards: write A / write B (handled by toggling booth labels)
+    const reorder=txt('REORDER',20,C.danger,'800'); reorder.position.set(640,52); reorder.alpha=0; legible(reorder); c.addChild(reorder);
+    if(hasF('GlowFilter')){ reorder._g=new F.GlowFilter({distance:12,outerStrength:0,color:C.danger,quality:0.4}); reorder.filters=(reorder.filters||[]).concat([reorder._g]); }
+    // reader monitor with 2-row log
+    const mon=new PIXI.Container(); mon.position.set(980,300); c.addChild(mon);
+    const monG=new PIXI.Graphics(); mon.addChild(monG);
+    const logA=txt('A',18,C.reader,'800'); logA.position.set(0,-12); mon.addChild(logA);
+    const logB=txt('B',18,C.reader,'800'); logB.position.set(0,12); mon.addChild(logB);
+    const lateLbl=txt('uvidí pozdě',18,C.danger,'700'); lateLbl.position.set(980,360); lateLbl.alpha=0; legible(lateLbl); c.addChild(lateLbl);
+    // motion blur on the swapping cards
+    let mblur=null; if(hasF('MotionBlurFilter')){ mblur=new F.MotionBlurFilter({velocity:[0,0],kernelSize:9,offset:0}); }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL='0'; DECK_VAL_COL=C.gold; writerAim=null; tetherAlpha=0.35; bugArmed=true; bugLevel=0.2;
+      // focus pull to booth
+      if(tiltF){ const band=easeOut(ph(t,31.88,33.0)); tiltF.blur=70*band;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(tiltF)<0)){ sceneRoot.filters=[tiltF]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);} }
+      eProc.alpha=easeOut(ph(t,32.48,32.9))*(1-ph(t,34.0,34.5));
+      eJit.alpha=easeOut(ph(t,33.40,33.8))*(1-ph(t,34.6,35.1));
+      // relabel cue cards to write A / write B during reorder
+      if(t>=32.0){ cueCards[0]._lbl.text='wr A'; cueCards[0]._lbl.style.fontSize=13; cueCards[1]._lbl.text='wr B'; cueCards[1]._lbl.style.fontSize=13; }
+      // THE CUE-CARD SWAP @33.40 -> climax @34.52
+      const sp=easeInOut(ph(t,33.40,34.52));
+      cueCards[0].x=lerp(CUE[0][0],CUE[1][0],sp); cueCards[1].x=lerp(CUE[1][0],CUE[0][0],sp);
+      cueCards[0].y=CUE[0][1]; cueCards[1].y=CUE[1][1];
+      if(mblur){ const v=(sp>0.02&&sp<0.98)?28:0; mblur.velocity=[v,0];
+        const on=(v>0); cueCards.forEach(cc=>{ if(on && (!cc.filters||cc.filters.indexOf(mblur)<0)) cc.filters=[mblur]; else if(!on && cc.filters) cc.filters=null; }); }
+      // REORDER stamp @34.52
+      reorder.alpha=easeOut(ph(t,34.52,34.8))*(1-ph(t,36.5,37.0));
+      if(reorder._g) reorder._g.outerStrength=(t>=34.52)?(1.5+1.5*beat(t)):0;
+      // reader monitor: after swap, log flips to [B][A] on "uvidí" @39.00
+      monG.clear(); monG.beginFill(0x05060d,0.9).lineStyle(2,C.reader,0.6).drawRoundedRect(-30,-28,60,56,6).endFill();
+      const flipped=(t>=39.00);
+      logA.text=flipped?'B':'A'; logB.text=flipped?'A':'B';
+      logA.style.fill=flipped?C.danger:C.reader; logB.style.fill=flipped?C.danger:C.reader;
+      // reader needle dips on vlákno @37.94
+      readerAim=(t>=37.94 && t<39.5)?[DECK[0]+70,DECK[1]+40]:null;
+      lateLbl.alpha=easeOut(ph(t,39.00,39.3))*(1-ph(t,39.55,39.66));
+    },destroy(){
+      if(sceneRoot.filters) sceneRoot.filters=null;
+      cueCards.forEach((cc,i)=>{ cc.x=CUE[i][0]; cc.y=CUE[i][1]; cc._lbl.text=i===0?'A':'B'; cc._lbl.style.fontSize=18; if(cc.filters) cc.filters=null; });
+    }};
+  });
+
+  // ---------- S5 : VERSE 1c 39.66-47.28 (race fires + Heisenbug) ----------
+  scene(39.66,47.28,'VERSE 1','race',(S)=>{
+    const c=new PIXI.Container();
+    // histogram (5 bars accumulate different values)
+    const hist=new PIXI.Graphics(); c.addChild(hist);
+    const histLbl=txt('pokaždé jiný',14,C.muted,'700'); histLbl.position.set(1080,250); histLbl.alpha=0; legible(histLbl); c.addChild(histLbl);
+    // thread-local foil (dim off-stage record)
+    const foil=new PIXI.Container(); foil.position.set(1180,560); c.addChild(foil);
+    const fg=new PIXI.Graphics(); fg.beginFill(0x120c1a,0.7).lineStyle(2,C.muted,0.4).drawCircle(0,0,30).endFill(); fg.beginFill(C.accent2,0.3).drawCircle(0,0,9).endFill(); foil.addChild(fg);
+    const foilCap=txt('nesdílené = bez race',14,C.muted,'700'); foilCap.position.set(1180,520); foilCap.alpha=0; legible(foilCap); c.addChild(foilCap);
+    const foilSub=txt('dokud ji nesdílíš',12,C.muted,'700'); foilSub.position.set(1180,592); foilSub.alpha=0; c.addChild(foilSub);
+    // Heisenbug stamp
+    const bugStamp=txt('✗ 1× / 137 reprodukováno',16,C.danger,'700'); bugStamp.position.set(1080,120); bugStamp.alpha=0; legible(bugStamp); c.addChild(bugStamp);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      tetherAlpha=0.35; bugArmed=true;
+      // THE RACE LOOP @40.47 — both hands collide, readout rolls deterministic from beat
+      const racing=(t>=40.47);
+      if(racing){ writerAim=[DECK[0]-50,DECK[1]+30]; readerAim=[DECK[0]+50,DECK[1]+30];
+        const rollIdx=Math.floor(t/0.5); DECK_VAL=String(prngFromBeat(rollIdx)); DECK_VAL_COL=C.danger;
+        const frac=(t/0.5)%1;
+        // per-roll glitch+rgbsplit on overlayFx (pure function of t)
+        const burstStr=Math.max(0,1-frac*3); // peaks at each roll onset, ~0.33s
+        if(FILT.glitch){ if(!hasOverlayFx('raceGlitch')) addOverlayFx('raceGlitch',FILT.glitch); FILT.glitch.seed=hash01(rollIdx*7.1); FILT.glitch.offset=8*burstStr; FILT.glitch.slices=6; }
+        if(FILT.rgb){ if(!hasOverlayFx('raceSplit')) addOverlayFx('raceSplit',FILT.rgb); const d=6*burstStr; FILT.rgb.red=[d,0]; FILT.rgb.blue=[-d,0]; }
+      } else { writerAim=null; readerAim=null; DECK_VAL='0'; DECK_VAL_COL=C.gold; }
+      // collision sparks each roll onset
+      const rollIdx=Math.floor(t/0.5);
+      if(racing && rollIdx!==S._lastRoll){ S._lastRoll=rollIdx; burst(DECK[0],DECK[1]+30,C.danger,8,2.4,0.14); }
+      // histogram @41.95 (5 bars, deterministic)
+      hist.clear();
+      if(t>=41.95){ const nb=Math.min(5,Math.floor((t-41.95)/0.5)+1);
+        for(let i=0;i<nb;i++){ const hh=20+hash01(i*3.3+1)*70; hist.beginFill(C.danger,0.8).drawRect(1040+i*16,330-hh,12,hh).endFill(); } }
+      histLbl.alpha=easeOut(ph(t,41.95,42.4))*(1-ph(t,46.8,47.2));
+      // foil tapped alone — stays clean @42.54
+      foilCap.alpha=easeOut(ph(t,42.54,43.0))*(1-ph(t,44.5,45.0)); foilSub.alpha=foilCap.alpha;
+      foil.scale.set(1+0.05*kick(t));
+      // Heisenbug blinks ~1 of every 3 downbeats @43.42
+      if(t>=43.42){ const bi=Math.floor(t/(60/BPM)); bugLevel=(bi%3===0)? (0.8+0.2*beat(t)):0.15; } else bugLevel=0.2;
+      bugStamp.alpha=easeOut(ph(t,45.63,46.0))*(1-ph(t,47.0,47.25));
+    },destroy(){ removeOverlayFx('raceGlitch'); removeOverlayFx('raceSplit'); }};
+  });
+
+  // ---------- S6 : PRE-CHORUS 1 47.28-57.64 (three defenses) ----------
+  scene(47.28,57.64,'PRE-CHORUS','defense',(S)=>{
+    const c=new PIXI.Container();
+    const pad=buildMPC(); c.addChild(pad);
+    const chooseLbl=txt('vyber si JEDEN',20,C.muted,'700'); chooseLbl.position.set(640,540); chooseLbl.alpha=0; legible(chooseLbl); c.addChild(chooseLbl);
+    const confirm=txt('vyber si jeden',18,C.safe,'800'); confirm.position.set(640,540); confirm.alpha=0; legible(confirm); c.addChild(confirm);
+    // mutually-exclusive preview glyphs over the deck
+    const gGlass=new PIXI.Graphics(); c.addChild(gGlass);
+    const gRope=new PIXI.Graphics(); c.addChild(gRope);
+    const gClasp=new PIXI.Graphics(); c.addChild(gClasp);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL='0'; DECK_VAL_COL=C.gold; writerAim=null; readerAim=null; tetherAlpha=0.35; bugArmed=true; bugLevel=0.18;
+      // pad rises @47.28
+      pad.y=lerp(60,0,easeOutBack(ph(t,47.28,48.2)));
+      chooseLbl.alpha=easeOut(ph(t,50.34,50.8))*(1-ph(t,52.8,53.4));
+      // simmering race glitch 51.76-53.24 (low strength)
+      if(t>=47.28 && t<55.36){ if(FILT.glitchSmall){ if(!hasOverlayFx('raceGlitch')) addOverlayFx('raceGlitch',FILT.glitchSmall);
+        const sim=(t>=51.76&&t<53.24)?0.4:0.15; FILT.glitchSmall.offset=4*sim; FILT.glitchSmall.seed=hash01(Math.floor(t*8)); } }
+      // stamp each defense
+      lightMPC(pad,0,t,53.24);
+      lightMPC(pad,1,t,54.12);
+      lightMPC(pad,2,t,55.36);
+      // glass/rope/clasp previews flicker on their words
+      drawDefensePreview(gGlass,'glass',ph(t,53.24,53.5)*(1-ph(t,53.9,54.3)),t);
+      drawDefensePreview(gRope,'rope',ph(t,54.12,54.4)*(1-ph(t,54.8,55.2)),t);
+      drawDefensePreview(gClasp,'clasp',ph(t,55.36,55.7)*(1-ph(t,56.2,56.8)),t);
+      // snap-to-grid safe flash on each
+      defenseFlash(t,53.24,S,'d0'); defenseFlash(t,54.12,S,'d1'); defenseFlash(t,55.36,S,'d2');
+      if(t>=55.36){ removeOverlayFx('raceGlitch'); }
+      confirm.alpha=easeOut(ph(t,55.36,55.8))*(1-ph(t,57.0,57.5));
+    },destroy(){ removeOverlayFx('raceGlitch'); sceneFlash(FILT.flashSafe,false); }};
+  });
+
+  // ---------- CHORUS (reusable) ----------
+  function buildChorus(occ){
+    const c=new PIXI.Container();
+    const bloomGain={1:0.5,2:0.6,3:0.85}[occ];
+    const occFactor={1:1.0,2:1.2,3:1.6}[occ];
+    crackleDensity={1:1,2:1.5,3:2}[occ];
+    let bloomF=null;
+    if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // recipe lower-third (re-lights on L1)
+    const recSlots=[]; const recData=[['sdílené místo',C.reader],['≥1 zápis',C.writer],['žádné synchro',C.danger]];
+    recData.forEach((rd,i)=>{ const cont=new PIXI.Container(); cont.position.set(REC[i][0],REC[i][1]); c.addChild(cont);
+      const g=new PIXI.Graphics(); cont.addChild(g); const l=txt(rd[0],18,rd[1],'800'); cont.addChild(l);
+      if(hasF('GlowFilter')){ cont._g=new F.GlowFilter({distance:10,outerStrength:0,color:rd[1],quality:0.3}); cont.filters=[cont._g]; }
+      recSlots.push({cont,g,col:rd[1]}); });
+    // MPC pad
+    const pad=buildMPC(); c.addChild(pad); pad.y=0;
+    // atomic sub-chips under btn2
+    const subCAS=txt('CAS',18,C.safe,'800'); subCAS.position.set(760,650); subCAS.alpha=0; legible(subCAS); c.addChild(subCAS);
+    const subFAA=txt('fetch-and-add',18,C.safe,'800'); subFAA.position.set(880,650); subFAA.alpha=0; legible(subFAA); c.addChild(subFAA);
+    // hint
+    const hint=txt('řekni ji u zkoušky',16,C.muted,'700'); hint.position.set(640,520); hint.alpha=0; legible(hint); c.addChild(hint);
+    // click-track struck glyph (L2)
+    const metro=new PIXI.Graphics(); c.addChild(metro);
+    c._chorus={occ,bloomGain,occFactor,bloomF,recSlots,pad,subCAS,subFAA,hint,metro};
+    return c;
+  }
+  function updateChorus(c,t,LS,occ,S){
+    camDollyScale=1; camPivotX=640; camPivotY=360;
+    const X=c._chorus; const {bloomF,recSlots,pad,subCAS,subFAA,hint,metro}=X;
+    const L1=LS.L1,L2=LS.L2,L3=LS.L3,L4=LS.L4;
+    tetherAlpha=0.4; bugArmed=true; bugLevel=0.12;
+    if(bloomF) bloomF.bloomScale=1.0+X.bloomGain*beat(t);
+    if(deck._glow) deck._glow.color=C.accent;
+    // threads at peace: trade the record on the grid
+    DECK_VAL_COL=C.gold;
+    DECK_VAL=String(100+Math.floor(((t-L1)*BPM/60))%8);
+    writerAim=(beatPhase(t)<0.5)?[DECK[0]-55,DECK[1]+30]:null;
+    readerAim=(beatPhase(t)>=0.5)?[DECK[0]+55,DECK[1]+30]:null;
+
+    // ---- L1 drop: ZoomBlur punch + recipe re-light ----
+    if(t>=L1 && !S.fired.has('drop'+occ)){ S.fired.add('drop'+occ);
+      if(FILT.zoom){ FILT.zoom.center=DECK.slice(); FILT.zoom.strength=0.26; addOverlayFx('hookZoom',FILT.zoom); } }
+    if(FILT.zoom && hasOverlayFx('hookZoom') && !hasOverlayFx('zoomHeld')){ FILT.zoom.strength=0.26*(1-ph(t,L1,L1+0.25)); if(t>L1+0.26) removeOverlayFx('hookZoom'); }
+    // recipe slots re-light on L1 words (use occ-specific second-word anchors via LS.r0,r1,r2)
+    const rAt=[LS.r0,LS.r1,LS.r2];
+    recSlots.forEach((s,i)=>{ const p=easeOutBack(ph(t,rAt[i],rAt[i]+0.3))*(1-ph(t,L4,L4+0.3));
+      s.cont.scale.set(0.7+0.3*clamp01(p));
+      s.g.clear(); s.g.beginFill(C.ink,0.5+0.4*clamp01(p)).lineStyle(2,s.col,0.3+0.6*clamp01(p)).drawRoundedRect(-86,-20,172,40,8).endFill();
+      if(s.cont._g) s.cont._g.outerStrength=clamp01(p)*(1.0+1.0*beat(t)); });
+
+    // ---- L2 race recap: struck click-track + short controlled glitch ----
+    metro.clear();
+    const mA=ph(t,L2,L2+0.3)*(1-ph(t,LS.l2last,LS.l2last+0.6));
+    if(mA>0.001){ metro.lineStyle(3,C.muted,mA*0.8).moveTo(626,146).lineTo(640,114).lineTo(654,146).closePath();
+      const sl=ph(t,L2+0.2,L2+0.5); metro.lineStyle(4,C.danger,mA*sl).moveTo(620,114).lineTo(660,150); }
+    if(t>=LS.l2last && t<LS.l2last+0.45){ DECK_VAL=String(prngFromBeat(Math.floor(t/0.2))); DECK_VAL_COL=C.danger;
+      if(FILT.glitchSmall){ if(!hasOverlayFx('raceGlitch')) addOverlayFx('raceGlitch',FILT.glitchSmall); FILT.glitchSmall.offset=6*(1-ph(t,LS.l2last,LS.l2last+0.4)); FILT.glitchSmall.seed=hash01(Math.floor(t*10)); }
+      if(FILT.rgb){ if(!hasOverlayFx('raceSplit')) addOverlayFx('raceSplit',FILT.rgb); const d=5*(1-ph(t,LS.l2last,LS.l2last+0.4)); FILT.rgb.red=[d,0]; FILT.rgb.blue=[-d,0]; }
+    } else { removeOverlayFx('raceGlitch'); removeOverlayFx('raceSplit'); }
+
+    // ---- L3 call to name the defenses ----
+    hint.alpha=easeOut(ph(t,LS.l3jasna,LS.l3jasna+0.4))*(1-ph(t,L4,L4+0.3));
+
+    // ---- L4 defenses + atomics ----
+    lightMPC(pad,0,t,LS.d0);
+    lightMPC(pad,1,t,LS.d1);
+    lightMPC(pad,2,t,LS.d2);
+    defenseFlash(t,LS.d0,S,'cd0'+occ); defenseFlash(t,LS.d1,S,'cd1'+occ); defenseFlash(t,LS.d2,S,'cd2'+occ);
+    subCAS.alpha=easeOut(ph(t,LS.cas,LS.cas+0.3)); subFAA.alpha=easeOut(ph(t,LS.faa,LS.faa+0.3));
+    if(t>=LS.cas){ if(hasF('GlowFilter')&&!subCAS.filters){ subCAS.filters=[new F.GlowFilter({distance:8,outerStrength:1.5,color:C.safe,quality:0.3})]; } }
+    // held final word lamp swell
+    if(t>=LS.faa){ const swell=1.0+(0.45*X.occFactor)*beat(t); if(deck._glow) deck._glow.outerStrength=1.2+1.0*swell*kickAmp(t); }
+  }
+  function chorusScene(occ,LS){ return (S)=>{ const c=buildChorus(occ); return {c,update(lt,t){ updateChorus(c,t,LS,occ,S); }, destroy(){ removeOverlayFx('raceGlitch'); removeOverlayFx('raceSplit'); removeOverlayFx('hookZoom'); }}; }; }
+
+  // MPC pad builder + helpers (shared by S6, chorus, S13, S16)
+  function buildMPC(){
+    const c=new PIXI.Container();
+    const labels=['volatile','zámek','atomika'];
+    c._btns=[];
+    MPC.forEach((p,i)=>{ const b=new PIXI.Container(); b.position.set(p[0],p[1]); c.addChild(b);
+      const g=new PIXI.Graphics(); b.addChild(g);
+      const l=txt(labels[i],17,C.muted,'800'); b.addChild(l);
+      if(hasF('GlowFilter')){ b._g=new F.GlowFilter({distance:12,outerStrength:0,color:C.safe,quality:0.3}); b.filters=[b._g]; }
+      b._lbl=l; b._g0=g; c._btns.push(b); });
+    return c;
+  }
+  function lightMPC(pad,i,t,at){ const b=pad._btns[i]; const lit=ph(t,at,at+0.3);
+    b._g0.clear(); b._g0.beginFill(C.ink,0.6+0.3*lit).lineStyle(2,lerpColor(C.muted,C.safe,lit),0.5+0.5*lit).drawRoundedRect(-58,-26,116,52,9).endFill();
+    b._lbl.style.fill=lerpColor(C.muted,C.safe,lit); if(b._g) b._g.outerStrength=lit*(1.5+1.5*beat(t)); }
+  function defenseFlash(t,at,S,key){
+    if(t>=at && !S.fired.has(key)){ S.fired.add(key); if(FILT.flashSafe){ FILT.flashSafe.alpha=0.3; sceneFlash(FILT.flashSafe,true);} }
+    if(FILT.flashSafe && S.fired.has(key)){ const a=0.3*(1-ph(t,at,at+0.2)); if(a>0.005){ FILT.flashSafe.alpha=a; sceneFlash(FILT.flashSafe,true);} else if(t>at+0.2) sceneFlash(FILT.flashSafe,false); }
+  }
+  function drawDefensePreview(g,kind,a,t){ g.clear(); if(a<=0.01) return; a=clamp01(a);
+    if(kind==='glass'){ g.lineStyle(2.5,C.accent2,a*0.9).drawRoundedRect(DECK[0]-100,DECK[1]-100,200,200,14); }
+    else if(kind==='rope'){ g.lineStyle(3,C.accent,a*0.9).moveTo(DECK[0]-100,DECK[1]+110).lineTo(DECK[0]+100,DECK[1]+110); g.beginFill(C.accent,a*0.9).drawCircle(DECK[0]-100,DECK[1]+110,6).drawCircle(DECK[0]+100,DECK[1]+110,6).endFill(); }
+    else { g.lineStyle(4,C.safe,a*0.95).moveTo(DECK[0]-30,DECK[1]+110).lineTo(DECK[0],DECK[1]+90).lineTo(DECK[0]+30,DECK[1]+110); }
+  }
+
+  // ---------- S7 : CHORUS 1 57.64-80.64 ----------
+  scene(57.64,80.64,'CHORUS','chorus',chorusScene(1,{
+    L1:57.64,L2:63.34,L3:68.54,L4:74.24, r0:58.94,r1:61.12,r2:62.75,
+    l2last:67.45, l3jasna:69.75, d0:74.24,d1:75.43,d2:77.13, cas:78.33, faa:79.18 }));
+
+  // ---------- S8 : INSTRUMENTAL beat 80.64-81.54 ----------
+  scene(80.64,81.54,'CHORUS','chorus',(S)=>{
+    const c=new PIXI.Container();
+    const caseG=new PIXI.Graphics(); c.addChild(caseG);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.05,1.0,easeInOut(ph(t,80.64,81.54))); camPivotX=640; camPivotY=360;
+      DECK_VAL='0'; DECK_VAL_COL=C.gold; writerAim=null; readerAim=null; tetherAlpha=0.4; bugArmed=true; bugLevel=0.12;
+      if(FILT.kawase){ FILT.kawase.strength=2*ph(t,80.64,81.1)*(1-ph(t,81.2,81.54)); bgIntent.kawase=(FILT.kawase.strength>0.05); }
+      // glass case pre-roll
+      caseG.clear(); const a=0.3*ph(t,80.9,81.54); caseG.lineStyle(2.5,C.accent2,a).drawRoundedRect(470,150,340,210,16);
+    },destroy(){ bgIntent.kawase=false; }};
+  });
+
+  // ---------- S9 : VERSE 2a 81.54-88.40 (volatile = visibility + ordering) ----------
+  scene(81.54,88.40,'VERSE 2','volatile',(S)=>{
+    const c=new PIXI.Container();
+    const caseG=new PIXI.Graphics(); c.addChild(caseG);
+    const caseLbl=txt('volatile · 1 proměnná',18,C.accent2,'800'); caseLbl.position.set(640,400); caseLbl.alpha=0; legible(caseLbl); c.addChild(caseLbl);
+    // RAM tower
+    const ram=new PIXI.Container(); ram.position.set(RAM[0],RAM[1]); c.addChild(ram);
+    const ramG=new PIXI.Graphics(); ram.addChild(ramG);
+    for(let i=0;i<5;i++){ ramG.beginFill(0x140d22,0.95).lineStyle(2,C.accent2,0.6).drawRoundedRect(-26,-60+i*26,52,20,3).endFill(); }
+    const ramLbl=txt('RAM',14,C.accent2,'700'); ramLbl.position.set(0,80); ram.addChild(ramLbl);
+    const cable=new PIXI.Graphics(); c.addChild(cable);
+    const packet=glow('accent2',0,0,0.5,0,C.accent2); c.addChild(packet);
+    const visLbl=txt('viditelnost',18,C.safe,'800'); visLbl.position.set(980,360); visLbl.alpha=0; legible(visLbl); c.addChild(visLbl);
+    // alignment rail under cue cards
+    const rail=new PIXI.Graphics(); c.addChild(rail);
+    const ordLbl=txt('pořadí — kolem se nepřehází',18,C.safe,'800'); ordLbl.position.set(640,440); ordLbl.alpha=0; legible(ordLbl); c.addChild(ordLbl);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL_COL=C.gold; tetherAlpha=0.3; bugArmed=true; bugLevel=0.1;
+      // glass case closes @81.54
+      const ca=0.85*easeOut(ph(t,81.54,82.4));
+      caseG.clear(); caseG.beginFill(C.accent2,0.05*ca/0.85).lineStyle(3,C.accent2,ca).drawRoundedRect(470,150,340,210,16).endFill();
+      caseLbl.alpha=easeOut(ph(t,81.54,82.2))*(1-ph(t,87.6,88.3));
+      // visibility @82.99 — broadcast same value, writer scratches, reader sees same
+      cable.clear();
+      const cabA=easeOut(ph(t,82.99,83.6));
+      if(cabA>0.01){ cable.lineStyle(2.5,C.accent2,cabA*(0.6+0.4*beat(t))).moveTo(810,250).bezierCurveTo(960,200,1060,220,RAM[0]-26,RAM[1]); }
+      DECK_VAL=(t>=82.99)?'42':'0';
+      writerAim=(t>=82.99&&t<85.0)?[DECK[0]-55,DECK[1]+30]:null;
+      visLbl.alpha=easeOut(ph(t,82.99,83.4))*(1-ph(t,85.0,85.5));
+      // value packet travels cable @85.74 (z hlavní paměti)
+      const pk=ph(t,85.74,86.6);
+      if(pk>0&&pk<1){ const pp=easeInOut(pk); packet.alpha=0.9*(1-Math.abs(pp-0.5)*1.2);
+        packet.position.set(lerp(810,RAM[0],pp),lerp(250,RAM[1],pp)-30*Math.sin(pp*Math.PI)); } else packet.alpha=0;
+      // ordering @84.03 — alignment rail locks cue cards (DJ can't swap)
+      rail.clear();
+      const rA=easeOut(ph(t,84.03,84.6));
+      if(rA>0.01){ rail.lineStyle(3,C.safe,rA*(0.7+0.3*beat(t))).moveTo(520,148).lineTo(760,148); }
+      // pinned cue cards jitter+snap on nepřehází @87.42
+      if(t>=87.42 && t<88.0){ const j=2*Math.sin(t*40)*(1-ph(t,87.42,87.8)); cueCards[0].x=CUE[0][0]+j; cueCards[1].x=CUE[1][0]-j; if(FILT.flashTeal){ FILT.flashTeal.alpha=0.2*(1-ph(t,87.42,87.7)); sceneFlash(FILT.flashTeal,FILT.flashTeal.alpha>0.01);} }
+      else { cueCards[0].x=CUE[0][0]; cueCards[1].x=CUE[1][0]; }
+      ordLbl.alpha=easeOut(ph(t,84.03,84.5))*(1-ph(t,87.8,88.3));
+    },destroy(){ cueCards[0].x=CUE[0][0]; cueCards[1].x=CUE[1][0]; sceneFlash(FILT.flashTeal,false); }};
+  });
+
+  // ---------- S10 : VERSE 2b 88.40-92.12 (volatile NOT enough for ++) ----------
+  scene(88.40,92.12,'VERSE 2','volatile',(S)=>{
+    const c=new PIXI.Container();
+    const caseG=new PIXI.Graphics(); c.addChild(caseG);  // case visibly ON but failing
+    const cntLbl=txt('cnt++',20,C.gold,'800',true); cntLbl.position.set(640,150); cntLbl.alpha=0; legible(cntLbl); c.addChild(cntLbl);
+    const plus=txt('+1',22,C.safe,'900'); plus.alpha=0; c.addChild(plus);
+    const nest=txt('nestačí',24,C.danger,'900'); nest.position.set(640,180); nest.alpha=0; legible(nest); c.addChild(nest);
+    const tally=new PIXI.Container(); tally.position.set(1080,300); c.addChild(tally);
+    const tallyG=new PIXI.Graphics(); tally.addChild(tallyG);
+    const tallyLbl=txt('ztracený inkrement',13,C.danger,'700'); tallyLbl.position.set(0,-40); tally.addChild(tallyLbl); tallyLbl.alpha=0;
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      tetherAlpha=0.3; bugArmed=true; bugLevel=0.12;
+      // glass case stays ON (alpha 0.85)
+      caseG.clear(); caseG.beginFill(C.accent2,0.05).lineStyle(3,C.accent2,0.85).drawRoundedRect(470,150,340,210,16).endFill();
+      cntLbl.alpha=easeOut(ph(t,88.40,88.7));
+      DECK_VAL_COL=C.gold;
+      // counter shows 100, +1 animates @89.44/89.76
+      DECK_VAL=(t>=91.12)?'101':'100';
+      const pp=ph(t,89.44,90.4); plus.alpha=(pp>0&&pp<1)?0.9:0; plus.position.set(lerp(740,DECK[0]+30,pp),lerp(180,DECK[1]-20,pp));
+      // tear @91.12 -> 101 not 102
+      if(t>=91.12){ DECK_VAL_COL=C.danger; }
+      if(t>=91.12 && !S.fired.has('tear')){ S.fired.add('tear'); fireShock('s10shock',640,180,t); if(FILT.flashRed){ FILT.flashRed.alpha=0.3; sceneFlash(FILT.flashRed,true);} burst(DECK[0],DECK[1],C.danger,10,2,0.14); }
+      nest.alpha=easeOut(ph(t,91.12,91.4))*(1-ph(t,91.9,92.1));
+      tickShock('s10shock',t);
+      if(FILT.flashRed && S.fired.has('tear')){ FILT.flashRed.alpha=0.3*(1-ph(t,91.12,91.32)); if(t>91.33) sceneFlash(FILT.flashRed,false); }
+      // tally ticks +1
+      tallyG.clear(); if(t>=91.12){ tallyG.beginFill(C.danger,0.85).drawRect(0,0,40,30).endFill(); } tallyLbl.alpha=(t>=91.12)?0.9:0;
+    },destroy(){ sceneFlash(FILT.flashRed,false); }};
+  });
+
+  // ---------- S11 : VERSE 2c 92.12-97.86 (RMW = 3 steps, interleave) ----------
+  scene(92.12,97.86,'VERSE 2','volatile',(S)=>{
+    const c=new PIXI.Container();
+    // 3 RMW cards
+    const cards=[]; const cdat=[['READ','100'],['MODIFY','101'],['WRITE','101']];
+    cdat.forEach((d,i)=>{ const cont=new PIXI.Container(); cont.position.set(CARD_X[i],CARD_Y-300); c.addChild(cont);
+      const g=new PIXI.Graphics(); g.beginFill(0x140d22,0.96).lineStyle(2,C.accent,0.7).drawRoundedRect(-48,-66,96,132,8).endFill(); cont.addChild(g);
+      const l=txt(d[0],16,C.text,'800'); l.position.set(0,-30); cont.addChild(l);
+      const v=txt(d[1],22,C.gold,'900'); v.position.set(0,20); cont.addChild(v);
+      cards.push(cont); });
+    // interleave shadow MC
+    const shadow=new PIXI.Container(); c.addChild(shadow); shadow.alpha=0;
+    const sg=new PIXI.Graphics(); sg.beginFill(0x6a4a7a,0.9).drawCircle(0,-30,14).endFill(); sg.beginFill(0x6a4a7a,0.8).moveTo(-22,4).quadraticCurveTo(0,-16,22,4).lineTo(18,34).lineTo(-18,34).closePath().endFill(); shadow.addChild(sg);
+    let mblur=null; if(hasF('MotionBlurFilter')) mblur=new F.MotionBlurFilter({velocity:[0,0],kernelSize:9,offset:0});
+    const zhat=txt('počítadlo zhatí — 101 ≠ 102',18,C.danger,'800'); zhat.position.set(640,440); zhat.alpha=0; legible(zhat); c.addChild(zhat);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL='100'; DECK_VAL_COL=C.gold; tetherAlpha=0.3; bugArmed=true; bugLevel=0.14;
+      // deal cards left->right on tři kroky @93.79 (slide down to CARD_Y)
+      cards.forEach((cd,i)=>{ const at=93.79+i*0.18; const p=easeOutBack(ph(t,at,at+0.5)); cd.y=lerp(CARD_Y-300,CARD_Y,p); cd.alpha=ph(t,at,at+0.3); });
+      // interleave @95.58: shadow slips up between READ and WRITE, reads 100, both write 101
+      const ip=ph(t,95.58,96.6);
+      shadow.alpha=(ip>0.02&&ip<0.98)?0.9:0;
+      shadow.position.set(lerp(640,640,ip),lerp(560,CARD_Y,easeInOut(ip)));
+      if(mblur){ const v=(ip>0.05&&ip<0.95)?22:0; if(v>0 && (!shadow.filters||shadow.filters.indexOf(mblur)<0)) shadow.filters=[mblur]; else if(v===0 && shadow.filters) shadow.filters=null; mblur.velocity=[0,-v]; }
+      // zhatí @97.01 — 101, readout glitch micro-burst
+      if(t>=97.01){ DECK_VAL='101'; DECK_VAL_COL=C.danger; }
+      if(t>=97.01 && t<97.6){ if(FILT.glitchSmall){ if(!hasOverlayFx('rmwGlitch')) addOverlayFx('rmwGlitch',FILT.glitchSmall); FILT.glitchSmall.offset=5*(1-ph(t,97.01,97.5)); FILT.glitchSmall.seed=hash01(Math.floor(t*12)); } }
+      else removeOverlayFx('rmwGlitch');
+      zhat.alpha=easeOut(ph(t,97.01,97.3))*(1-ph(t,97.6,97.85));
+    },destroy(){ removeOverlayFx('rmwGlitch'); }};
+  });
+
+  // ---------- S12 : VERSE 2d 97.86-110.54 (x86 barrier asymmetry) ----------
+  scene(97.86,110.54,'VERSE 2','volatile',(S)=>{
+    const c=new PIXI.Container();
+    const x86=txt('x86',22,C.gold,'800'); x86.position.set(640,160); x86.alpha=0; legible(x86); c.addChild(x86);
+    const die=new PIXI.Graphics(); c.addChild(die);
+    // two lanes
+    const lanes=new PIXI.Graphics(); c.addChild(lanes);
+    const wTag=txt('zápis = bariéra',16,C.writer,'800'); wTag.position.set(360,540); wTag.alpha=0; legible(wTag); c.addChild(wTag);
+    const rTag=txt('čtení = zdarma',16,C.reader,'800'); rTag.position.set(920,540); rTag.alpha=0; legible(rTag); c.addChild(rTag);
+    // barrier bar on write lane
+    const bar=new PIXI.Graphics(); c.addChild(bar);
+    // mnemonic type-on (booth screen) with clip-wipe mask
+    const mnem=txt('lock addl $0x0,(%rsp)',20,C.gold,'700',true); mnem.anchor.set(0,0.5); mnem.position.set(BOOTH[0]-116,BOOTH[1]-11); c.addChild(mnem);
+    const mnemMask=new PIXI.Graphics(); c.addChild(mnemMask); mnem.mask=mnemMask;
+    const movTxt=txt('mov',20,C.gold,'700',true); movTxt.position.set(920,300); movTxt.alpha=0; legible(movTxt); c.addChild(movTxt);
+    const cost=txt('⛽ zápis: bariéra · čtení: 0',16,C.muted,'700'); cost.position.set(640,520); cost.alpha=0; legible(cost); c.addChild(cost);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL='0'; DECK_VAL_COL=C.gold; tetherAlpha=0.3; bugArmed=true; bugLevel=0.1;
+      // x86 stamp @98.08
+      x86.alpha=easeOut(ph(t,98.08,98.5))*(1-ph(t,109.8,110.5));
+      die.clear(); if(x86.alpha>0.01){ die.lineStyle(2,C.gold,x86.alpha*0.7).drawRoundedRect(604,140,72,40,5); }
+      // two lanes (write left amber, read right cyan)
+      lanes.clear();
+      lanes.lineStyle(8,C.writer,0.35).moveTo(WRITER[0],WRITER[1]-30).lineTo(DECK[0]-80,DECK[1]+60);
+      lanes.lineStyle(8,C.reader,0.35).moveTo(READER[0],READER[1]-30).lineTo(DECK[0]+80,DECK[1]+60);
+      // mnemonic type-on lock @100.87 / addl @101.30 / zásobník @101.87 (clip-wipe)
+      const typ=clamp01(ph(t,100.87,102.4));
+      mnemMask.clear(); mnemMask.beginFill(0xffffff,1).drawRect(BOOTH[0]-118,BOOTH[1]-24,236*typ,28).endFill();
+      mnem.alpha=(t>=100.87)?1*(1-ph(t,110.0,110.5)):0;
+      // barrier bar slams down @104.45
+      bar.clear();
+      const ba=easeOutBack(ph(t,104.45,104.9));
+      if(ba>0.01){ const by=lerp(120,330,ba); bar.beginFill(C.gold,0.85*(1-ph(t,110.0,110.5))).lineStyle(2,C.white,0.6).drawRoundedRect(WRITER[0]-30,by,200,14,4).endFill(); }
+      if(t>=104.45 && !S.fired.has('barrier')){ S.fired.add('barrier'); fireShock('s12shock',WRITER[0]+70,330,t); if(FILT.flashGold){ FILT.flashGold.alpha=0.25; sceneFlash(FILT.flashGold,true);} }
+      tickShock('s12shock',t);
+      if(FILT.flashGold && S.fired.has('barrier')){ FILT.flashGold.alpha=0.25*(1-ph(t,104.45,104.75)); if(t>104.76) sceneFlash(FILT.flashGold,false); }
+      wTag.alpha=easeOut(ph(t,104.45,104.9))*(1-ph(t,110.0,110.5));
+      // read lane stays open; mov shows @106.28
+      movTxt.alpha=easeOut(ph(t,106.28,106.7))*(1-ph(t,110.0,110.5));
+      rTag.alpha=easeOut(ph(t,108.39,108.8))*(1-ph(t,110.0,110.5));
+      cost.alpha=easeOut(ph(t,104.45,105.0))*(1-ph(t,110.0,110.5));
+      // 110.40-110.54 tail: all frozen at full reveal (typ saturates, bar holds)
+    },destroy(){ sceneFlash(FILT.flashGold,false); }};
+  });
+
+  // ---------- S13 : PRE-CHORUS 2 110.54-119.54 (reprise defenses, faster) ----------
+  scene(110.54,119.54,'PRE-CHORUS','defense',(S)=>{
+    const c=new PIXI.Container();
+    const pad=buildMPC(); c.addChild(pad); pad.y=0;
+    const caseG=new PIXI.Graphics(); c.addChild(caseG); // faint volatile case dims out
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL='0'; DECK_VAL_COL=C.gold; writerAim=null; readerAim=null; tetherAlpha=0.35; bugArmed=true; bugLevel=0.12;
+      // re-light buttons (faster 0.3s pops) on words
+      lightMPC(pad,0,t,113.86); lightMPC(pad,1,t,114.88); lightMPC(pad,2,t,116.64);
+      defenseFlash(t,113.86,S,'r0'); defenseFlash(t,114.88,S,'r1'); defenseFlash(t,116.64,S,'r2');
+      // glass case present from S12, dims out as button 2 lights
+      caseG.clear(); const a=0.3*(1-ph(t,116.64,117.4)); if(a>0.005) caseG.lineStyle(2.5,C.accent2,a).drawRoundedRect(470,150,340,210,16);
+    },destroy(){ sceneFlash(FILT.flashSafe,false); }};
+  });
+
+  // ---------- S14 : CHORUS 2 119.54-136.32 (L1-L3 only; L4 in S16) ----------
+  scene(119.54,136.32,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(2);
+    return {c,update(lt,t){
+      updateChorus(c,t,{ L1:119.54,L2:125.38,L3:130.50,L4:999, r0:120.14,r1:122.39,r2:124.54,
+        l2last:129.15, l3jasna:131.65, d0:999,d1:999,d2:999, cas:999, faa:999 },2,S);
+    }, destroy(){ removeOverlayFx('raceGlitch'); removeOverlayFx('raceSplit'); removeOverlayFx('hookZoom'); }};
+  });
+
+  // ---------- S15 : INSTRUMENTAL beat 136.32-137.92 ----------
+  scene(136.32,137.92,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    // pre-stage 3 RMW cards faintly
+    const cards=new PIXI.Graphics(); c.addChild(cards);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL='100'; DECK_VAL_COL=C.gold; writerAim=null; readerAim=null; tetherAlpha=0.35; bugArmed=true; bugLevel=0.1;
+      if(FILT.kawase){ FILT.kawase.strength=2*ph(t,136.32,136.8)*(1-ph(t,137.0,137.92)); bgIntent.kawase=(FILT.kawase.strength>0.05); }
+      cards.clear(); const a=0.25*ph(t,137.2,137.92);
+      CARD_X.forEach(cx=>{ cards.beginFill(0x140d22,0.6*a/0.25).lineStyle(2,C.accent,a).drawRoundedRect(cx-48,CARD_Y-66,96,132,8).endFill(); });
+    },destroy(){ bgIntent.kawase=false; }};
+  });
+
+  // ---------- S16 : BRIDGE-HOOK 137.92-142.88 (names atomics) ----------
+  scene(137.92,142.88,'BRIDGE-HOOK','defense',(S)=>{
+    const c=new PIXI.Container();
+    const pad=buildMPC(); c.addChild(pad); pad.y=0;
+    const subCAS=txt('CAS',18,C.safe,'800'); subCAS.position.set(760,650); subCAS.alpha=0; legible(subCAS); c.addChild(subCAS);
+    const subFAA=txt('fetch-and-add',18,C.safe,'800'); subFAA.position.set(880,650); subFAA.alpha=0; legible(subFAA); c.addChild(subFAA);
+    const conn=txt('dvě atomiky →',16,C.muted,'700'); conn.position.set(680,650); conn.alpha=0; legible(conn); c.addChild(conn);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      DECK_VAL='102'; DECK_VAL_COL=C.gold; writerAim=null; readerAim=null; tetherAlpha=0.35; bugArmed=true; bugLevel=0.1;
+      lightMPC(pad,0,t,137.92); lightMPC(pad,1,t,138.84); lightMPC(pad,2,t,140.04);
+      defenseFlash(t,137.92,S,'bh0'); defenseFlash(t,138.84,S,'bh1'); defenseFlash(t,140.04,S,'bh2');
+      subCAS.alpha=easeOut(ph(t,140.88,141.2)); subFAA.alpha=easeOut(ph(t,141.75,142.05));
+      conn.alpha=easeOut(ph(t,140.88,141.3))*(1-ph(t,142.5,142.85));
+      if(t>=140.88 && !subCAS.filters && hasF('GlowFilter')) subCAS.filters=[new F.GlowFilter({distance:8,outerStrength:1.5,color:C.safe,quality:0.3})];
+      if(t>=141.75 && !subFAA.filters && hasF('GlowFilter')) subFAA.filters=[new F.GlowFilter({distance:8,outerStrength:1.5,color:C.safe,quality:0.3})];
+    },destroy(){ sceneFlash(FILT.flashSafe,false); }};
+  });
+
+  // ---------- S17 : BRIDGE a 142.88-149.20 (atomic = 3 cards FUSE to ONE) ----------
+  scene(142.88,149.20,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const cards=[]; const cdat=['READ','MODIFY','WRITE'];
+    cdat.forEach((lab,i)=>{ const cont=new PIXI.Container(); cont.position.set(CARD_X[i],CARD_Y); c.addChild(cont);
+      const g=new PIXI.Graphics(); g.beginFill(0x140d22,0.96).lineStyle(2,C.accent,0.7).drawRoundedRect(-48,-66,96,132,8).endFill(); cont.addChild(g);
+      const l=txt(lab,15,C.text,'800'); cont.addChild(l); cards.push({cont,g}); });
+    const fused=txt('ATOMIC RMW',20,C.safe,'800'); fused.position.set(640,250); fused.alpha=0; legible(fused); c.addChild(fused);
+    if(hasF('GlowFilter')) fused.filters=(fused.filters||[]).concat([new F.GlowFilter({distance:14,outerStrength:0,color:C.safe,quality:0.4})]);
+    const fusedG=new PIXI.Graphics(); c.addChildAt(fusedG,0);
+    // blocked shadow
+    const shadow=new PIXI.Container(); c.addChild(shadow); shadow.alpha=0;
+    const sg=new PIXI.Graphics(); sg.beginFill(0x6a4a7a,0.9).drawCircle(0,-26,12).endFill(); shadow.addChild(sg);
+    const oneStep=txt('jeden nedělitelný krok',18,C.safe,'800'); oneStep.position.set(640,440); oneStep.alpha=0; legible(oneStep); c.addChild(oneStep);
+    let mblur=null; if(hasF('MotionBlurFilter')) mblur=new F.MotionBlurFilter({velocity:[0,0],kernelSize:9,offset:0});
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      tetherAlpha=0.3; bugArmed=true; bugLevel=0.08;
+      // counter ticks cleanly on the beat 100->...
+      DECK_VAL=String(100+Math.floor((t-142.88)*BPM/60)%6); DECK_VAL_COL=C.safe;
+      // cards appear @142.88, fuse @148.10
+      const fp=easeInOut(ph(t,148.10,148.7));
+      cards.forEach((cd,i)=>{ cd.cont.alpha=ph(t,142.88,143.4)*(1-fp); cd.cont.x=lerp(CARD_X[i],640,fp); cd.cont.scale.set(1-0.4*fp);
+        if(mblur){ const moving=(fp>0.05&&fp<0.95); if(moving && (!cd.cont.filters||cd.cont.filters.indexOf(mblur)<0)) cd.cont.filters=[mblur]; else if(!moving && cd.cont.filters) cd.cont.filters=null; mblur.velocity=[(640-CARD_X[i])*0.06,0]; } });
+      fusedG.clear();
+      if(fp>0.05){ fusedG.beginFill(C.ink,0.9*fp).lineStyle(2.5,C.safe,fp).drawRoundedRect(640-70,250-40,140,80,10).endFill(); }
+      fused.alpha=fp*(1-ph(t,148.9,149.2));
+      if(fused.filters) fused.filters[fused.filters.length-1].outerStrength=fp*(1.5+1.5*beat(t));
+      if(t>=148.10 && !S.fired.has('fuse')){ S.fired.add('fuse'); fireShock('s17shock',640,250,t); if(FILT.flashSafe){ FILT.flashSafe.alpha=0.35; sceneFlash(FILT.flashSafe,true);} }
+      tickShock('s17shock',t);
+      if(FILT.flashSafe && S.fired.has('fuse')){ FILT.flashSafe.alpha=0.35*(1-ph(t,148.10,148.4)); if(t>148.41) sceneFlash(FILT.flashSafe,false); }
+      // shadow tries to slip @146.6 then bounces off the fused card
+      const shp=ph(t,146.6,148.1);
+      shadow.alpha=(shp>0.02&& shp<0.98)?0.9:0;
+      const shipP = shp<0.85 ? shp/0.85 : 1-(shp-0.85)/0.15*0.3;  // approach then bounce-back
+      const bounce=(t>=148.10)? -20*Math.exp(-(t-148.10)*4):0;
+      shadow.position.set(640,lerp(560,300,easeInOut(shipP))+bounce);
+      oneStep.alpha=easeOut(ph(t,148.10,148.5))*(1-ph(t,149.0,149.2));
+    },destroy(){ sceneFlash(FILT.flashSafe,false); cards.forEach(cd=>{ if(cd.cont.filters) cd.cont.filters=null; }); }};
+  });
+
+  // ---------- S18 : BRIDGE b 149.20-156.56 (CAS = compare-and-swap, cmpxchg) ----------
+  scene(149.20,156.56,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const expChip=new PIXI.Container(); c.addChild(expChip); const eg=new PIXI.Graphics(); expChip.addChild(eg);
+    const eLbl=txt('E:100',16,C.reader,'800'); expChip.addChild(eLbl); expChip.position.set(500,250);
+    const actChip=new PIXI.Container(); c.addChild(actChip); const ag=new PIXI.Graphics(); actChip.addChild(ag);
+    const aLbl=txt('A:100',16,C.gold,'800'); actChip.addChild(aLbl); actChip.position.set(780,250);
+    const cmp=txt('==',24,C.safe,'900'); cmp.position.set(640,250); cmp.alpha=0; legible(cmp); c.addChild(cmp);
+    const retry=txt('retry',14,C.danger,'800'); retry.position.set(640,330); retry.alpha=0; legible(retry); c.addChild(retry);
+    const retryArr=new PIXI.Graphics(); c.addChild(retryArr);
+    // mnemonic cmpxchg type-on
+    const mnem=txt('cmpxchg',24,C.gold,'700',true); mnem.anchor.set(0,0.5); mnem.position.set(BOOTH[0]-50,BOOTH[1]-11); c.addChild(mnem);
+    const mnemMask=new PIXI.Graphics(); c.addChild(mnemMask); mnem.mask=mnemMask;
+    const casLbl=txt('compare-and-swap',18,C.safe,'800'); casLbl.position.set(640,440); casLbl.alpha=0; legible(casLbl); c.addChild(casLbl);
+    if(hasF('GlowFilter')) mnem.filters=[new F.GlowFilter({distance:8,outerStrength:0,color:C.gold,quality:0.3})];
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      tetherAlpha=0.3; bugArmed=true; bugLevel=0.08;
+      DECK_VAL_COL=C.gold;
+      // first attempt: E:100 vs A:100 -> MATCH -> swap 100->102 @150.24
+      const a1=easeInOut(ph(t,150.24,150.9));
+      expChip.x=lerp(500,600,a1); actChip.x=lerp(780,680,a1);
+      const match=(t>=150.9 && t<152.5);
+      cmp.text=(t>=152.5)?'≠':'=='; cmp.style.fill=(t>=152.5)?C.danger:C.safe;
+      cmp.alpha=easeOut(ph(t,150.9,151.2))*(1-ph(t,155.5,156.4));
+      eg.clear(); eg.beginFill(0x140d22,0.95).lineStyle(2,C.reader,0.7).drawRoundedRect(-40,-22,80,44,6).endFill();
+      ag.clear(); ag.beginFill(0x140d22,0.95).lineStyle(2,(t>=152.5)?C.danger:C.gold,0.7).drawRoundedRect(-40,-22,80,44,6).endFill();
+      if(match){ DECK_VAL='102'; DECK_VAL_COL=C.safe; aLbl.text='A:102';
+        if(!S.fired.has('match')){ S.fired.add('match'); if(FILT.flashSafe){ FILT.flashSafe.alpha=0.3; sceneFlash(FILT.flashSafe,true);} } }
+      else if(t<150.9){ DECK_VAL='100'; aLbl.text='A:100'; }
+      if(FILT.flashSafe && S.fired.has('match')){ FILT.flashSafe.alpha=0.3*(1-ph(t,150.9,151.2)); if(t>151.3) sceneFlash(FILT.flashSafe,false); }
+      // second attempt @152.5: E:100 vs A:102 -> MISMATCH -> no swap -> retry
+      if(t>=152.5){ eLbl.text='E:100'; aLbl.text='A:102'; DECK_VAL='102'; }
+      retry.alpha=easeOut(ph(t,153.0,153.4))*(1-ph(t,155.5,156.4));
+      retryArr.clear();
+      if(retry.alpha>0.01){ const ang=t*3; retryArr.lineStyle(2.5,C.danger,retry.alpha).arc(640,330,26,ang,ang+TAU*0.75);
+        retryArr.beginFill(C.danger,retry.alpha).drawCircle(640+Math.cos(ang+TAU*0.75)*26,330+Math.sin(ang+TAU*0.75)*26,4).endFill(); }
+      // cmpxchg type-on @154.78
+      const typ=clamp01(ph(t,154.78,155.6));
+      mnemMask.clear(); mnemMask.beginFill(0xffffff,1).drawRect(BOOTH[0]-52,BOOTH[1]-24,120*typ,28).endFill();
+      mnem.alpha=(t>=154.78)?1:0; if(mnem.filters) mnem.filters[0].outerStrength=(t>=154.78)?(1.0+1.0*beat(t)):0;
+      casLbl.alpha=easeOut(ph(t,150.24,150.8))*(1-ph(t,156.0,156.5));
+    },destroy(){ sceneFlash(FILT.flashSafe,false); }};
+  });
+
+  // ---------- S19 : BRIDGE c 156.56-172.26 (fetch-and-add lock xadd; lock = exclusive line) ----------
+  scene(156.56,172.26,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const faaLbl=txt('vždy přičte (bez compare)',18,C.safe,'800'); faaLbl.position.set(640,440); faaLbl.alpha=0; legible(faaLbl); c.addChild(faaLbl);
+    const plus=txt('+=',26,C.safe,'900'); plus.position.set(640,160); plus.alpha=0; legible(plus); c.addChild(plus);
+    const oldGhost=txt('old',16,C.muted,'700'); oldGhost.alpha=0; c.addChild(oldGhost);
+    // mnemonic lock xadd
+    const mnem=txt('lock xadd',24,C.gold,'700',true); mnem.anchor.set(0,0.5); mnem.position.set(BOOTH[0]-58,BOOTH[1]-11); c.addChild(mnem);
+    const mnemMask=new PIXI.Graphics(); c.addChild(mnemMask); mnem.mask=mnemMask;
+    if(hasF('GlowFilter')) mnem.filters=[new F.GlowFilter({distance:8,outerStrength:0,color:C.gold,quality:0.3})];
+    const x86b=txt('x86',18,C.gold,'800'); x86b.position.set(640,200); x86b.alpha=0; legible(x86b); c.addChild(x86b);
+    // lock clamp + 4 cores
+    const clamp=new PIXI.Graphics(); c.addChild(clamp);
+    const exLbl=txt('EXCLUSIVE · jen tobě',18,C.gold,'800'); exLbl.position.set(640,420); exLbl.alpha=0; legible(exLbl); c.addChild(exLbl);
+    const coreGs=CORES.map(p=>{ const cont=new PIXI.Container(); cont.position.set(p[0],p[1]); c.addChild(cont);
+      const g=new PIXI.Graphics(); cont.addChild(g); const arm=new PIXI.Graphics(); cont.addChild(arm); cont._g=g; cont._arm=arm; return cont; });
+    const cap=txt('lock = výhradní cache line po dobu operace',16,C.muted,'700'); cap.position.set(640,520); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      tetherAlpha=0.3; bugArmed=true; bugLevel=0.08;
+      DECK_VAL_COL=C.safe;
+      // FAA += stamp @156.56, readout ticks old->old+N @157.27/159.10
+      plus.alpha=easeOut(ph(t,156.56,157.0))*(1-ph(t,160.5,161.0));
+      if(t>=159.10){ DECK_VAL='107'; } else if(t>=157.27){ DECK_VAL='100'; } else DECK_VAL='100';
+      faaLbl.alpha=easeOut(ph(t,157.27,157.7))*(1-ph(t,163.0,163.6));
+      // old ghost flies off @159.10
+      const op=ph(t,159.10,160.3); oldGhost.alpha=(op>0&&op<1)?0.8:0; oldGhost.position.set(lerp(640,820,op),lerp(250,150,op));
+      // lock xadd type-on @162.84
+      const typ=clamp01(ph(t,162.84,163.8));
+      mnemMask.clear(); mnemMask.beginFill(0xffffff,1).drawRect(BOOTH[0]-60,BOOTH[1]-24,130*typ,28).endFill();
+      mnem.alpha=(t>=162.84)?1:0; if(mnem.filters) mnem.filters[0].outerStrength=(t>=162.84)?(1.0+1.0*beat(t)):0;
+      x86b.alpha=easeOut(ph(t,160.87,161.3))*(1-ph(t,163.5,164.0));
+      // THE LOCK CLAMP @166.62 -> release @170.86
+      const clampOn=(t>=166.62 && t<170.86);
+      clamp.clear();
+      if(t>=164.20){ const ca=easeOut(ph(t,166.62,167.2))*(1-ph(t,170.86,171.4));
+        if(ca>0.01){ clamp.lineStyle(4,C.gold,ca*(0.7+0.3*beat(t))).drawCircle(DECK[0],DECK[1],158); } }
+      exLbl.alpha=easeOut(ph(t,166.62,167.2))*(1-ph(t,170.86,171.4));
+      if(clampOn && deck._glow){ deck._glow.color=C.gold; }
+      // 4 cores reach for the line, held off (only the holder has it)
+      coreGs.forEach((cont,i)=>{ cont._g.clear(); cont._g.beginFill(0x140d22,0.9).lineStyle(2,C.muted,0.6).drawRoundedRect(-24,-18,48,36,6).endFill();
+        const reach=clampOn? (0.6+0.4*Math.sin(t*3+i)):0;
+        cont._arm.clear();
+        if(reach>0.05){ const dx=(DECK[0]-cont.position.x), dy=(DECK[1]-cont.position.y); const len=Math.hypot(dx,dy);
+          const stopAt=0.55*reach; cont._arm.lineStyle(3,C.muted,0.7).moveTo(0,0).lineTo(dx*stopAt,dy*stopAt);
+          // "wait" tick at the clamp ring
+          cont._arm.beginFill(C.danger,0.6).drawCircle(dx*stopAt,dy*stopAt,3).endFill(); }
+      });
+      // release @170.86 safe flash
+      if(t>=170.86 && !S.fired.has('release')){ S.fired.add('release'); if(FILT.flashSafe){ FILT.flashSafe.alpha=0.3; sceneFlash(FILT.flashSafe,true);} }
+      if(FILT.flashSafe && S.fired.has('release')){ FILT.flashSafe.alpha=0.3*(1-ph(t,170.86,171.1)); if(t>171.2) sceneFlash(FILT.flashSafe,false); }
+      cap.alpha=easeOut(ph(t,166.62,167.2))*(1-ph(t,171.6,172.1));
+    },destroy(){ sceneFlash(FILT.flashSafe,false); if(deck._glow) deck._glow.color=C.accent; }};
+  });
+
+  // ---------- S20 : CHORUS 3 172.26-193.30 (climactic) ----------
+  scene(172.26,193.30,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(3);
+    return {c,update(lt,t){
+      updateChorus(c,t,{ L1:172.26,L2:176.20,L3:181.42,L4:190.28, r0:172.62,r1:173.88,r2:175.62,
+        l2last:180.30, l3jasna:182.66, d0:190.28,d1:190.80,d2:190.80, cas:191.72, faa:192.60 },3,S);
+      // held final fetch-and-add @192.60 -> hookZoom pull carried into OUTRO
+      if(t>=192.60 && !hasOverlayFx('hookZoom2')){ if(FILT.zoomHeld){ FILT.zoomHeld.center=DECK.slice(); addOverlayFx('hookZoom2',FILT.zoomHeld);} }
+      if(FILT.zoomHeld && hasOverlayFx('hookZoom2')){ let st; if(t<193.30) st=0.20*easeInOut(ph(t,192.60,193.30)); else st=0.20*(1-ph(t,193.30,194.2)); FILT.zoomHeld.strength=clamp01(st); }
+    }, destroy(){ removeOverlayFx('raceGlitch'); removeOverlayFx('raceSplit'); removeOverlayFx('hookZoom'); }};
+  });
+
+  // ---------- S21 : OUTRO 193.30-207.18 (recipe reprise, thesis) ----------
+  scene(193.30,207.18,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // recipe slots re-light one per phrase
+    const slots=[]; const recData=[['Sdílené místo',C.reader],['jeden zápis',C.writer],['žádné synchro',C.danger]];
+    recData.forEach((rd,i)=>{ const cont=new PIXI.Container(); cont.position.set(REC[i][0],REC[i][1]); c.addChild(cont);
+      const g=new PIXI.Graphics(); cont.addChild(g); const l=txt(rd[0],18,rd[1],'800'); cont.addChild(l);
+      if(hasF('GlowFilter')){ cont._g=new F.GlowFilter({distance:10,outerStrength:0,color:rd[1],quality:0.3}); cont.filters=[cont._g]; }
+      slots.push({cont,g,col:rd[1]}); });
+    const thesis=txt('DATA RACE = chybí synchronizace',24,C.accent,'800'); thesis.position.set(640,180); thesis.alpha=0; legible(thesis); c.addChild(thesis);
+    if(hasF('GlowFilter')) thesis.filters=(thesis.filters||[]).concat([new F.GlowFilter({distance:14,outerStrength:0,color:C.accent,quality:0.4})]);
+    const title=txt('DATA RACE',58,C.accent,'900'); title.position.set(640,330); title.alpha=0; legible(title); c.addChild(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:0,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('volatile · zámek · CAS · fetch-and-add',22,C.muted,'700'); sub.position.set(640,380); sub.alpha=0; legible(sub); c.addChild(sub);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.0,1.04,easeInOut(ph(t,193.30,196.0))); camPivotX=640; camPivotY=DECK[1]+40;
+      tetherAlpha=0.35; bugArmed=true; bugLevel=0.12;
+      if(bloomF) bloomF.bloomScale=1.0+0.5*beat(t);
+      // release hookZoom2 carry @194.2
+      if(FILT.zoomHeld && hasOverlayFx('hookZoom2')){ FILT.zoomHeld.strength=0.20*(1-ph(t,193.30,194.2)); if(t>=194.2) removeOverlayFx('hookZoom2'); }
+      // recipe re-stamp @194.52/196.00/197.53
+      const lit=[ph(t,194.52,194.9),ph(t,196.00,196.4),ph(t,197.53,197.9)];
+      slots.forEach((s,i)=>{ const p=easeOutBack(lit[i])*(1-ph(t,205.37,206.4)); s.cont.scale.set(0.7+0.3*clamp01(lit[i]));
+        s.g.clear(); s.g.beginFill(C.ink,0.5+0.4*lit[i]).lineStyle(2,s.col,0.3+0.6*lit[i]).drawRoundedRect(-86,-20,172,40,8).endFill();
+        if(s.cont._g) s.cont._g.outerStrength=lit[i]*(1.0+1.0*beat(t)); });
+      DECK_VAL_COL=C.gold; DECK_VAL=String(100+Math.floor((t-193.30)*BPM/60)%8);
+      // race returns as third recipe slot lights (no sync) @197.53
+      const raceOn=(t>=197.53 && t<198.96);
+      if(raceOn){ DECK_VAL=String(prngFromBeat(Math.floor(t/0.4))); DECK_VAL_COL=C.danger;
+        if(FILT.glitchSmall){ if(!hasOverlayFx('raceGlitch')) addOverlayFx('raceGlitch',FILT.glitchSmall); FILT.glitchSmall.offset=5*(1-ph(t,197.53,198.5)); FILT.glitchSmall.seed=hash01(Math.floor(t*9)); }
+        if(FILT.rgb){ if(!hasOverlayFx('raceSplit')) addOverlayFx('raceSplit',FILT.rgb); const d=5*(1-ph(t,197.53,198.5)); FILT.rgb.red=[d,0]; FILT.rgb.blue=[-d,0]; }
+      } else if(t<204.57 || t>=205.37){ removeOverlayFx('raceGlitch'); removeOverlayFx('raceSplit'); }
+      // "chybí" @204.57 glitch peaks
+      if(t>=204.57 && t<205.37){ DECK_VAL=String(prngFromBeat(Math.floor(t/0.3))); DECK_VAL_COL=C.danger;
+        if(FILT.glitch){ if(!hasOverlayFx('raceGlitch')) { removeOverlayFx('raceGlitch'); addOverlayFx('raceGlitch',FILT.glitch);} FILT.glitch.offset=8; FILT.glitch.seed=hash01(Math.floor(t*14)); FILT.glitch.slices=6; }
+        if(FILT.rgb){ if(!hasOverlayFx('raceSplit')) addOverlayFx('raceSplit',FILT.rgb); FILT.rgb.red=[8,0]; FILT.rgb.blue=[-8,0]; }
+      }
+      // SNAP to clean grid @205.37 (synchronizace)
+      if(t>=205.37){ removeOverlayFx('raceGlitch'); removeOverlayFx('raceSplit'); DECK_VAL='102'; DECK_VAL_COL=C.safe;
+        if(!S.fired.has('snap')){ S.fired.add('snap'); if(FILT.flashSafe){ FILT.flashSafe.alpha=0.35; sceneFlash(FILT.flashSafe,true);} fireShock('s21shock',640,180,t); }
+        bgIntent.tilt=true;
+      }
+      tickShock('s21shock',t);
+      if(FILT.flashSafe && S.fired.has('snap')){ FILT.flashSafe.alpha=0.35*(1-ph(t,205.37,205.7)); if(t>205.71) sceneFlash(FILT.flashSafe,false); }
+      thesis.alpha=easeOut(ph(t,205.37,205.8))*(1-ph(t,206.9,207.18));
+      if(thesis.filters) thesis.filters[thesis.filters.length-1].outerStrength=(t>=205.37)?(1.5+1.5*beat(t)):0;
+      title.alpha=easeOut(ph(t,205.37,206.4)); sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=(t>=205.37)?(1.5+1.5*beat(t)):0;
+    },destroy(){ removeOverlayFx('raceGlitch'); removeOverlayFx('raceSplit'); sceneFlash(FILT.flashSafe,false); }};
+  });
+
+  // ---------- S22 : END-CARD / tail hold 207.18 -> audio.duration ----------
+  scene(207.18,1e9,'END','end',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const title=txt('DATA RACE',58,C.accent,'900'); title.position.set(640,320); legible(title); c.addChild(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:1.5,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('volatile · zámek · CAS · fetch-and-add',22,C.muted,'700'); sub.position.set(640,372); legible(sub); c.addChild(sub);
+    const tagline=txt('💥 Data race, volatile a dvě atomiky · ESW B4M36ESW',20,C.muted,'700'); tagline.position.set(640,560); legible(tagline); c.addChild(tagline);
+    return {c,update(lt,t){
+      const q=s22q(t);
+      camDollyScale=lerp(camDollyScale,1.0,easeInOut(clamp01(q/0.6))); camPivotX=640; camPivotY=360;
+      moteVisibleRatio=lerp(1.0,0.18,easeInOut(q));
+      spinAmp=lerp(1.0,0.0,easeInOut(clamp01(q/0.8)));
+      DECK_VAL='102'; DECK_VAL_COL=C.safe; writerAim=null; readerAim=null; tetherAlpha=lerp(0.35,0,easeInOut(q)); bugArmed=true; bugLevel=lerp(0.12,0,q);
+      if(bloomF) bloomF.bloomScale=1.0+0.5*triWave01(q);
+      if(title._g) title._g.outerStrength=lerp(1.5,0.3,easeInOut(q));
+    },destroy(){ moteVisibleRatio=1; spinAmp=1; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='race'){ bgGrade.saturate(0.25,false); bgGrade.brightness(1.04,true); }
+    else if(sec==='defense'){ bgGrade.saturate(0.05,false); }
+    else if(sec==='volatile'){ bgGrade.saturate(0.06,false); }
+    else if(sec==='bridge'){ bgGrade.saturate(0.04,false); }
+    else if(sec==='chorus'){ bgGrade.saturate(0.16,false); }
+    else if(sec==='outro'){ bgGrade.saturate(0.10,false); }
+    else { bgGrade.saturate(0.10,false); }
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM) — exact final picker (storyboard §6)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=800, LAST_WORD_END=207180;
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; }
+    return null;   // fallback removed — interior gaps show no line
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    // boom-bap glow pulse on the active word via CSS var
+    subEl.style.setProperty('--kbpulse',(14+8*beat(t))+'px');
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    bgIntent.kawase=false; bgIntent.tilt=false;
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='race'){ top=lerpColor(C.bgTop,C.bgTopRace,0.7); bot=lerpColor(C.bgBot,C.bgBotRace,0.7); }
+    else if(sec==='defense'||sec==='volatile'){ top=lerpColor(C.bgTop,C.bgTopTeal,0.5); bot=lerpColor(C.bgBot,C.bgBotTeal,0.5); }
+    else if(sec==='bridge'){ top=lerpColor(C.bgTop,C.bgTopTeal,0.35); bot=lerpColor(C.bgBot,C.bgBotTeal,0.35); }
+    if(t>=END_START){ const q=easeInOut(s22q(t)); top=lerpColor(top,0x0a0612,q); bot=lerpColor(bot,0x05060d,q); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // dust drift + grid scroll
+    dustTile.tilePosition.y=(-(t*16))%256; dustTile.alpha=0.05*moteEnvelope/0.22*crackleDensity;
+    gridTile.tilePosition.x=(t*40)%128;
+    if(reflF) reflF.time=t;
+    if(godrayF) godrayF.time=t;
+    bgIntent.godray=(sec==='intro'||sec==='chorus'||sec==='outro');
+
+    // ----- scene manager (backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.12);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame -----
+    { const arr=[bgGrade];
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+    // ----- crackle density default reset (only chorus overrides; reset each frame past it) -----
+    if(sec!=='chorus') crackleDensity=lerp(crackleDensity,1,0.1);
+
+    // ----- persistent set render + camera + karaoke -----
+    renderSet(t,sec);
+    updateCamera(t);
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — crackle motes + sparks (non-load-bearing)
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    const playing = !player.paused && !player.ended;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y<-20){ m.s.y=H+20; m.s.x=Math.random()*W; } }
+      const visible=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      m.s.alpha=visible? moteEnvelope*(0.6+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.05; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>

@@ -1,0 +1,1960 @@
+/* AUTO-GENERATED from 10k Socketů (13).json — do not edit by hand. */
+window.KARAOKE = {
+ "song": "10k Socketů (13)",
+ "title": "Deset tisíc spojení",
+ "source": "13-c10k-nonblocking-io.md",
+ "language": "cs",
+ "duration_ms": 254900,
+ "lines": [
+  {
+   "start_ms": 890,
+   "end_ms": 13320,
+   "text": "Deset tisíc spojení naráz na jeden server,",
+   "words": [
+    {
+     "w": "Deset",
+     "start_ms": 890,
+     "end_ms": 1900
+    },
+    {
+     "w": "tisíc",
+     "start_ms": 1900,
+     "end_ms": 4750
+    },
+    {
+     "w": "spojení",
+     "start_ms": 4750,
+     "end_ms": 7270
+    },
+    {
+     "w": "naráz",
+     "start_ms": 7270,
+     "end_ms": 9150
+    },
+    {
+     "w": "na",
+     "start_ms": 9150,
+     "end_ms": 9780
+    },
+    {
+     "w": "jeden",
+     "start_ms": 9780,
+     "end_ms": 11360
+    },
+    {
+     "w": "server,",
+     "start_ms": 11360,
+     "end_ms": 13320
+    }
+   ]
+  },
+  {
+   "start_ms": 13320,
+   "end_ms": 22460,
+   "text": "tomu se říká C10k, a o to tu jde.",
+   "words": [
+    {
+     "w": "tomu",
+     "start_ms": 13320,
+     "end_ms": 14380
+    },
+    {
+     "w": "se",
+     "start_ms": 14380,
+     "end_ms": 14920
+    },
+    {
+     "w": "říká",
+     "start_ms": 14920,
+     "end_ms": 16770
+    },
+    {
+     "w": "C10k,",
+     "start_ms": 16770,
+     "end_ms": 18980
+    },
+    {
+     "w": "a",
+     "start_ms": 18980,
+     "end_ms": 19360
+    },
+    {
+     "w": "o",
+     "start_ms": 19360,
+     "end_ms": 19740
+    },
+    {
+     "w": "to",
+     "start_ms": 19740,
+     "end_ms": 20510
+    },
+    {
+     "w": "tu",
+     "start_ms": 20510,
+     "end_ms": 21240
+    },
+    {
+     "w": "jde.",
+     "start_ms": 21240,
+     "end_ms": 22460
+    }
+   ]
+  },
+  {
+   "start_ms": 22460,
+   "end_ms": 38620,
+   "text": "Naivně dáš jeden tred na spojení,",
+   "words": [
+    {
+     "w": "Naivně",
+     "start_ms": 22460,
+     "end_ms": 27390
+    },
+    {
+     "w": "dáš",
+     "start_ms": 27390,
+     "end_ms": 30920
+    },
+    {
+     "w": "jeden",
+     "start_ms": 30920,
+     "end_ms": 34450
+    },
+    {
+     "w": "tred",
+     "start_ms": 34450,
+     "end_ms": 37300
+    },
+    {
+     "w": "na",
+     "start_ms": 37300,
+     "end_ms": 37560
+    },
+    {
+     "w": "spojení,",
+     "start_ms": 37560,
+     "end_ms": 38620
+    }
+   ]
+  },
+  {
+   "start_ms": 38620,
+   "end_ms": 42620,
+   "text": "tisíce vláken a každé má vlastní zásobník.",
+   "words": [
+    {
+     "w": "tisíce",
+     "start_ms": 38620,
+     "end_ms": 39210
+    },
+    {
+     "w": "vláken",
+     "start_ms": 39210,
+     "end_ms": 39710
+    },
+    {
+     "w": "a",
+     "start_ms": 39710,
+     "end_ms": 39880
+    },
+    {
+     "w": "každé",
+     "start_ms": 39880,
+     "end_ms": 40560
+    },
+    {
+     "w": "má",
+     "start_ms": 40560,
+     "end_ms": 40850
+    },
+    {
+     "w": "vlastní",
+     "start_ms": 40850,
+     "end_ms": 41620
+    },
+    {
+     "w": "zásobník.",
+     "start_ms": 41620,
+     "end_ms": 42620
+    }
+   ]
+  },
+  {
+   "start_ms": 42620,
+   "end_ms": 52720,
+   "text": "Zabere to moc paměti, kontext switch je drahý, přepínání mezi tolika vlákny tě položí,",
+   "words": [
+    {
+     "w": "Zabere",
+     "start_ms": 42620,
+     "end_ms": 43610
+    },
+    {
+     "w": "to",
+     "start_ms": 43610,
+     "end_ms": 43940
+    },
+    {
+     "w": "moc",
+     "start_ms": 43940,
+     "end_ms": 44440
+    },
+    {
+     "w": "paměti",
+     "start_ms": 44440,
+     "end_ms": 45600
+    },
+    {
+     "w": "a",
+     "start_ms": 45600,
+     "end_ms": 45760
+    },
+    {
+     "w": "kontext",
+     "start_ms": 45760,
+     "end_ms": 46930
+    },
+    {
+     "w": "switch",
+     "start_ms": 46930,
+     "end_ms": 47940
+    },
+    {
+     "w": "je",
+     "start_ms": 47940,
+     "end_ms": 48270
+    },
+    {
+     "w": "drahý,",
+     "start_ms": 48270,
+     "end_ms": 49360
+    },
+    {
+     "w": "přepínání",
+     "start_ms": 49360,
+     "end_ms": 50270
+    },
+    {
+     "w": "mezi",
+     "start_ms": 50270,
+     "end_ms": 50550
+    },
+    {
+     "w": "tolika",
+     "start_ms": 50550,
+     "end_ms": 50970
+    },
+    {
+     "w": "vlákny",
+     "start_ms": 50970,
+     "end_ms": 51540
+    },
+    {
+     "w": "tě",
+     "start_ms": 51540,
+     "end_ms": 51850
+    },
+    {
+     "w": "položí,",
+     "start_ms": 51850,
+     "end_ms": 52720
+    }
+   ]
+  },
+  {
+   "start_ms": 52720,
+   "end_ms": 59920,
+   "text": "a blokující I/O je ještě horší.",
+   "words": [
+    {
+     "w": "a",
+     "start_ms": 52720,
+     "end_ms": 52920
+    },
+    {
+     "w": "blokující",
+     "start_ms": 52920,
+     "end_ms": 55070
+    },
+    {
+     "w": "I/O",
+     "start_ms": 55070,
+     "end_ms": 56640
+    },
+    {
+     "w": "je",
+     "start_ms": 56640,
+     "end_ms": 57040
+    },
+    {
+     "w": "ještě",
+     "start_ms": 57040,
+     "end_ms": 58410
+    },
+    {
+     "w": "horší.",
+     "start_ms": 58410,
+     "end_ms": 59920
+    }
+   ]
+  },
+  {
+   "start_ms": 59920,
+   "end_ms": 65560,
+   "text": "Vlákno čeká na data ze socketu a celé ho to drží,",
+   "words": [
+    {
+     "w": "Vlákno",
+     "start_ms": 59920,
+     "end_ms": 60440
+    },
+    {
+     "w": "čeká",
+     "start_ms": 60440,
+     "end_ms": 60890
+    },
+    {
+     "w": "na",
+     "start_ms": 60890,
+     "end_ms": 61040
+    },
+    {
+     "w": "data",
+     "start_ms": 61040,
+     "end_ms": 61350
+    },
+    {
+     "w": "ze",
+     "start_ms": 61350,
+     "end_ms": 61500
+    },
+    {
+     "w": "socketu",
+     "start_ms": 61500,
+     "end_ms": 62040
+    },
+    {
+     "w": "a",
+     "start_ms": 62040,
+     "end_ms": 62260
+    },
+    {
+     "w": "celé",
+     "start_ms": 62260,
+     "end_ms": 63780
+    },
+    {
+     "w": "ho",
+     "start_ms": 63780,
+     "end_ms": 64220
+    },
+    {
+     "w": "to",
+     "start_ms": 64220,
+     "end_ms": 64320
+    },
+    {
+     "w": "drží,",
+     "start_ms": 64320,
+     "end_ms": 65560
+    }
+   ]
+  },
+  {
+   "start_ms": 65560,
+   "end_ms": 71940,
+   "text": "Tak to nedělej, jedno vlákno místo tisíce,",
+   "words": [
+    {
+     "w": "Tak",
+     "start_ms": 65560,
+     "end_ms": 66030
+    },
+    {
+     "w": "to",
+     "start_ms": 66030,
+     "end_ms": 66350
+    },
+    {
+     "w": "nedělej,",
+     "start_ms": 66350,
+     "end_ms": 67900
+    },
+    {
+     "w": "jedno",
+     "start_ms": 67900,
+     "end_ms": 68680
+    },
+    {
+     "w": "vlákno",
+     "start_ms": 68680,
+     "end_ms": 69770
+    },
+    {
+     "w": "místo",
+     "start_ms": 69770,
+     "end_ms": 70710
+    },
+    {
+     "w": "tisíce,",
+     "start_ms": 70710,
+     "end_ms": 71940
+    }
+   ]
+  },
+  {
+   "start_ms": 71940,
+   "end_ms": 78620,
+   "text": "ať čeká operační systém, ne ty.",
+   "words": [
+    {
+     "w": "ať",
+     "start_ms": 71940,
+     "end_ms": 72130
+    },
+    {
+     "w": "čeká",
+     "start_ms": 72130,
+     "end_ms": 73280
+    },
+    {
+     "w": "operační",
+     "start_ms": 73280,
+     "end_ms": 75210
+    },
+    {
+     "w": "systém,",
+     "start_ms": 75210,
+     "end_ms": 76620
+    },
+    {
+     "w": "ne",
+     "start_ms": 76620,
+     "end_ms": 77620
+    },
+    {
+     "w": "ty.",
+     "start_ms": 77620,
+     "end_ms": 78620
+    }
+   ]
+  },
+  {
+   "start_ms": 78620,
+   "end_ms": 83860,
+   "text": "Deset tisíc spojení, jeden server, jeden problém,",
+   "words": [
+    {
+     "w": "Deset",
+     "start_ms": 78620,
+     "end_ms": 79220
+    },
+    {
+     "w": "tisíc",
+     "start_ms": 79220,
+     "end_ms": 79970
+    },
+    {
+     "w": "spojení,",
+     "start_ms": 79970,
+     "end_ms": 80940
+    },
+    {
+     "w": "jeden",
+     "start_ms": 80940,
+     "end_ms": 81560
+    },
+    {
+     "w": "server,",
+     "start_ms": 81560,
+     "end_ms": 82340
+    },
+    {
+     "w": "jeden",
+     "start_ms": 82340,
+     "end_ms": 82910
+    },
+    {
+     "w": "problém,",
+     "start_ms": 82910,
+     "end_ms": 83860
+    }
+   ]
+  },
+  {
+   "start_ms": 83860,
+   "end_ms": 90100,
+   "text": "tred na spojení neškáluje, paměť a kontext switch tě zabijou.",
+   "words": [
+    {
+     "w": "tred",
+     "start_ms": 83860,
+     "end_ms": 84280
+    },
+    {
+     "w": "na",
+     "start_ms": 84280,
+     "end_ms": 84380
+    },
+    {
+     "w": "spojení",
+     "start_ms": 84380,
+     "end_ms": 84820
+    },
+    {
+     "w": "neškáluje,",
+     "start_ms": 84820,
+     "end_ms": 85860
+    },
+    {
+     "w": "paměť",
+     "start_ms": 85860,
+     "end_ms": 86700
+    },
+    {
+     "w": "a",
+     "start_ms": 86700,
+     "end_ms": 86810
+    },
+    {
+     "w": "kontext",
+     "start_ms": 86810,
+     "end_ms": 87620
+    },
+    {
+     "w": "switch",
+     "start_ms": 87620,
+     "end_ms": 88420
+    },
+    {
+     "w": "tě",
+     "start_ms": 88420,
+     "end_ms": 88500
+    },
+    {
+     "w": "zabijou.",
+     "start_ms": 88500,
+     "end_ms": 90100
+    }
+   ]
+  },
+  {
+   "start_ms": 90100,
+   "end_ms": 95420,
+   "text": "Vezmi neblokující I/O, epoll ti řekne kdo je hotový,",
+   "words": [
+    {
+     "w": "Vezmi",
+     "start_ms": 90100,
+     "end_ms": 90470
+    },
+    {
+     "w": "neblokující",
+     "start_ms": 90470,
+     "end_ms": 91500
+    },
+    {
+     "w": "I/O,",
+     "start_ms": 91500,
+     "end_ms": 92700
+    },
+    {
+     "w": "epoll",
+     "start_ms": 92700,
+     "end_ms": 93040
+    },
+    {
+     "w": "ti",
+     "start_ms": 93040,
+     "end_ms": 93160
+    },
+    {
+     "w": "řekne",
+     "start_ms": 93160,
+     "end_ms": 93540
+    },
+    {
+     "w": "kdo",
+     "start_ms": 93540,
+     "end_ms": 94000
+    },
+    {
+     "w": "je",
+     "start_ms": 94000,
+     "end_ms": 94310
+    },
+    {
+     "w": "hotový,",
+     "start_ms": 94310,
+     "end_ms": 95420
+    }
+   ]
+  },
+  {
+   "start_ms": 95420,
+   "end_ms": 99700,
+   "text": "málo vláken, mnoho spojení, takhle se škáluje.",
+   "words": [
+    {
+     "w": "málo",
+     "start_ms": 95420,
+     "end_ms": 95770
+    },
+    {
+     "w": "vláken,",
+     "start_ms": 95770,
+     "end_ms": 96340
+    },
+    {
+     "w": "mnoho",
+     "start_ms": 96340,
+     "end_ms": 97040
+    },
+    {
+     "w": "spojení,",
+     "start_ms": 97040,
+     "end_ms": 98220
+    },
+    {
+     "w": "takhle",
+     "start_ms": 98220,
+     "end_ms": 98730
+    },
+    {
+     "w": "se",
+     "start_ms": 98730,
+     "end_ms": 98900
+    },
+    {
+     "w": "škáluje.",
+     "start_ms": 98900,
+     "end_ms": 99700
+    }
+   ]
+  },
+  {
+   "start_ms": 99700,
+   "end_ms": 106500,
+   "text": "Starý select a poll projdou všechny deskriptory v řadě lineárně, jeden po druhém,",
+   "words": [
+    {
+     "w": "Starý",
+     "start_ms": 99700,
+     "end_ms": 100810
+    },
+    {
+     "w": "select",
+     "start_ms": 100810,
+     "end_ms": 101920
+    },
+    {
+     "w": "a",
+     "start_ms": 101920,
+     "end_ms": 102100
+    },
+    {
+     "w": "poll",
+     "start_ms": 102100,
+     "end_ms": 102860
+    },
+    {
+     "w": "projdou",
+     "start_ms": 102860,
+     "end_ms": 103210
+    },
+    {
+     "w": "všechny",
+     "start_ms": 103210,
+     "end_ms": 103610
+    },
+    {
+     "w": "deskriptory",
+     "start_ms": 103610,
+     "end_ms": 104220
+    },
+    {
+     "w": "v",
+     "start_ms": 104220,
+     "end_ms": 104280
+    },
+    {
+     "w": "řadě",
+     "start_ms": 104280,
+     "end_ms": 104640
+    },
+    {
+     "w": "lineárně,",
+     "start_ms": 104640,
+     "end_ms": 105300
+    },
+    {
+     "w": "jeden",
+     "start_ms": 105300,
+     "end_ms": 105720
+    },
+    {
+     "w": "po",
+     "start_ms": 105720,
+     "end_ms": 105890
+    },
+    {
+     "w": "druhém,",
+     "start_ms": 105890,
+     "end_ms": 106500
+    }
+   ]
+  },
+  {
+   "start_ms": 106740,
+   "end_ms": 110650,
+   "text": "to je při mnoha spojeních drahé.",
+   "words": [
+    {
+     "w": "to",
+     "start_ms": 106740,
+     "end_ms": 106900
+    },
+    {
+     "w": "je",
+     "start_ms": 106900,
+     "end_ms": 107060
+    },
+    {
+     "w": "při",
+     "start_ms": 107060,
+     "end_ms": 107380
+    },
+    {
+     "w": "mnoha",
+     "start_ms": 107380,
+     "end_ms": 107780
+    },
+    {
+     "w": "spojeních",
+     "start_ms": 107780,
+     "end_ms": 108660
+    },
+    {
+     "w": "drahé.",
+     "start_ms": 108660,
+     "end_ms": 110650
+    }
+   ]
+  },
+  {
+   "start_ms": 111650,
+   "end_ms": 118770,
+   "text": "Na Linuxu je epoll, ten škáluje líp, systém ti sám oznámí, které sockety jsou připravené.",
+   "words": [
+    {
+     "w": "Na",
+     "start_ms": 111650,
+     "end_ms": 111860
+    },
+    {
+     "w": "Linuxu",
+     "start_ms": 111860,
+     "end_ms": 112480
+    },
+    {
+     "w": "je",
+     "start_ms": 112480,
+     "end_ms": 112690
+    },
+    {
+     "w": "epoll,",
+     "start_ms": 112690,
+     "end_ms": 113540
+    },
+    {
+     "w": "ten",
+     "start_ms": 113540,
+     "end_ms": 113710
+    },
+    {
+     "w": "škáluje",
+     "start_ms": 113710,
+     "end_ms": 114200
+    },
+    {
+     "w": "líp,",
+     "start_ms": 114200,
+     "end_ms": 114990
+    },
+    {
+     "w": "systém",
+     "start_ms": 114990,
+     "end_ms": 115480
+    },
+    {
+     "w": "ti",
+     "start_ms": 115480,
+     "end_ms": 115620
+    },
+    {
+     "w": "sám",
+     "start_ms": 115620,
+     "end_ms": 115900
+    },
+    {
+     "w": "oznámí,",
+     "start_ms": 115900,
+     "end_ms": 116530
+    },
+    {
+     "w": "které",
+     "start_ms": 116530,
+     "end_ms": 116950
+    },
+    {
+     "w": "sockety",
+     "start_ms": 116950,
+     "end_ms": 117440
+    },
+    {
+     "w": "jsou",
+     "start_ms": 117440,
+     "end_ms": 117720
+    },
+    {
+     "w": "připravené.",
+     "start_ms": 117720,
+     "end_ms": 118770
+    }
+   ]
+  },
+  {
+   "start_ms": 119190,
+   "end_ms": 124280,
+   "text": "Žádné procházení všeho, jen ten kdo je hotový, a na tom stojí celý event loop.",
+   "words": [
+    {
+     "w": "Žádné",
+     "start_ms": 119190,
+     "end_ms": 119610
+    },
+    {
+     "w": "procházení",
+     "start_ms": 119610,
+     "end_ms": 120270
+    },
+    {
+     "w": "všeho,",
+     "start_ms": 120270,
+     "end_ms": 120700
+    },
+    {
+     "w": "jen",
+     "start_ms": 120700,
+     "end_ms": 120860
+    },
+    {
+     "w": "ten",
+     "start_ms": 120860,
+     "end_ms": 121130
+    },
+    {
+     "w": "kdo",
+     "start_ms": 121130,
+     "end_ms": 121240
+    },
+    {
+     "w": "je",
+     "start_ms": 121240,
+     "end_ms": 121440
+    },
+    {
+     "w": "hotový,",
+     "start_ms": 121440,
+     "end_ms": 121740
+    },
+    {
+     "w": "a",
+     "start_ms": 121740,
+     "end_ms": 122230
+    },
+    {
+     "w": "na",
+     "start_ms": 122230,
+     "end_ms": 122440
+    },
+    {
+     "w": "tom",
+     "start_ms": 122440,
+     "end_ms": 122650
+    },
+    {
+     "w": "stojí",
+     "start_ms": 122650,
+     "end_ms": 123070
+    },
+    {
+     "w": "celý",
+     "start_ms": 123070,
+     "end_ms": 123420
+    },
+    {
+     "w": "event",
+     "start_ms": 123420,
+     "end_ms": 123790
+    },
+    {
+     "w": "loop.",
+     "start_ms": 123790,
+     "end_ms": 124280
+    }
+   ]
+  },
+  {
+   "start_ms": 124780,
+   "end_ms": 132730,
+   "text": "Tak to nedělej, jedno vlákno místo tisíce, a ať čeká operační systém,",
+   "words": [
+    {
+     "w": "Tak",
+     "start_ms": 124780,
+     "end_ms": 124980
+    },
+    {
+     "w": "to",
+     "start_ms": 124980,
+     "end_ms": 125110
+    },
+    {
+     "w": "nedělej,",
+     "start_ms": 125110,
+     "end_ms": 125760
+    },
+    {
+     "w": "jedno",
+     "start_ms": 125760,
+     "end_ms": 126090
+    },
+    {
+     "w": "vlákno",
+     "start_ms": 126090,
+     "end_ms": 126540
+    },
+    {
+     "w": "místo",
+     "start_ms": 126540,
+     "end_ms": 126940
+    },
+    {
+     "w": "tisíce,",
+     "start_ms": 126940,
+     "end_ms": 127520
+    },
+    {
+     "w": "a",
+     "start_ms": 128370,
+     "end_ms": 128540
+    },
+    {
+     "w": "ať",
+     "start_ms": 128540,
+     "end_ms": 128640
+    },
+    {
+     "w": "čeká",
+     "start_ms": 128640,
+     "end_ms": 129540
+    },
+    {
+     "w": "operační",
+     "start_ms": 129540,
+     "end_ms": 131220
+    },
+    {
+     "w": "systém,",
+     "start_ms": 131220,
+     "end_ms": 132730
+    }
+   ]
+  },
+  {
+   "start_ms": 132730,
+   "end_ms": 134500,
+   "text": "ne ty.",
+   "words": [
+    {
+     "w": "ne",
+     "start_ms": 132730,
+     "end_ms": 133070
+    },
+    {
+     "w": "ty.",
+     "start_ms": 133070,
+     "end_ms": 134500
+    }
+   ]
+  },
+  {
+   "start_ms": 134500,
+   "end_ms": 138840,
+   "text": "Deset tisíc spojení, jeden server, jeden problém.",
+   "words": [
+    {
+     "w": "Deset",
+     "start_ms": 134500,
+     "end_ms": 134880
+    },
+    {
+     "w": "tisíc",
+     "start_ms": 134880,
+     "end_ms": 135340
+    },
+    {
+     "w": "spojení,",
+     "start_ms": 135340,
+     "end_ms": 136040
+    },
+    {
+     "w": "jeden",
+     "start_ms": 136040,
+     "end_ms": 136660
+    },
+    {
+     "w": "server,",
+     "start_ms": 136660,
+     "end_ms": 137600
+    },
+    {
+     "w": "jeden",
+     "start_ms": 137600,
+     "end_ms": 138070
+    },
+    {
+     "w": "problém.",
+     "start_ms": 138070,
+     "end_ms": 138840
+    }
+   ]
+  },
+  {
+   "start_ms": 138840,
+   "end_ms": 144620,
+   "text": "Tred na spojení neškáluje, paměť a kontext switch tě zabijou,",
+   "words": [
+    {
+     "w": "Tred",
+     "start_ms": 138840,
+     "end_ms": 139200
+    },
+    {
+     "w": "na",
+     "start_ms": 139200,
+     "end_ms": 139380
+    },
+    {
+     "w": "spojení",
+     "start_ms": 139380,
+     "end_ms": 140100
+    },
+    {
+     "w": "neškáluje,",
+     "start_ms": 140100,
+     "end_ms": 141090
+    },
+    {
+     "w": "paměť",
+     "start_ms": 141090,
+     "end_ms": 141720
+    },
+    {
+     "w": "a",
+     "start_ms": 141720,
+     "end_ms": 141810
+    },
+    {
+     "w": "kontext",
+     "start_ms": 141810,
+     "end_ms": 142740
+    },
+    {
+     "w": "switch",
+     "start_ms": 142740,
+     "end_ms": 143570
+    },
+    {
+     "w": "tě",
+     "start_ms": 143570,
+     "end_ms": 143620
+    },
+    {
+     "w": "zabijou,",
+     "start_ms": 143620,
+     "end_ms": 144620
+    }
+   ]
+  },
+  {
+   "start_ms": 144620,
+   "end_ms": 150440,
+   "text": "vezmi neblokující I/O, epoll ti řekne, kdo je hotový,",
+   "words": [
+    {
+     "w": "vezmi",
+     "start_ms": 144620,
+     "end_ms": 145150
+    },
+    {
+     "w": "neblokující",
+     "start_ms": 145150,
+     "end_ms": 146510
+    },
+    {
+     "w": "I/O,",
+     "start_ms": 146510,
+     "end_ms": 147520
+    },
+    {
+     "w": "epoll",
+     "start_ms": 147520,
+     "end_ms": 148090
+    },
+    {
+     "w": "ti",
+     "start_ms": 148090,
+     "end_ms": 148280
+    },
+    {
+     "w": "řekne,",
+     "start_ms": 148280,
+     "end_ms": 149030
+    },
+    {
+     "w": "kdo",
+     "start_ms": 149030,
+     "end_ms": 149310
+    },
+    {
+     "w": "je",
+     "start_ms": 149310,
+     "end_ms": 149500
+    },
+    {
+     "w": "hotový,",
+     "start_ms": 149500,
+     "end_ms": 150440
+    }
+   ]
+  },
+  {
+   "start_ms": 150440,
+   "end_ms": 154680,
+   "text": "málo vláken, mnoho spojení, takhle se škáluje.",
+   "words": [
+    {
+     "w": "málo",
+     "start_ms": 150440,
+     "end_ms": 150790
+    },
+    {
+     "w": "vláken,",
+     "start_ms": 150790,
+     "end_ms": 151420
+    },
+    {
+     "w": "mnoho",
+     "start_ms": 151420,
+     "end_ms": 151770
+    },
+    {
+     "w": "spojení,",
+     "start_ms": 151770,
+     "end_ms": 152520
+    },
+    {
+     "w": "takhle",
+     "start_ms": 152520,
+     "end_ms": 153150
+    },
+    {
+     "w": "se",
+     "start_ms": 153150,
+     "end_ms": 153360
+    },
+    {
+     "w": "škáluje.",
+     "start_ms": 153360,
+     "end_ms": 154680
+    }
+   ]
+  },
+  {
+   "start_ms": 154680,
+   "end_ms": 162420,
+   "text": "Java NIO je neblokující I/O se selektorem,",
+   "words": [
+    {
+     "w": "Java",
+     "start_ms": 154680,
+     "end_ms": 155270
+    },
+    {
+     "w": "NIO",
+     "start_ms": 155270,
+     "end_ms": 157020
+    },
+    {
+     "w": "je",
+     "start_ms": 157020,
+     "end_ms": 157320
+    },
+    {
+     "w": "neblokující",
+     "start_ms": 157320,
+     "end_ms": 159210
+    },
+    {
+     "w": "I/O",
+     "start_ms": 159210,
+     "end_ms": 160520
+    },
+    {
+     "w": "se",
+     "start_ms": 160520,
+     "end_ms": 161180
+    },
+    {
+     "w": "selektorem,",
+     "start_ms": 161180,
+     "end_ms": 162420
+    }
+   ]
+  },
+  {
+   "start_ms": 162420,
+   "end_ms": 168240,
+   "text": "jedno vlákno obslouží mnoho kanálů a uvnitř jede epoll.",
+   "words": [
+    {
+     "w": "jedno",
+     "start_ms": 162420,
+     "end_ms": 162880
+    },
+    {
+     "w": "vlákno",
+     "start_ms": 162880,
+     "end_ms": 163510
+    },
+    {
+     "w": "obslouží",
+     "start_ms": 163510,
+     "end_ms": 164460
+    },
+    {
+     "w": "mnoho",
+     "start_ms": 164460,
+     "end_ms": 164940
+    },
+    {
+     "w": "kanálů",
+     "start_ms": 164940,
+     "end_ms": 165840
+    },
+    {
+     "w": "a",
+     "start_ms": 165840,
+     "end_ms": 165950
+    },
+    {
+     "w": "uvnitř",
+     "start_ms": 165950,
+     "end_ms": 166760
+    },
+    {
+     "w": "jede",
+     "start_ms": 166760,
+     "end_ms": 166980
+    },
+    {
+     "w": "epoll.",
+     "start_ms": 166980,
+     "end_ms": 168240
+    }
+   ]
+  },
+  {
+   "start_ms": 168240,
+   "end_ms": 171740,
+   "text": "Reaktivní callback styl je rychlý, ale kód je hrozný.",
+   "words": [
+    {
+     "w": "Reaktivní",
+     "start_ms": 168240,
+     "end_ms": 169080
+    },
+    {
+     "w": "callback",
+     "start_ms": 169080,
+     "end_ms": 169540
+    },
+    {
+     "w": "styl",
+     "start_ms": 169540,
+     "end_ms": 169770
+    },
+    {
+     "w": "je",
+     "start_ms": 169770,
+     "end_ms": 169880
+    },
+    {
+     "w": "rychlý,",
+     "start_ms": 169880,
+     "end_ms": 170380
+    },
+    {
+     "w": "ale",
+     "start_ms": 170380,
+     "end_ms": 170550
+    },
+    {
+     "w": "kód",
+     "start_ms": 170550,
+     "end_ms": 170840
+    },
+    {
+     "w": "je",
+     "start_ms": 170840,
+     "end_ms": 170980
+    },
+    {
+     "w": "hrozný.",
+     "start_ms": 170980,
+     "end_ms": 171740
+    }
+   ]
+  },
+  {
+   "start_ms": 171740,
+   "end_ms": 177040,
+   "text": "Zanoříš callback do callbacku a máš callback hell.",
+   "words": [
+    {
+     "w": "Zanoříš",
+     "start_ms": 171740,
+     "end_ms": 173280
+    },
+    {
+     "w": "callback",
+     "start_ms": 173280,
+     "end_ms": 174040
+    },
+    {
+     "w": "do",
+     "start_ms": 174040,
+     "end_ms": 174230
+    },
+    {
+     "w": "callbacku",
+     "start_ms": 174230,
+     "end_ms": 175120
+    },
+    {
+     "w": "a",
+     "start_ms": 175120,
+     "end_ms": 175220
+    },
+    {
+     "w": "máš",
+     "start_ms": 175220,
+     "end_ms": 175750
+    },
+    {
+     "w": "callback",
+     "start_ms": 175750,
+     "end_ms": 176640
+    },
+    {
+     "w": "hell.",
+     "start_ms": 176640,
+     "end_ms": 177040
+    }
+   ]
+  },
+  {
+   "start_ms": 177040,
+   "end_ms": 182520,
+   "text": "Pak přišel Loom a virtuální vlákna v jednadvacítce.",
+   "words": [
+    {
+     "w": "Pak",
+     "start_ms": 177040,
+     "end_ms": 178720
+    },
+    {
+     "w": "přišel",
+     "start_ms": 178720,
+     "end_ms": 179260
+    },
+    {
+     "w": "Loom",
+     "start_ms": 179260,
+     "end_ms": 179580
+    },
+    {
+     "w": "a",
+     "start_ms": 179580,
+     "end_ms": 179650
+    },
+    {
+     "w": "virtuální",
+     "start_ms": 179650,
+     "end_ms": 180620
+    },
+    {
+     "w": "vlákna",
+     "start_ms": 180620,
+     "end_ms": 181140
+    },
+    {
+     "w": "v",
+     "start_ms": 181140,
+     "end_ms": 181230
+    },
+    {
+     "w": "jednadvacítce.",
+     "start_ms": 181230,
+     "end_ms": 182520
+    }
+   ]
+  },
+  {
+   "start_ms": 182520,
+   "end_ms": 190440,
+   "text": "Miliony levných vláken, co spravuje virtuální stroj, a ne systém.",
+   "words": [
+    {
+     "w": "Miliony",
+     "start_ms": 182520,
+     "end_ms": 183550
+    },
+    {
+     "w": "levných",
+     "start_ms": 183550,
+     "end_ms": 184760
+    },
+    {
+     "w": "vláken,",
+     "start_ms": 184760,
+     "end_ms": 185480
+    },
+    {
+     "w": "co",
+     "start_ms": 185480,
+     "end_ms": 185640
+    },
+    {
+     "w": "spravuje",
+     "start_ms": 185640,
+     "end_ms": 186300
+    },
+    {
+     "w": "virtuální",
+     "start_ms": 186300,
+     "end_ms": 187360
+    },
+    {
+     "w": "stroj,",
+     "start_ms": 187360,
+     "end_ms": 188340
+    },
+    {
+     "w": "a",
+     "start_ms": 188340,
+     "end_ms": 188800
+    },
+    {
+     "w": "ne",
+     "start_ms": 188800,
+     "end_ms": 188960
+    },
+    {
+     "w": "systém.",
+     "start_ms": 188960,
+     "end_ms": 190440
+    }
+   ]
+  },
+  {
+   "start_ms": 190440,
+   "end_ms": 195280,
+   "text": "Píšeš prostý blokující kód, čte se snadno,",
+   "words": [
+    {
+     "w": "Píšeš",
+     "start_ms": 190440,
+     "end_ms": 191450
+    },
+    {
+     "w": "prostý",
+     "start_ms": 191450,
+     "end_ms": 192350
+    },
+    {
+     "w": "blokující",
+     "start_ms": 192350,
+     "end_ms": 193730
+    },
+    {
+     "w": "kód,",
+     "start_ms": 193730,
+     "end_ms": 194470
+    },
+    {
+     "w": "čte",
+     "start_ms": 194470,
+     "end_ms": 194730
+    },
+    {
+     "w": "se",
+     "start_ms": 194730,
+     "end_ms": 194860
+    },
+    {
+     "w": "snadno,",
+     "start_ms": 194860,
+     "end_ms": 195280
+    }
+   ]
+  },
+  {
+   "start_ms": 195280,
+   "end_ms": 199800,
+   "text": "ale když virtuální vlákno blokuje, stroj ho odpojí",
+   "words": [
+    {
+     "w": "ale",
+     "start_ms": 195280,
+     "end_ms": 195510
+    },
+    {
+     "w": "když",
+     "start_ms": 195510,
+     "end_ms": 195880
+    },
+    {
+     "w": "virtuální",
+     "start_ms": 195880,
+     "end_ms": 196720
+    },
+    {
+     "w": "vlákno",
+     "start_ms": 196720,
+     "end_ms": 197240
+    },
+    {
+     "w": "blokuje,",
+     "start_ms": 197240,
+     "end_ms": 198090
+    },
+    {
+     "w": "stroj",
+     "start_ms": 198090,
+     "end_ms": 198690
+    },
+    {
+     "w": "ho",
+     "start_ms": 198690,
+     "end_ms": 198940
+    },
+    {
+     "w": "odpojí",
+     "start_ms": 198940,
+     "end_ms": 199800
+    }
+   ]
+  },
+  {
+   "start_ms": 199800,
+   "end_ms": 205000,
+   "text": "z nosného systémového vlákna a pustí tam jiné.",
+   "words": [
+    {
+     "w": "z",
+     "start_ms": 199800,
+     "end_ms": 199920
+    },
+    {
+     "w": "nosného",
+     "start_ms": 199920,
+     "end_ms": 200920
+    },
+    {
+     "w": "systémového",
+     "start_ms": 200920,
+     "end_ms": 202440
+    },
+    {
+     "w": "vlákna",
+     "start_ms": 202440,
+     "end_ms": 203280
+    },
+    {
+     "w": "pustí",
+     "start_ms": 203280,
+     "end_ms": 204000
+    },
+    {
+     "w": "tam",
+     "start_ms": 204000,
+     "end_ms": 204360
+    },
+    {
+     "w": "jiné.",
+     "start_ms": 204360,
+     "end_ms": 205000
+    }
+   ]
+  },
+  {
+   "start_ms": 205000,
+   "end_ms": 211000,
+   "text": "Jednoduchost blokování a přitom to škáluje.",
+   "words": [
+    {
+     "w": "Jednoduchost",
+     "start_ms": 205000,
+     "end_ms": 206510
+    },
+    {
+     "w": "blokování",
+     "start_ms": 206510,
+     "end_ms": 207980
+    },
+    {
+     "w": "a",
+     "start_ms": 207980,
+     "end_ms": 208140
+    },
+    {
+     "w": "přitom",
+     "start_ms": 208140,
+     "end_ms": 208760
+    },
+    {
+     "w": "to",
+     "start_ms": 209230,
+     "end_ms": 209540
+    },
+    {
+     "w": "škáluje.",
+     "start_ms": 209540,
+     "end_ms": 211000
+    }
+   ]
+  },
+  {
+   "start_ms": 211000,
+   "end_ms": 216020,
+   "text": "Deset tisíc spojení, jeden server, jeden problém,",
+   "words": [
+    {
+     "w": "Deset",
+     "start_ms": 211000,
+     "end_ms": 211530
+    },
+    {
+     "w": "tisíc",
+     "start_ms": 211530,
+     "end_ms": 212140
+    },
+    {
+     "w": "spojení,",
+     "start_ms": 212140,
+     "end_ms": 213200
+    },
+    {
+     "w": "jeden",
+     "start_ms": 213200,
+     "end_ms": 213730
+    },
+    {
+     "w": "server,",
+     "start_ms": 213730,
+     "end_ms": 214580
+    },
+    {
+     "w": "jeden",
+     "start_ms": 214580,
+     "end_ms": 215110
+    },
+    {
+     "w": "problém,",
+     "start_ms": 215110,
+     "end_ms": 216020
+    }
+   ]
+  },
+  {
+   "start_ms": 216020,
+   "end_ms": 222460,
+   "text": "tred na spojení neškáluje, paměť a kontext switch tě zabijou.",
+   "words": [
+    {
+     "w": "tred",
+     "start_ms": 216020,
+     "end_ms": 216530
+    },
+    {
+     "w": "na",
+     "start_ms": 216530,
+     "end_ms": 216600
+    },
+    {
+     "w": "spojení",
+     "start_ms": 216600,
+     "end_ms": 217220
+    },
+    {
+     "w": "neškáluje,",
+     "start_ms": 217220,
+     "end_ms": 218420
+    },
+    {
+     "w": "paměť",
+     "start_ms": 218420,
+     "end_ms": 219120
+    },
+    {
+     "w": "a",
+     "start_ms": 219120,
+     "end_ms": 219220
+    },
+    {
+     "w": "kontext",
+     "start_ms": 219220,
+     "end_ms": 219960
+    },
+    {
+     "w": "switch",
+     "start_ms": 219960,
+     "end_ms": 221190
+    },
+    {
+     "w": "tě",
+     "start_ms": 221190,
+     "end_ms": 221250
+    },
+    {
+     "w": "zabijou.",
+     "start_ms": 221250,
+     "end_ms": 222460
+    }
+   ]
+  },
+  {
+   "start_ms": 222460,
+   "end_ms": 227020,
+   "text": "Vezmi neblokující I/O, epoll ti řekne, kdo je hotový,",
+   "words": [
+    {
+     "w": "Vezmi",
+     "start_ms": 222460,
+     "end_ms": 222860
+    },
+    {
+     "w": "neblokující",
+     "start_ms": 222860,
+     "end_ms": 223900
+    },
+    {
+     "w": "I/O,",
+     "start_ms": 223900,
+     "end_ms": 224620
+    },
+    {
+     "w": "epoll",
+     "start_ms": 224620,
+     "end_ms": 225270
+    },
+    {
+     "w": "ti",
+     "start_ms": 225270,
+     "end_ms": 225330
+    },
+    {
+     "w": "řekne,",
+     "start_ms": 225330,
+     "end_ms": 225830
+    },
+    {
+     "w": "kdo",
+     "start_ms": 225830,
+     "end_ms": 226040
+    },
+    {
+     "w": "je",
+     "start_ms": 226040,
+     "end_ms": 226190
+    },
+    {
+     "w": "hotový.",
+     "start_ms": 226190,
+     "end_ms": 227020
+    }
+   ]
+  },
+  {
+   "start_ms": 227020,
+   "end_ms": 232000,
+   "text": "Málo vláken, mnoho spojení, takhle se škáluje.",
+   "words": [
+    {
+     "w": "Málo",
+     "start_ms": 227020,
+     "end_ms": 227520
+    },
+    {
+     "w": "vláken,",
+     "start_ms": 227520,
+     "end_ms": 228420
+    },
+    {
+     "w": "mnoho",
+     "start_ms": 228420,
+     "end_ms": 228920
+    },
+    {
+     "w": "spojení,",
+     "start_ms": 228920,
+     "end_ms": 229920
+    },
+    {
+     "w": "takhle",
+     "start_ms": 229920,
+     "end_ms": 230520
+    },
+    {
+     "w": "se",
+     "start_ms": 230520,
+     "end_ms": 230720
+    },
+    {
+     "w": "škáluje.",
+     "start_ms": 230720,
+     "end_ms": 232000
+    }
+   ]
+  },
+  {
+   "start_ms": 232000,
+   "end_ms": 242300,
+   "text": "C10k vyřešíš málo vlákny a hodně spojení neblokující.",
+   "words": [
+    {
+     "w": "C10k,",
+     "start_ms": 232000,
+     "end_ms": 235270
+    },
+    {
+     "w": "vyřešíš",
+     "start_ms": 235270,
+     "end_ms": 236640
+    },
+    {
+     "w": "málo",
+     "start_ms": 236640,
+     "end_ms": 237260
+    },
+    {
+     "w": "vlákny",
+     "start_ms": 237260,
+     "end_ms": 238120
+    },
+    {
+     "w": "a",
+     "start_ms": 238120,
+     "end_ms": 238240
+    },
+    {
+     "w": "hodně",
+     "start_ms": 238240,
+     "end_ms": 238980
+    },
+    {
+     "w": "spojení",
+     "start_ms": 238980,
+     "end_ms": 239970
+    },
+    {
+     "w": "by",
+     "start_ms": 239970,
+     "end_ms": 240220
+    },
+    {
+     "w": "neblokující.",
+     "start_ms": 240220,
+     "end_ms": 242300
+    }
+   ]
+  },
+  {
+   "start_ms": 244300,
+   "end_ms": 249660,
+   "text": "Nebo virtuální vlákna a jedeš dál.",
+   "words": [
+    {
+     "w": "Nebo",
+     "start_ms": 244300,
+     "end_ms": 244760
+    },
+    {
+     "w": "virtuální",
+     "start_ms": 244760,
+     "end_ms": 246010
+    },
+    {
+     "w": "vlákna",
+     "start_ms": 246010,
+     "end_ms": 247100
+    },
+    {
+     "w": "a",
+     "start_ms": 247100,
+     "end_ms": 247330
+    },
+    {
+     "w": "jedeš",
+     "start_ms": 247330,
+     "end_ms": 248720
+    },
+    {
+     "w": "dál.",
+     "start_ms": 248720,
+     "end_ms": 249660
+    }
+   ]
+  },
+  {
+   "start_ms": 249660,
+   "end_ms": 254900,
+   "text": "Titulky vytvořil Jirka Kováč.",
+   "words": [
+    {
+     "w": "Titulky",
+     "start_ms": 249660,
+     "end_ms": 250960
+    },
+    {
+     "w": "vytvořil",
+     "start_ms": 250960,
+     "end_ms": 252620
+    },
+    {
+     "w": "Jirka",
+     "start_ms": 252620,
+     "end_ms": 253530
+    },
+    {
+     "w": "Kováč.",
+     "start_ms": 253530,
+     "end_ms": 254900
+    }
+   ]
+  }
+ ]
+};

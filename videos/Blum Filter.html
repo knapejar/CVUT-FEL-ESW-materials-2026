@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Možná tam je — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#13235a; --bg-bot:#0a1230; --panel:#1b2a66; --text:#f2f6ff; --muted:#9fb0e6;
+    --accent:#FFC23D; --accent2:#ff7ad9; --chute:#56e6ff; --certain:#2be08a; --danger:#ff5470;
+    --lamp-off:#33407a; --vault:#3a4366; --ink:#0a1230; --border:#27347a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(255,194,61,.16);border:1px solid rgba(255,194,61,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#070b22;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.78),rgba(0,0,0,.34) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(255,194,61,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 16px rgba(255,194,61,.95)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#cfe0ff;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(30,40,90,.85),rgba(7,11,34,.93));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#FFC23D,#ff7ad9);color:#0a1230;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(255,122,217,.5)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#e4ecff} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#2a3a7a var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ffb3c2;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">Možná tam je</span>
+    <span class="badge">IMMERSIVE VIDEO 🎰</span>
+    <span class="hints">space = play/pause · ←/→ = ±5s · R = restart</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">Bloom filter — výuková lyric-video k B4M36ESW. Neonová členská arkáda testuje „je prvek v množině?" pár bity a pár hashi: rozsvícené lampy → MOŽNÁ, jedna tmavá → URČITĚ NE. Každé slovo je sesynchronizované se zpěvem.<small>~2 min 19 s · sung video-lesson · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="138.792" step="0.01" value="0">
+    <span class="time" id="tDur">2:19</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-blum-filter.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){showErr('pixi-filters not loaded after pixi');}
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/Blum Filter.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:134660,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=138.792;            // MP3 / stage length (fallback when audio.duration unavailable)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (§2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};            // quadratic out
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function bounce(p){p=clamp01(p);return 1-Math.pow(1-p,2)*Math.cos(p*Math.PI*3);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // Beat (124 BPM — bouncy funky-pop)
+  const BPM=124;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  function pop(t,b0){ return easeOutBack(ph(t,b0,b0+0.18)); }
+  // GLOBAL beat gates (default 1.0; S15 ramps both to 0 over 134.66->136.5)
+  function beatAmp(t){ return 1-easeInOut(ph(t,134.66,136.5)); }
+  function lampWaveAmp(t){ return 1-easeInOut(ph(t,134.66,136.5)); }
+
+  // ============================================================
+  //  2) PALETTE + CANONICAL GEOMETRY
+  // ============================================================
+  const C={
+    bgTop:0x13235a, bgBot:0x0a1230, bgTopWarm:0x3a1c46, bgBotWarm:0x1c0f24,
+    bgTopCool:0x101d44, bgBotCool:0x080d28,
+    panel:0x1b2a66, accent:0xFFC23D, accent2:0xff7ad9, chute:0x56e6ff,
+    certain:0x2be08a, danger:0xff5470, lampOff:0x33407a, vault:0x3a4366,
+    text:0xf2f6ff, muted:0x9fb0e6, ink:0x0a1230, white:0xffffff
+  };
+  const W=1280,H=720;
+  // THE BIT-STRIP
+  const M_CELLS=16, CELL_Y=250, CELL_R=14;
+  const cellX=i=>360+i*36;
+  const cellPos=i=>[cellX(i),CELL_Y];
+  // HASH-CHUTES (3 canonical, 5 in F7). chuteX(j)=470+j*150 for j in 0..2; F7 adds 320,920.
+  const CHUTE_Y=90;
+  const chuteX=j=>470+j*150;          // 470,620,770
+  const CHUTE5_X=[320,470,620,770,920];
+  // THE TOKEN
+  const tokenStart=[640,40];
+  const QX=[2,7,11];                    // query token X hash targets
+  const A_SET=[2,5,9], B_SET=[7,0,14], C_SET=[11,3,6]; // ghost sets (F4/F8)
+  // VERDICT MARQUEE
+  const MARQ=[1080,250], MARQ_W=280, MARQ_H=140;
+  // SLOW VAULT
+  const VAULT=[150,470], VAULT_W=220, VAULT_H=220;
+  // FP DIAL + MEMORY METER
+  const DIAL=[1120,560], DIAL_R=48;
+  const MEM_X=1180, MEM_Y0=120, MEM_Y1=360;
+  // ERROR TALLIES
+  const TALLY=[90,120];
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list
+  const _ofx=[];
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §7)
+  //  Optional keyed PNGs layered low-alpha over the always-drawn vector actors.
+  //  With NO images present the video is a COMPLETE vector masterpiece (window.ASSETS undefined).
+  //  No assets-blum-filter.js is shipped → pure vector. Loader stays null-safe regardless.
+  // ============================================================
+  const IMG={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,contain){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1;
+    let sc=targetW/tw;
+    if(contain){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc);
+    s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s);
+    return s;
+  }
+  // Fire-and-forget loader for optional hero slugs (window.ASSETS undefined → no-op).
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    const SLUGS=['bit-strip','hash-chute','token-coin','verdict-marquee','slow-vault','crawler-bot'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{ if(tex) IMG[slug]=tex; }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={gold:radialTex(0xFFC23D),amber:radialTex(0xFFD98C),pink:radialTex(0xff7ad9),cyan:radialTex(0x56e6ff),green:radialTex(0x6df0b0),white:radialTex(0xffffff),red:radialTex(0xff8aa0)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={cyan:lineTex(0x56e6ff),pink:lineTex(0xff7ad9),gold:lineTex(0xFFC23D),red:lineTex(0xff5470),green:lineTex(0x2be08a)};
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  function starPoly(cx,cy,points,rOuter,rInner,rot){const pts=[];for(let i=0;i<points*2;i++){const r=(i%2===0)?rOuter:rInner;const a=rot+i*Math.PI/points;pts.push(cx+Math.cos(a)*r,cy+Math.sin(a)*r);}return pts;}
+  const _starG=new PIXI.Graphics().beginFill(0xffffff,1).drawPolygon(starPoly(0,0,4,9,3.4,-Math.PI/2)).endFill();
+  const STAR_TEX=app.renderer.generateTexture(_starG,{resolution:2}); _starG.destroy();
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const im=g.createImageData(256,256);for(let i=0;i<im.data.length;i+=4){im.data[i]=Math.random()*255;im.data[i+1]=Math.random()*255;im.data[i+2]=128;im.data[i+3]=255;}
+    g.putImageData(im,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (room gradient + cabinet silhouette + confetti + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:false,kawase:false};
+
+  const cabinet=new PIXI.Graphics();
+  cabinet.lineStyle(3,0x1b2a66,0.5);
+  cabinet.drawRoundedRect(300,40,680,360,18);
+  cabinet.drawRoundedRect(60,420,1160,250,16);
+  cabinet.lineStyle(2,0x1b2a66,0.4);
+  cabinet.moveTo(300,150).lineTo(980,150);
+  cabinet.beginFill(0x141d4a,0.20).lineStyle(0).drawRoundedRect(300,40,680,360,18).endFill();
+  bgLayer.addChild(cabinet); cabinet.cacheAsBitmap=true;
+
+  const confTile=new PIXI.TilingSprite(STAR_TEX,W,H);
+  confTile.alpha=0.05; confTile.blendMode=PIXI.BLEND_MODES.ADD; confTile.tint=0xFFD98C;
+  confTile.tileScale.set(1.4,1.4);
+  bgLayer.addChild(confTile);
+
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x13235a,0.18).drawRect(0,640,W,80).endFill();
+  bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,4],waveLength:[40,120],alpha:[0.3,0.3],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,640,W,80); }
+
+  // ============================================================
+  //  6) AMBIENT CONFETTI MOTES (persistent ParticleContainer)
+  // ============================================================
+  const MOTE_COUNT=200;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:true,scale:true,alpha:true,tint:false},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const useStar=(i%2===0);const s=new PIXI.Sprite(useStar?STAR_TEX:GLOW.gold);s.anchor.set(0.5);
+    s.tint=(i%3===0)?0xff7ad9:0xFFD98C;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.05+Math.random()*0.14);s.alpha=0;s.rotation=Math.random()*TAU;motePC.addChild(s);
+    motes.push({s,vx:(Math.random()-.5)*8,vy:-(6+Math.random()*16),phs:Math.random()*TAU,sp:0.5+Math.random(),rot:(Math.random()-.5)*0.6});}
+  let RT=0;
+  let moteEnvelope=0;
+  let moteVisibleRatio=1;
+  let moteDensity=1;
+
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:-Math.abs(Math.sin(a)*v)-v*0.4,life:0,max:0.7+Math.random()*0.9});}
+  }
+
+  // ============================================================
+  //  7) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  function makeTrail(tex,tint,n){
+    const pts=[]; for(let i=0;i<(n||10);i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(tex,pts); r.blendMode=PIXI.BLEND_MODES.ADD; r.tint=tint; r.alpha=0;
+    r._pts=pts; return r;
+  }
+  function setRopeLine(rope,from,to){
+    const p=rope._pts; for(let i=0;i<p.length;i++){const f=i/(p.length-1);p[i].x=lerp(from[0],to[0],f);p[i].y=lerp(from[1],to[1],f);}
+  }
+  function setRopeAlongPath(rope,path){
+    const p=rope._pts; const segs=path.length-1;
+    for(let i=0;i<p.length;i++){
+      const f=i/(p.length-1)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si;
+      p[i].x=lerp(path[si][0],path[si+1][0],lf); p[i].y=lerp(path[si][1],path[si+1][1],lf);
+    }
+  }
+
+  // ============================================================
+  //  8) PERSISTENT ARCADE SET (arcadeSet survives across scenes)
+  // ============================================================
+  const loungeRoot=new PIXI.Container(); sceneLayer.addChild(loungeRoot);  // == arcadeSet
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot);    // per-scene actors host
+
+  // ---- THE BIT-STRIP (16 lamps + housing) ----
+  const strip=new PIXI.Container(); loungeRoot.addChild(strip);
+  const stripHousing=new PIXI.Graphics(); strip.addChild(stripHousing);
+  const stripG=new PIXI.Graphics(); strip.addChild(stripG);
+  let stripGlowF=null;
+  if(hasF('GlowFilter')){ stripGlowF=new F.GlowFilter({distance:10,outerStrength:0,innerStrength:0,color:C.accent,quality:0.3}); strip.filters=[stripGlowF]; }
+  // strip layout state (animated in S13 trade-off): cellScaleX shrinks/grows the spacing about center.
+  let stripState={offX:0, spacing:36, baseX:360, lift:0};   // computed each frame
+  function curCellX(i){ return stripState.baseX + i*stripState.spacing; }
+  // lampState[i] = lit fraction 0..1 at time t (pure function of t via the add/query schedule).
+  // We model the conceptual lamp set lit over time. Schedule (matches scene beats):
+  //  - S3 ADD A={2,5,9} POP at popAt(j)=27.22+j*0.20 ; - S8 ghosts A,B,C light all of QX etc.
+  //  - choruses / S13 force patterns. We compute the OR of scheduled lights.
+  function litFrac(i,t){
+    let v=0;
+    // S3 add A={2,5,9}
+    const aIdx=A_SET.indexOf(i); if(aIdx>=0){ const pa=27.22+aIdx*0.20; v=Math.max(v, easeOutBack(ph(t,pa,pa+0.18))>0.02?clamp01(ph(t,pa,pa+0.18)):0); if(t>=pa) v=Math.max(v,1); }
+    // S8 ghosts: A@54.70 (2,5,9), B@55.20 (7,0,14), C@55.70 (11,3,6) -> light QX targets
+    if(B_SET.indexOf(i)>=0 && t>=55.20) v=Math.max(v,1);
+    if(C_SET.indexOf(i)>=0 && t>=55.70) v=Math.max(v,1);
+    if(A_SET.indexOf(i)>=0 && t>=54.70) v=Math.max(v,1);
+    // S13 pour: many lamps fill 92.04..96.0 (deterministic pseudo set), reset on growth 100.14
+    if(t>=92.04 && t<100.14){ const seed=Math.sin(i*12.9)*43758.5; const fr=(seed-Math.floor(seed)); const lim=easeOut(ph(t,92.04,96.0)); if(fr<lim*0.9) v=Math.max(v,1); }
+    // choruses force ALL lit during the hook (handled by chorus override, not here)
+    return clamp01(v);
+  }
+  // chorus / scene can FORCE specific lamps via these overrides (set each frame in render)
+  let lampForce=null;   // null or array length 16 of {-1 unset, 0 force off, 1 force on}
+  function drawStrip(t){
+    const sp=stripState.spacing, bx=stripState.baseX, ly=CELL_Y+stripState.lift;
+    // housing
+    stripHousing.clear();
+    const hx0=bx-26, hx1=bx+15*sp+26;
+    stripHousing.beginFill(C.ink,0.55).lineStyle(2,C.panel,1).drawRoundedRect(hx0,ly-24,hx1-hx0,48,10).endFill();
+    // lamps
+    stripG.clear();
+    const lwAmp=lampWaveAmp(t);
+    for(let i=0;i<M_CELLS;i++){
+      let lit=litFrac(i,t)>0.5?1:0;
+      if(lampForce){ if(lampForce[i]===1) lit=1; else if(lampForce[i]===0) lit=0; }
+      const x=bx+i*sp;
+      const gl=lit? (0.7+lwAmp*0.3*beat(t - i*0.04)) : 0;
+      drawLamp(stripG,x,ly,CELL_R, lit===1, gl, C.accent);
+    }
+    if(stripGlowF) stripGlowF.outerStrength = 1.2+0.8*beat(t);
+  }
+  function drawLamp(g,x,y,r,lit,glowLvl,col){
+    g.beginFill(C.ink,0.55).lineStyle(2,lit?col:C.lampOff,lit?1:0.7).drawRoundedRect(x-r,y-r,r*2,r*2,5).endFill();
+    if(lit){ g.beginFill(col,0.55+0.45*clamp01(glowLvl)).drawRoundedRect(x-r+3,y-r+3,r*2-6,r*2-6,4).endFill(); }
+  }
+
+  // ---- HASH-CHUTES (up to 5; 3 visible by default) ----
+  const chutes=[];
+  const chuteRoot=new PIXI.Container(); loungeRoot.addChild(chuteRoot);
+  for(let j=0;j<5;j++){
+    const cont=new PIXI.Container(); chuteRoot.addChild(cont);
+    const g=new PIXI.Graphics(); cont.addChild(g);
+    const lbl=txt('h'+(j+1),16,C.chute,'800'); lbl.position.set(0,-34); cont.addChild(lbl);
+    cont.position.set(j<3?chuteX(j):CHUTE5_X[j], CHUTE_Y);
+    // funnel
+    g.beginFill(C.ink,0.5).lineStyle(2.5,C.chute,0.9);
+    g.moveTo(-22,-14).lineTo(22,-14).lineTo(8,14).lineTo(-8,14).closePath().endFill();
+    g.lineStyle(2,C.chute,0.6).moveTo(-8,14).lineTo(-3,30).moveTo(8,14).lineTo(3,30);
+    cont.alpha=0;
+    chutes.push({cont,g,lbl,j});
+  }
+  function chuteHead(j){ return [ (j<3?chuteX(j):CHUTE5_X[j]), CHUTE_Y+30 ]; }
+
+  // ---- THE VERDICT MARQUEE (two-state hero) ----
+  const marquee=new PIXI.Container(); loungeRoot.addChild(marquee);
+  marquee.position.set(MARQ[0],MARQ[1]);
+  const marqBezel=new PIXI.Graphics(); marquee.addChild(marqBezel);
+  const marqBody=new PIXI.Graphics(); marquee.addChild(marqBody);
+  const marqText=txt('',34,C.accent,'900'); marqText.position.set(0,-10); legible(marqText); marquee.addChild(marqText);
+  const marqSub=txt('',16,C.muted,'700'); marqSub.position.set(0,30); legible(marqSub); marquee.addChild(marqSub);
+  let marqBloomF=null;
+  if(hasF('AdvancedBloomFilter')){ marqBloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:6,quality:4}); marquee.filters=[marqBloomF]; }
+  // marquee state: 'idle' | 'mozna' | 'ne'
+  let marqState={mode:'idle', flipT:-99, bloomGain:0.5};
+  function drawMarquee(t){
+    const mw=MARQ_W, mh=MARQ_H;
+    marqBezel.clear(); marqBody.clear();
+    // chasing bezel lights (accent2)
+    marqBezel.lineStyle(0);
+    const per=24, ph2=(t*2)%1;
+    for(let s=0;s<per;s++){ const f=s/per; const on=((f+ph2)%0.25)<0.12;
+      // perimeter param
+      let bx,by; const pp=f*4;
+      if(pp<1){ bx=-mw/2+pp*mw; by=-mh/2; }
+      else if(pp<2){ bx=mw/2; by=-mh/2+(pp-1)*mh; }
+      else if(pp<3){ bx=mw/2-(pp-2)*mw; by=mh/2; }
+      else { bx=-mw/2; by=mh/2-(pp-3)*mh; }
+      marqBezel.beginFill(on?C.accent2:0x4a2a55, on?0.95:0.5).drawCircle(bx,by,4).endFill();
+    }
+    // body color depends on mode
+    let bodyCol=C.panel, rimCol=C.muted;
+    if(marqState.mode==='mozna'){ bodyCol=lerpColor(C.panel,0x5a4410,0.5); rimCol=C.accent; }
+    else if(marqState.mode==='ne'){ bodyCol=lerpColor(C.panel,0x4a1020,0.5); rimCol=C.danger; }
+    marqBody.beginFill(bodyCol,0.92).lineStyle(3,rimCol,1).drawRoundedRect(-mw/2+8,-mh/2+8,mw-16,mh-16,10).endFill();
+    if(marqBloomF) marqBloomF.bloomScale=1.0+marqState.bloomGain*beat(t);
+  }
+  function setMarquee(mode,t){
+    if(marqState.mode!==mode){ marqState.mode=mode; marqState.flipT=t; }
+    if(mode==='mozna'){ marqText.text='MOŽNÁ ✓*'; marqText.style.fill=C.accent; marqSub.text='*kolize možná'; marqSub.style.fill=C.muted; }
+    else if(mode==='ne'){ marqText.text='URČITĚ NE ✗'; marqText.style.fill=C.certain; marqSub.text='nikdy nelže'; marqSub.style.fill=C.certain; }
+    else { marqText.text='∈ S ?'; marqText.style.fill=C.muted; marqSub.text=''; }
+  }
+  function positionMarquee(t){
+    // wobble in mozna, hard-settle in ne
+    let dy=0, sc=1;
+    if(marqState.mode==='mozna'){ const w=ph(t,marqState.flipT,marqState.flipT+0.4); dy=3*Math.sin(t*9)*w; sc=1+0.02*Math.sin(t*7)*w; }
+    else if(marqState.mode==='ne'){ const slam=easeOutBack(ph(t,marqState.flipT,marqState.flipT+0.22)); dy=lerp(-14,0,slam); }
+    marquee.position.set(MARQ[0], MARQ[1]+dy); marquee.scale.set(sc);
+  }
+
+  // ---- THE SLOW VAULT (disk/DB) ----
+  const vault=new PIXI.Container(); loungeRoot.addChild(vault);
+  vault.position.set(VAULT[0],VAULT[1]);
+  const vaultG=new PIXI.Graphics(); vault.addChild(vaultG);
+  const vaultLbl=txt('disk / DB',16,C.vault,'800'); vaultLbl.position.set(0,VAULT_H/2-6); legible(vaultLbl); vault.addChild(vaultLbl);
+  let vaultDoor=0;       // 0 shut .. 1 open (set by scenes)
+  let vaultBright=0;     // 0 dim .. 1 forward/bright
+  function drawVault(t){
+    vaultG.clear();
+    const col=lerpColor(C.vault,0x5a6699,vaultBright*0.6);
+    // safe drum
+    vaultG.beginFill(lerpColor(0x202a4a,0x2a3660,vaultBright),0.95).lineStyle(3,col,1).drawRoundedRect(-VAULT_W/2,-VAULT_H/2,VAULT_W,VAULT_H,14).endFill();
+    // spinning platter
+    vaultG.lineStyle(2,col,0.7).drawCircle(0,-14,62);
+    const a=t*0.7; vaultG.lineStyle(3,col,0.9).moveTo(0,-14).lineTo(Math.cos(a)*54,-14+Math.sin(a)*54);
+    vaultG.lineStyle(1.5,col,0.4).drawCircle(0,-14,40).drawCircle(0,-14,22);
+    // door (cracks open by vaultDoor)
+    const dw=70*(1-vaultDoor);
+    vaultG.beginFill(0x10162e,0.85).lineStyle(2,col,0.8).drawRoundedRect(-35,58,Math.max(2,dw),52,6).endFill();
+    // hinge bolt
+    vaultG.beginFill(col,0.9).drawCircle(28,84,5).endFill();
+  }
+
+  // ---- FP DIAL + MEMORY METER ----
+  const dial=new PIXI.Container(); loungeRoot.addChild(dial); dial.position.set(DIAL[0],DIAL[1]);
+  const dialG=new PIXI.Graphics(); dial.addChild(dialG);
+  const dialLbl=txt('FP %',14,C.muted,'800'); dialLbl.position.set(0,DIAL_R+12); legible(dialLbl); dial.addChild(dialLbl);
+  let fpVal=0;      // 0..1 false-positive level (set by scenes)
+  function drawDial(t){
+    dialG.clear();
+    // arc background green->red
+    dialG.lineStyle(8,C.certain,0.5).arc(0,0,DIAL_R,Math.PI*0.75,Math.PI*1.25,false);
+    dialG.lineStyle(8,C.danger,0.5).arc(0,0,DIAL_R,Math.PI*1.55,Math.PI*0.25,false);
+    dialG.lineStyle(2,C.muted,0.8).drawCircle(0,0,DIAL_R+2);
+    // needle
+    const ang=lerp(Math.PI*0.75+Math.PI*0.15, Math.PI*0.25-Math.PI*0.15+TAU, clamp01(fpVal));
+    const na=lerp(-2.3,0.6,clamp01(fpVal));
+    dialG.lineStyle(3, lerpColor(C.certain,C.danger,clamp01(fpVal)),1).moveTo(0,0).lineTo(Math.cos(na)*(DIAL_R-8),Math.sin(na)*(DIAL_R-8));
+    dialG.beginFill(C.accent,1).drawCircle(0,0,5).endFill();
+  }
+  const memMeter=new PIXI.Container(); loungeRoot.addChild(memMeter);
+  const memG=new PIXI.Graphics(); memMeter.addChild(memG);
+  const memLbl=txt('paměť',13,C.muted,'700'); memLbl.anchor.set(0.5,1); memLbl.position.set(MEM_X,MEM_Y0-8); legible(memLbl); memMeter.addChild(memLbl);
+  let memVal=0.18;  // 0..1 memory fill (∝ m·k)
+  function drawMem(){
+    memG.clear();
+    const h=MEM_Y1-MEM_Y0;
+    memG.beginFill(C.ink,0.55).lineStyle(2,C.panel,1).drawRoundedRect(MEM_X-12,MEM_Y0,24,h,6).endFill();
+    const fh=h*clamp01(memVal);
+    memG.beginFill(C.chute,0.9).drawRoundedRect(MEM_X-10,MEM_Y1-fh,20,fh,5).endFill();
+  }
+
+  // ---- ERROR TALLIES (FN welded@0, FP ticking) ----
+  const tallies=new PIXI.Container(); loungeRoot.addChild(tallies); tallies.position.set(TALLY[0],TALLY[1]);
+  const tallyG=new PIXI.Graphics(); tallies.addChild(tallyG);
+  const fnLbl=txt('FALSE NEGATIVES',12,C.certain,'800'); fnLbl.anchor.set(0,0.5); fnLbl.position.set(0,-6); legible(fnLbl); tallies.addChild(fnLbl);
+  const fnNum=txt('0',20,C.certain,'900'); fnNum.anchor.set(1,0.5); fnNum.position.set(180,-6); legible(fnNum); tallies.addChild(fnNum);
+  const fpLbl=txt('FALSE POSITIVES',12,C.danger,'800'); fpLbl.anchor.set(0,0.5); fpLbl.position.set(0,28); legible(fpLbl); tallies.addChild(fpLbl);
+  const fpNum=txt('0',20,C.danger,'900'); fpNum.anchor.set(1,0.5); fpNum.position.set(180,28); legible(fpNum); tallies.addChild(fpNum);
+  tallies.alpha=0;
+  // FP tick count is a step function of t (each FP event adds 1, monotone)
+  function fpCount(t){
+    let n=0;
+    if(t>=50.00) n++;     // S6 first FP unlatch
+    if(t>=59.44) n++;     // S8 FP scenario tick on "je"
+    return n;
+  }
+  function drawTallies(t){
+    tallyG.clear();
+    // FN bucket (green padlock weld after 47.88 / 122.29)
+    const welded=(t>=47.88);
+    tallyG.beginFill(C.ink,0.5).lineStyle(2,C.certain,welded?1:0.5).drawRoundedRect(-6,-18,210,24,6).endFill();
+    if(welded){ // padlock glyph
+      const px=196; tallyG.lineStyle(3,C.certain,1).arc(px,-10,5,Math.PI,0,false); tallyG.beginFill(C.certain,0.9).drawRoundedRect(px-7,-8,14,12,2).endFill(); }
+    // FP bucket (danger)
+    const fpHot=(t>=50.00);
+    tallyG.beginFill(C.ink,0.5).lineStyle(2,C.danger,fpHot?1:0.5).drawRoundedRect(-6,16,210,24,6).endFill();
+    fnNum.text='0';
+    fpNum.text=String(fpCount(t));
+  }
+
+  // ============================================================
+  //  9) CAMERA RIG (GOLDEN RULE: all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  function shakeAmp(t){
+    let a=0;
+    a+=shakeEnv(t,27.22,3);     // S3 first POP punch
+    a+=shakeEnv(t,38.76,4);     // S5 URČITĚ NE slam (occ1)
+    a+=shakeEnv(t,66.62,3);     // S10 lock snap
+    a+=shakeEnv(t,107.54,5);    // S13 44x headline slam
+    a+=shakeEnv(t,112.28,4);    // S14 URČITĚ NE slam (occ2)
+    return a<0.05?0:a;
+  }
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function updateCamera(t,dt){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.014*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  10) SCENE MANAGER (destroy+init on change incl. backward-jump reset, cross-fade 0.12/frame)
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy) prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c); prev.inst.c.destroy({children:true}); }catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ============================================================
+  //  11) SHARED FILTER INSTANCES (built once, mutated, F-guarded)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:24,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flashWhite=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashGreen=new F.ColorOverlayFilter(C.certain,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashRed=new F.ColorOverlayFilter(C.danger,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashAmber=new F.ColorOverlayFilter(C.accent,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,360],innerRadius:0});
+  if(hasF('BulgePinchFilter')) FILT.bulge=new F.BulgePinchFilter({center:[640/1280,300/720],radius:240,strength:0});
+  else FILT.bulgeDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('CRTFilter')) FILT.crt=new F.CRTFilter({curvature:1.0,lineWidth:1.0,lineContrast:0.25,vignetting:0.35,noise:0.1,time:0});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('TiltShiftFilter')) FILT.tilt=new F.TiltShiftFilter({blur:70,gradientBlur:500,start:new PIXI.Point(0,CELL_Y),end:new PIXI.Point(W,CELL_Y)});
+  if(hasF('MotionBlurFilter')) FILT.motion=new F.MotionBlurFilter({velocity:[40,0],kernelSize:9,offset:0});
+  if(hasF('GodrayFilter')) FILT.godray=new F.GodrayFilter({angle:30,gain:0.35,lacunarity:2.2,time:0,parallel:false,center:[640,-40]});
+  let godrayF=FILT.godray||null;
+
+  // sceneRoot full-frame transient flash
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0)return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);}
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+  // one-shot shock helper (shock.time is a PURE FUNCTION OF AUDIO TIME)
+  function fireShock(name,worldXY,t){
+    if(!FILT.shock) return;
+    FILT.shock.center=[worldXY[0],worldXY[1]]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx(name,FILT.shock);
+  }
+  function updateShock(name,t){
+    if(FILT.shock && hasOverlayFx(name)){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx(name); }
+  }
+
+  // ============================================================
+  //  12) RENDER HELPERS for the persistent arcade set
+  // ============================================================
+  // chute visibility: 3 default; chutes 4,5 (idx 3,4) appear in S13 @100.14
+  function chuteVisibleAlpha(j,t){
+    // base: chutes appear @2.23+j*0.18 (S1). 5-chute layout used from S13.
+    if(j<3){ return easeOut(ph(t,2.23+j*0.18,2.23+j*0.18+0.6)); }
+    // j=3,4: appear in S13 @100.14
+    return easeOut(ph(t,100.14+(j-3)*0.25,100.14+(j-3)*0.25+0.6));
+  }
+  function renderArcade(t,sec){
+    // strip layout: trade-off resize in S13
+    stripState.lift=0; stripState.spacing=36; stripState.baseX=360;
+    // S2 feather-light float
+    if(t>=12.68 && t<19.80){ stripState.lift=-10*easeOut(ph(t,12.68,14.3)) + 3*Math.sin(t*1.4); }
+    // S1 lift-a-hair
+    else if(t>=0.6 && t<8.82){ stripState.lift=-4*easeOut(ph(t,0.6,1.6)); }
+    // S13 shrink @96.14, grow @100.14
+    if(t>=96.14 && t<100.14){ const p=easeOut(ph(t,96.14,97.54)); stripState.spacing=lerp(36,22,p); stripState.baseX=lerp(360,460,p); }
+    else if(t>=100.14 && t<104.04){ const p=easeOut(ph(t,100.14,101.54)); stripState.spacing=lerp(22,36,p); stripState.baseX=lerp(460,360,p); }
+    else if(t>=100.14){ stripState.spacing=36; stripState.baseX=360; }
+    drawStrip(t);
+    // chutes
+    const use5=(t>=100.14);
+    for(let j=0;j<5;j++){
+      const cont=chutes[j].cont;
+      cont.position.set( use5?CHUTE5_X[j]:(j<3?chuteX(j):CHUTE5_X[j]), CHUTE_Y);
+      cont.alpha=chuteVisibleAlpha(j,t);
+    }
+    // marquee
+    setMarquee(marqState.mode,t);
+    drawMarquee(t); positionMarquee(t);
+    // vault
+    drawVault(t);
+    // dial + memory
+    drawDial(t); drawMem();
+    // tallies
+    drawTallies(t);
+  }
+
+  // ============================================================
+  //  13) REUSABLE VERDICT (CHORUS) SCENE — buildVerdict(occ) / updateVerdict (§4)
+  //  occ #1 = S5 (bloomGain .5), occ #2 = S14 (bloomGain .9, confetti x1.8)
+  // ============================================================
+  function buildVerdict(occ,S){
+    const c=new PIXI.Container();
+    const bloomGain=occ===2?0.9:0.5;
+    // AND-fuse rope linking the 3 queried lamps {2,7,11} to the marquee
+    const fuse=makeTrail(TRAIL.green,C.certain,16); c.addChild(fuse);
+    const fuseRed=makeTrail(TRAIL.red,C.danger,16); c.addChild(fuseRed);
+    // query rings on the queried lamps
+    const rings=new PIXI.Graphics(); c.addChild(rings);
+    // vetoing-lamp danger ring
+    const vetoRing=new PIXI.Graphics(); c.addChild(vetoRing);
+    // trust-seal stamp
+    const seal=new PIXI.Container(); c.addChild(seal); seal.position.set(MARQ[0],MARQ[1]+58); seal.alpha=0;
+    const sealG=new PIXI.Graphics(); seal.addChild(sealG);
+    sealG.beginFill(C.certain,0.18).lineStyle(3,C.certain,1).drawCircle(0,0,26).endFill();
+    sealG.lineStyle(4,C.certain,1).moveTo(-10,0).lineTo(-3,8).lineTo(12,-10);
+    const sealLbl=txt('trust-seal',12,C.certain,'800'); sealLbl.position.set(0,40); legible(sealLbl); seal.addChild(sealLbl);
+    return {c,bloomGain,fuse,fuseRed,rings,vetoRing,seal,occ};
+  }
+  // updateVerdict drives the verdict by comparing audio time to the occ's line starts.
+  // LS = {La, Lb, Lc, Ld} absolute line-start seconds (per §4.1). modes per line decide MOŽNÁ vs NE.
+  function updateVerdict(V,t,LS){
+    marqState.bloomGain=V.bloomGain;
+    // determine current verdict line & its mode + verdict-word time
+    // each line entry: {start, vWord, mode, vetoLamp}
+    const lines=LS.lines;
+    let cur=null;
+    for(const L of lines){ if(t>=L.start){ cur=L; } }
+    // default: clear forced lamps each frame; we then set per the current line
+    lampForce=new Array(M_CELLS).fill(-1);
+    V.rings.clear(); V.vetoRing.clear();
+    V.fuse.alpha=0; V.fuseRed.alpha=0; V.seal.alpha=0;
+    if(!cur){ setMarquee('idle',t); return; }
+    const p=ph(t,cur.start, cur.next||cur.start+4);
+    if(cur.mode==='mozna'){
+      // force the 3 queried lamps lit
+      for(const i of QX) lampForce[i]=1;
+      // query rings (cyan) around QX
+      V.rings.lineStyle(2.5,C.chute,0.7+0.3*beat(t));
+      for(const i of QX){ const x=curCellX(i); V.rings.drawCircle(x,CELL_Y,CELL_R+8); }
+      // AND-fuse green reveal L->R across {2,7,11} to the marquee over 350ms
+      const fp=easeOut(ph(t,cur.start,cur.start+0.35));
+      const path=[ [curCellX(QX[0]),CELL_Y],[curCellX(QX[1]),CELL_Y],[curCellX(QX[2]),CELL_Y],[MARQ[0]-MARQ_W/2,MARQ[1]] ];
+      // reveal: shrink end toward fp fraction
+      const rp=path.map((pt,idx)=>pt);
+      setRopeAlongPath(V.fuse, partialPath(path, fp));
+      V.fuse.alpha=0.8*fp;
+      // flip to MOŽNÁ on verdict word
+      if(t>=cur.vWord){ setMarquee('mozna',t);
+        if(!cur._flipped){ cur._flipped=true; }
+        // ZoomBlur punch + bloom bump on the flip
+        if(t>=cur.vWord && t<cur.vWord+0.05 && FILT.zoom && !hasOverlayFx('vZoom')){ FILT.zoom.center=[MARQ[0],MARQ[1]]; FILT.zoom.strength=0.26; addOverlayFx('vZoom',FILT.zoom); }
+      } else { setMarquee('idle',t); }
+    } else if(cur.mode==='ne'){
+      // one queried lamp dark (force lamp 7 off); others lit
+      for(const i of QX) lampForce[i]=1;
+      lampForce[cur.vetoLamp]=0;
+      // veto ring (danger) on the dark lamp on the anchor word
+      if(t>=cur.veto){ V.vetoRing.lineStyle(3,C.danger,0.7+0.3*beat(t)); const x=curCellX(cur.vetoLamp); V.vetoRing.drawCircle(x,CELL_Y,CELL_R+9); }
+      // short-circuit red race from the dark lamp to marquee (<=200ms)
+      const rp=easeOut(ph(t,cur.vWord,cur.vWord+0.2));
+      setRopeAlongPath(V.fuseRed, partialPath([[curCellX(cur.vetoLamp),CELL_Y],[MARQ[0]-MARQ_W/2,MARQ[1]]], rp));
+      V.fuseRed.alpha=0.9*rp;
+      // SLAM URČITĚ NE on verdict word
+      if(t>=cur.vWord){ setMarquee('ne',t);
+        if(FILT.flashWhite && t<cur.vWord+0.18){ FILT.flashWhite.alpha=0.5*(1-ph(t,cur.vWord,cur.vWord+0.16)); sceneFlash(FILT.flashWhite,true); }
+        else if(FILT.flashWhite){ sceneFlash(FILT.flashWhite,false); }
+        if(!cur._slam){ cur._slam=true; }
+        if(t>=cur.vWord && t<cur.vWord+0.05) fireShock('vShock',[MARQ[0],MARQ[1]],t);
+      } else { setMarquee('idle',t); }
+      updateShock('vShock',t);
+    } else if(cur.mode==='trust'){
+      // NE reliable: keep NE marquee + grow green trust-seal on "fakt není"
+      setMarquee('ne',t);
+      if(t>=cur.vWord){ V.seal.alpha=easeOut(ph(t,cur.vWord,cur.vWord+0.5)); V.seal.scale.set(pop(t,cur.vWord)); }
+    }
+    // release transient zoom
+    if(hasOverlayFx('vZoom')){ const fT=(cur.vWord||t); FILT.zoom.strength=0.26*(1-ph(t,fT,fT+0.25)); if(t>fT+0.26) removeOverlayFx('vZoom'); }
+  }
+  // partialPath: return a path that is the original sampled from 0..frac of its arclength (simple lerp of last seg)
+  function partialPath(path,frac){
+    frac=clamp01(frac); if(frac<=0.001) return [path[0],path[0]];
+    const segs=path.length-1; const fl=frac*segs; const li=Math.min(segs-1,Math.floor(fl)); const lf=fl-li;
+    const out=path.slice(0,li+1);
+    const end=[lerp(path[li][0],path[li+1][0],lf), lerp(path[li][1],path[li+1][1],lf)];
+    out.push(end);
+    if(out.length<2) out.unshift(path[0]);
+    return out;
+  }
+
+  // ============================================================
+  //  SCENES S0 .. S15
+  // ============================================================
+
+  // ---------- S0 : COLD OPEN 0.00-0.16 ----------
+  scene(0,0.16,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      const a=easeOut(ph(t,0,0.16));
+      strip.alpha=a; chuteRoot.alpha=a; marquee.alpha=a; vault.alpha=a; dial.alpha=a; memMeter.alpha=a;
+      moteEnvelope=0.30*ph(t,0,0.16);
+      tallies.alpha=0;
+    }};
+  });
+
+  // ---------- S1 : INTRO L1 0.16-8.82 ----------
+  scene(0.16,8.82,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    strip.alpha=1; chuteRoot.alpha=1; marquee.alpha=1; vault.alpha=1;
+    const title=txt('MOŽNÁ TAM JE',64,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('Bloom filter · ∈ S?',26,C.muted,'700'); sub.position.set(640,382); legible(sub);
+    c.addChild(title,sub);
+    // strip underline sweep (mask reveal)
+    const uline=new PIXI.Graphics(); c.addChild(uline);
+    const ulMask=new PIXI.Graphics(); c.addChild(ulMask); uline.mask=ulMask;
+    const poleLbl=txt('bitové pole · m bitů',18,C.muted,'700'); poleLbl.position.set(640,300); poleLbl.alpha=0; legible(poleLbl); c.addChild(poleLbl);
+    // greyed Set<String> ledger ghost (heavy memory contrast)
+    const ledger=new PIXI.Container(); c.addChild(ledger); ledger.position.set(140,470);
+    const lg=new PIXI.Graphics(); ledger.addChild(lg);
+    lg.beginFill(C.vault,0.35).lineStyle(2,C.vault,0.5).drawRoundedRect(-58,-70,116,150,8).endFill();
+    for(let r=0;r<6;r++){ lg.lineStyle(2,C.muted,0.18).moveTo(-46,-50+r*22).lineTo(46,-50+r*22); }
+    const ledgerLbl=txt('Set<String>',13,C.muted,'700'); ledgerLbl.position.set(0,96); ledgerLbl.alpha=0.5; legible(ledgerLbl); ledger.addChild(ledgerLbl);
+    // chute caption + O(k) tag
+    const chuteCap=txt('k hashovacích funkcí',18,C.chute,'700'); chuteCap.position.set(640,140); chuteCap.alpha=0; legible(chuteCap); c.addChild(chuteCap);
+    const okTag=txt('O(k)',16,C.muted,'700'); okTag.position.set(940,90); okTag.alpha=0; legible(okTag); c.addChild(okTag);
+    // ∈ S? glyph
+    const inS=txt('∈ S ?',40,C.accent,'900'); inS.position.set(640,200); inS.alpha=0; legible(inS);
+    if(hasF('GlowFilter')){ inS._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); inS.filters=(inS.filters||[]).concat([inS._g]); }
+    c.addChild(inS);
+    // mystery token "?"
+    const mtok=txt('?',30,C.accent,'900'); mtok.position.set(640,60); mtok.alpha=0; legible(mtok); c.addChild(mtok);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      const tin=easeOut(ph(t,0.16,2.0));
+      title.alpha=tin*(1-ph(t,6.8,8.6)); title.y=342-tin*12; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // underline sweep @0.16..2.23
+      uline.clear(); uline.lineStyle(4,C.accent,0.9).moveTo(curCellX(0)-20,CELL_Y+30).lineTo(curCellX(15)+20,CELL_Y+30);
+      ulMask.clear(); const rev=ph(t,0.16,2.23); ulMask.beginFill(0xffffff,1).drawRect(curCellX(0)-20,CELL_Y+20,(curCellX(15)+40-(curCellX(0)-20))*rev,24).endFill();
+      uline.alpha=(1-ph(t,7.5,8.6));
+      poleLbl.alpha=easeOut(ph(t,1.47,2.4))*(1-ph(t,5.5,6.2));
+      // ledger ghost sags slightly
+      ledgerLbl.alpha=0.5*easeOut(ph(t,0.6,2.0));
+      // chute caption + O(k)
+      chuteCap.alpha=easeOut(ph(t,3.52,4.2))*(1-ph(t,5.5,6.2));
+      okTag.alpha=easeOut(ph(t,3.52,4.2));
+      // ∈ S? @4.39
+      inS.alpha=easeOut(ph(t,4.39,5.0)); inS.scale.set(0.9+0.2*pop(t,4.39));
+      if(inS._g) inS._g.outerStrength = (t>=7.76? 4 : 2) + 1.0*beat(t);
+      // mystery token @6.39
+      mtok.alpha=easeOut(ph(t,6.39,7.6))*(1-ph(t,8.4,8.7)); mtok.y=60+4*Math.sin(t*2);
+      // FN/FP tallies fade in low-key
+      tallies.alpha=0.6*easeOut(ph(t,5,7));
+      moteEnvelope=0.30;
+    }};
+  });
+
+  // ---------- S2 : VERSE L2 8.82-19.80 (feather-light + fast test) ----------
+  scene(8.82,19.80,'VERSE','verse',(S)=>{
+    const c=new PIXI.Container();
+    const bf=txt('Bloom filter',30,C.accent,'900'); bf.position.set(640,180); bf.alpha=0; legible(bf); c.addChild(bf);
+    if(hasF('GlowFilter')){ bf._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); bf.filters=(bf.filters||[]).concat([bf._g]); }
+    // feather-light float bloom on the strip
+    let floatBloom=null; if(hasF('AdvancedBloomFilter')){ floatBloom=new F.AdvancedBloomFilter({threshold:0.45,bloomScale:1.0,brightness:1.0,blur:6,quality:4}); }
+    const ledger=new PIXI.Container(); c.addChild(ledger); ledger.position.set(140,470);
+    const lg=new PIXI.Graphics(); ledger.addChild(lg);
+    const memCap=txt('≈ 1.13 MB vs > 50 MB',16,C.muted,'700'); memCap.position.set(140,572); memCap.alpha=0; legible(memCap); c.addChild(memCap);
+    // speed-streak rope + stopwatch
+    const streak=makeTrail(TRAIL.cyan,C.chute,14); c.addChild(streak);
+    if(hasF('MotionBlurFilter')) streak.filters=[FILT.motion];
+    const stop=txt('⏱ O(k)',18,C.chute,'700'); stop.position.set(960,250); stop.alpha=0; legible(stop); c.addChild(stop);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      bf.alpha=easeOut(ph(t,8.82,10.0))*(1-ph(t,18.6,19.6)); bf.y=190-10*easeOut(ph(t,8.82,10.0));
+      if(bf._g) bf._g.outerStrength=2+1.2*beat(t);
+      // ledger sags heavy @12.68
+      lg.clear();
+      const sag=easeOut(ph(t,12.68,14.3));
+      lg.beginFill(C.vault,0.4).lineStyle(2,C.vault,0.6).drawRoundedRect(-58,-70,116,150*(1+0.06*sag),8).endFill();
+      for(let r=0;r<6;r++){ lg.lineStyle(2,C.muted,0.18).moveTo(-46,-50+r*22).lineTo(46,-50+r*22); }
+      ledger.y=470+8*sag;
+      memCap.alpha=easeOut(ph(t,14.30,15.0))*(1-ph(t,18.6,19.6));
+      // feather float bloom attaches while floating
+      if(floatBloom){ if(t>=12.68&&t<17.0){ if(strip.filters.indexOf(floatBloom)<0) strip.filters=[stripGlowF,floatBloom].filter(Boolean); floatBloom.bloomScale=1.0+0.4*beat(t); } else { strip.filters=[stripGlowF].filter(Boolean); } }
+      // speed-streak @16.14
+      const sp=ph(t,16.14,16.9);
+      setRopeLine(streak,[340,CELL_Y],[lerp(340,936,sp),CELL_Y]);
+      streak.alpha=(sp>0.02&&sp<0.98)?0.85:0;
+      if(FILT.motion) FILT.motion.velocity=[lerp(60,8,sp),0];
+      stop.alpha=easeOut(ph(t,16.6,17.2))*(1-ph(t,18.8,19.6));
+      moteEnvelope=0.32;
+    },destroy(){ strip.filters=[stripGlowF].filter(Boolean); }};
+  });
+
+  // ---------- S3 : VERSE L3 19.80-28.40 (ADD — first POP) ----------
+  scene(19.80,28.40,'VERSE','verse',(S)=>{
+    const c=new PIXI.Container();
+    // insert token A (accent2 to distinguish from query X)
+    const tok=new PIXI.Container(); c.addChild(tok);
+    const tokG=new PIXI.Graphics(); tok.addChild(tokG);
+    tokG.beginFill(C.accent2,1).lineStyle(2,0xffffff,0.7).drawCircle(0,0,13).endFill();
+    tokG.beginFill(0xffffff,0.5).drawCircle(-4,-4,4).endFill();
+    tok.position.set(tokenStart[0],tokenStart[1]); tok.alpha=0;
+    let tokGlowF=null; if(hasF('GlowFilter')){ tokGlowF=new F.GlowFilter({distance:10,outerStrength:2,color:C.accent2,quality:0.3}); tok.filters=[tokGlowF]; }
+    const addCap=txt('add(prvek)',18,C.accent2,'800'); addCap.position.set(640,16); addCap.alpha=0; legible(addCap); c.addChild(addCap);
+    // 3 hash sparks to A={2,5,9}
+    const sparkRopes=A_SET.map(()=>{ const r=makeTrail(TRAIL.cyan,C.chute,12); c.addChild(r); return r; });
+    // determinism dashed memory paths (lingering)
+    const memPaths=new PIXI.Graphics(); c.addChild(memPaths);
+    const kbitsCap=txt('k bitů = 1',18,C.accent,'800'); kbitsCap.position.set(640,300); kbitsCap.alpha=0; legible(kbitsCap); c.addChild(kbitsCap);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      // ingredient pulses @19.80 strip, @21.25 chutes (via stripGlow already pulses; add brief outline bumps)
+      // token drop @23.39
+      tok.alpha=easeOut(ph(t,23.39,23.7))*(1-ph(t,28.0,28.4));
+      const dropP=easeOut(ph(t,23.39,24.0)); tok.y=lerp(40,90,dropP);
+      tok.x=640+(t>=24.74? lerp(0,-90,easeInOut(ph(t,24.74,25.1))):0); // drift toward chute fan start
+      if(tokGlowF) tokGlowF.outerStrength=2+1.0*beat(t);
+      addCap.alpha=easeOut(ph(t,23.39,23.9))*(1-ph(t,26.0,26.6));
+      // hash sparks @24.74+j*0.30 -> lamp A[j]
+      A_SET.forEach((lampI,j)=>{
+        const fire=24.74+j*0.30; const sp=easeInOut(ph(t,fire,fire+0.5));
+        const head=chuteHead(j); const target=[curCellX(lampI),CELL_Y];
+        setRopeLine(sparkRopes[j], head, [lerp(head[0],target[0],sp),lerp(head[1],target[1],sp)]);
+        sparkRopes[j].alpha=(sp>0.02&&sp<1)?0.85:(t>=fire+0.5?0:0);
+        // POP one-shot burst on landing
+        const popAt=27.22+j*0.20;
+        if(t>=popAt && !S.fired.has('pop'+j)){ S.fired.add('pop'+j); burst(target[0],target[1],C.accent,12,2.4,0.16); }
+      });
+      // dashed memory paths linger after sparks (alpha 0.2)
+      memPaths.clear();
+      if(t>=26.0){ memPaths.lineStyle(1.5,C.chute,0.2*(1-ph(t,27.9,28.4)));
+        A_SET.forEach((lampI,j)=>{ const h=chuteHead(j); memPaths.moveTo(h[0],h[1]).lineTo(curCellX(lampI),CELL_Y); }); }
+      // kbits stamp @27.94
+      kbitsCap.alpha=easeOut(ph(t,27.94,28.3))*(1-ph(t,28.2,28.4));
+      // ZoomBlur micro-punch on "skočí" @27.22
+      if(t>=27.22 && !S.fired.has('zp')){ S.fired.add('zp'); if(FILT.zoom){ FILT.zoom.center=[curCellX(5),CELL_Y]; FILT.zoom.strength=0.18; addOverlayFx('s3zoom',FILT.zoom); } }
+      if(hasOverlayFx('s3zoom')){ FILT.zoom.strength=0.18*(1-ph(t,27.22,27.42)); if(t>27.43) removeOverlayFx('s3zoom'); }
+      moteEnvelope=0.34;
+    },destroy(){ if(hasOverlayFx('s3zoom')) removeOverlayFx('s3zoom'); }};
+  });
+
+  // ---------- S4 : PRE-CHORUS L4 28.40-32.24 (QUERY — same hashes) ----------
+  scene(28.40,32.24,'PRE-CHORUS','verse',(S)=>{
+    const c=new PIXI.Container();
+    // query token X (pure accent gold)
+    const tok=new PIXI.Container(); c.addChild(tok);
+    const tokG=new PIXI.Graphics(); tok.addChild(tokG);
+    tokG.beginFill(C.accent,1).lineStyle(2,0xffffff,0.8).drawCircle(0,0,13).endFill();
+    tokG.beginFill(0xffffff,0.5).drawCircle(-4,-4,4).endFill();
+    tok.position.set(tokenStart[0],tokenStart[1]); tok.alpha=0;
+    const testCap=txt('test(prvek)',18,C.accent,'800'); testCap.position.set(640,16); testCap.alpha=0; legible(testCap); c.addChild(testCap);
+    const sparkRopes=QX.map(()=>{ const r=makeTrail(TRAIL.cyan,C.chute,12); c.addChild(r); return r; });
+    const rings=new PIXI.Graphics(); c.addChild(rings);
+    const detCap=txt('stejné hashe → stejné bity',18,C.chute,'700'); detCap.position.set(640,300); detCap.alpha=0; legible(detCap); c.addChild(detCap);
+    const memPaths=new PIXI.Graphics(); c.addChild(memPaths);
+    return {c,update(lt,t){
+      camDollyScale=1;
+      tok.alpha=easeOut(ph(t,28.40,28.8)); tok.y=lerp(40,90,easeOut(ph(t,28.40,29.0)));
+      testCap.alpha=easeOut(ph(t,28.40,28.9))*(1-ph(t,31.6,32.2));
+      // re-glow S3 memory paths to show same wiring
+      memPaths.clear(); memPaths.lineStyle(2,C.chute,0.4+0.3*beat(t));
+      QX.forEach((lampI,j)=>{ const h=chuteHead(j); memPaths.moveTo(h[0],h[1]).lineTo(curCellX(lampI),CELL_Y); });
+      memPaths.alpha=easeOut(ph(t,30.68,31.2));
+      // query sparks @29.74+j*0.22 -> QX lamps (NO pop)
+      QX.forEach((lampI,j)=>{ const fire=29.74+j*0.22; const sp=easeInOut(ph(t,fire,fire+0.45));
+        const head=chuteHead(j); const target=[curCellX(lampI),CELL_Y];
+        setRopeLine(sparkRopes[j],head,[lerp(head[0],target[0],sp),lerp(head[1],target[1],sp)]);
+        sparkRopes[j].alpha=(sp>0.02&&sp<1)?0.8:0; });
+      // query rings (cyan) on {2,7,11} @30.68
+      rings.clear();
+      if(t>=30.68){ rings.lineStyle(2.5,C.chute,0.7+0.3*beat(t)); QX.forEach(i=>rings.drawCircle(curCellX(i),CELL_Y,CELL_R+8)); }
+      detCap.alpha=easeOut(ph(t,30.68,31.2))*(1-ph(t,31.8,32.2));
+      // idle marquee awaiting verdict
+      moteEnvelope=0.34;
+    }};
+  });
+
+  // ---------- S5 : CHORUS-1 (verdict hook) 32.24-47.88 (occ #1) ----------
+  scene(32.24,47.88,'CHORUS','chorus',(S)=>{
+    const V=buildVerdict(1,S);
+    const LS={ lines:[
+      {start:32.24, next:36.06, vWord:34.53, mode:'mozna'},                         // ALL lit -> MOŽNÁ
+      {start:36.06, next:40.38, vWord:38.76, veto:38.16, vetoLamp:7, mode:'ne'},    // one 0 -> URČITĚ NE
+      {start:40.38, next:43.82, vWord:42.73, mode:'mozna'},                         // restate ALL -> MOŽNÁ
+      {start:43.82, next:47.88, vWord:46.70, mode:'trust'}                          // NE reliable -> trust-seal
+    ]};
+    return {c:V.c,update(lt,t){
+      camDollyScale=1;
+      moteEnvelope=0.40;
+      updateVerdict(V,t,LS);
+    },destroy(){ lampForce=null; if(hasOverlayFx('vZoom'))removeOverlayFx('vZoom'); if(hasOverlayFx('vShock'))removeOverlayFx('vShock'); sceneFlash(FILT.flashWhite,false); }};
+  });
+
+  // ---------- S6 : CHORUS-1 tail (the guarantee) 47.88-51.58 ----------
+  scene(47.88,51.58,'CHORUS','chorus',(S)=>{
+    const c=new PIXI.Container();
+    const cap=txt('nikdy nelže, když řekne NE',18,C.certain,'800'); cap.position.set(640,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    const cap2=txt('jediná chyba: false positive',18,C.danger,'800'); cap2.position.set(640,560); cap2.alpha=0; legible(cap2); c.addChild(cap2);
+    const ast=txt('*',26,C.danger,'900'); ast.position.set(TALLY[0]+196,TALLY[1]+10); ast.alpha=0; legible(ast); c.addChild(ast);
+    return {c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.38;
+      // keep marquee from S5's last state (idle base unless set); the tail dims marquee focus
+      marqState.bloomGain=0.4;
+      // FN weld @47.88: green blink + shock
+      if(t>=47.88 && !S.fired.has('weld')){ S.fired.add('weld');
+        if(FILT.flashGreen){ FILT.flashGreen.alpha=0.4; sceneFlash(FILT.flashGreen,true); }
+        const gp=tallies.toGlobal(new PIXI.Point(196,-6)); fireShock('s6shock',[gp.x,gp.y],t);
+      }
+      if(FILT.flashGreen && S.fired.has('weld')){ FILT.flashGreen.alpha=0.4*(1-ph(t,47.88,48.08)); if(t>48.10) sceneFlash(FILT.flashGreen,false); }
+      updateShock('s6shock',t);
+      cap.alpha=easeOut(ph(t,47.88,48.5))*(1-ph(t,49.8,50.2));
+      // FP unlatch @50.00
+      if(t>=50.00 && !S.fired.has('fp')){ S.fired.add('fp'); burst(TALLY[0]+196,TALLY[1]+28,C.danger,10,2,0.14); }
+      cap2.alpha=easeOut(ph(t,50.00,50.6))*(1-ph(t,51.2,51.6));
+      ast.alpha=easeOut(ph(t,50.00,50.6))*(1-ph(t,51.2,51.6));
+    },destroy(){ sceneFlash(FILT.flashGreen,false); if(hasOverlayFx('s6shock'))removeOverlayFx('s6shock'); }};
+  });
+
+  // ---------- S7 : VERSE 2a 51.58-54.70 (collision) ----------
+  scene(51.58,54.70,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    if(FILT.tilt){ FILT.tilt.start=new PIXI.Point(0,CELL_Y); FILT.tilt.end=new PIXI.Point(W,CELL_Y); }
+    const cap=txt('false positive',22,C.danger,'800'); cap.position.set(640,180); cap.alpha=0; legible(cap); c.addChild(cap);
+    // two converging sparks on the SAME lamp (cell 7)
+    const r1=makeTrail(TRAIL.pink,C.accent2,12); c.addChild(r1);
+    const r2=makeTrail(TRAIL.gold,C.accent,12); c.addChild(r2);
+    const kol=txt('💥 kolize',18,C.danger,'800'); kol.position.set(curCellX(7),CELL_Y-40); kol.alpha=0; legible(kol); c.addChild(kol);
+    return {c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.36;
+      // tilt focus to the strip
+      if(FILT.tilt){ if(sceneRoot.filters!==null){} }
+      cap.alpha=easeOut(ph(t,51.58,52.2))*(1-ph(t,54.2,54.6));
+      // converging sparks @53.58
+      const sp=easeInOut(ph(t,53.58,54.3));
+      const target=[curCellX(7),CELL_Y];
+      setRopeLine(r1, chuteHead(0), [lerp(chuteHead(0)[0],target[0],sp),lerp(chuteHead(0)[1],target[1],sp)]);
+      setRopeLine(r2, chuteHead(2), [lerp(chuteHead(2)[0],target[0],sp),lerp(chuteHead(2)[1],target[1],sp)]);
+      r1.alpha=(sp>0.02&&sp<1)?0.85:0; r2.alpha=r1.alpha;
+      // collision flash @54.16
+      if(t>=53.58 && !S.fired.has('col')){ S.fired.add('col'); if(FILT.flashRed){ FILT.flashRed.alpha=0.45; sceneFlash(FILT.flashRed,true); } }
+      if(FILT.flashRed && S.fired.has('col')){ FILT.flashRed.alpha=0.45*(1-ph(t,53.9,54.12)); if(t>54.13) sceneFlash(FILT.flashRed,false); }
+      kol.alpha=easeOut(ph(t,54.0,54.3))*(1-ph(t,54.5,54.7)); kol.y=CELL_Y-40-6*Math.sin(t*8);
+      // force lamp 7 lit for the collision picture
+      lampForce=new Array(M_CELLS).fill(-1); lampForce[7]=1;
+    },destroy(){ lampForce=null; sceneFlash(FILT.flashRed,false); }};
+  });
+
+  // ---------- S8 : VERSE 2b 54.70-59.78 (the FP scenario — ghosts) ----------
+  scene(54.70,59.78,'VERSE 2','verse',(S)=>{
+    const V=buildVerdict(1,S);
+    const ghostRopes=[]; [A_SET,B_SET,C_SET].forEach((set,gi)=>{ set.forEach(()=>{ const r=makeTrail(TRAIL.cyan,0x8fb0ff,10); V.c.addChild(r); ghostRopes.push({r,gi}); }); });
+    const tagA=txt('A',16,C.muted,'800'); tagA.position.set(chuteHead(0)[0],62); tagA.alpha=0; legible(tagA); V.c.addChild(tagA);
+    const tagB=txt('B',16,C.muted,'800'); tagB.position.set(chuteHead(1)[0],62); tagB.alpha=0; legible(tagB); V.c.addChild(tagB);
+    const tagC=txt('C',16,C.muted,'800'); tagC.position.set(chuteHead(2)[0],62); tagC.alpha=0; legible(tagC); V.c.addChild(tagC);
+    const cap=txt('filtr si MYSLÍ, že tam je — ale není',18,C.danger,'800'); cap.position.set(640,560); cap.alpha=0; legible(cap); V.c.addChild(cap);
+    const ast=txt('*kolize od A,B,C',14,C.muted,'700'); ast.position.set(MARQ[0],MARQ[1]+66); ast.alpha=0; legible(ast); V.c.addChild(ast);
+    return {c:V.c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.36;
+      // ghosts fire @54.70+g*0.5 -> POP their lamps (litFrac already lights them); draw the trails
+      [A_SET,B_SET,C_SET].forEach((set,gi)=>{ const fire=54.70+gi*0.5;
+        set.forEach((lampI,si)=>{ const ri=ghostRopes.find((o,idx)=>{ // map flat index
+          let cnt=0; for(let g=0;g<gi;g++) cnt+=[A_SET,B_SET,C_SET][g].length; return idx===cnt+si; });
+        });
+      });
+      // simpler: redraw all ghost ropes by flat order
+      let flat=0;
+      [A_SET,B_SET,C_SET].forEach((set,gi)=>{ const fire=54.70+gi*0.5;
+        set.forEach((lampI,si)=>{ const o=ghostRopes[flat++]; const sp=easeInOut(ph(t,fire,fire+0.45));
+          const head=chuteHead(si%3); const target=[curCellX(lampI),CELL_Y];
+          setRopeLine(o.r,head,[lerp(head[0],target[0],sp),lerp(head[1],target[1],sp)]);
+          o.r.alpha=(sp>0.02&&sp<1)?0.5:0;
+          if(t>=fire && !S.fired.has('gp'+gi+'_'+si)){ S.fired.add('gp'+gi+'_'+si); burst(target[0],target[1],0x8fb0ff,8,2,0.13); }
+        });
+      });
+      tagA.alpha=easeOut(ph(t,54.70,55.1))*(1-ph(t,57.0,57.6));
+      tagB.alpha=easeOut(ph(t,55.20,55.6))*(1-ph(t,57.0,57.6));
+      tagC.alpha=easeOut(ph(t,55.70,56.1))*(1-ph(t,57.0,57.6));
+      // query X re-fires QX @56.58 -> all lit -> wobbly MOŽNÁ
+      const LS={ lines:[ {start:56.58,next:59.78,vWord:57.29,mode:'mozna'} ] };
+      // force QX lit (they are, via ghosts) and run the verdict
+      updateVerdict(V,t,LS);
+      ast.alpha=easeOut(ph(t,57.29,57.9))*(1-ph(t,59.4,59.78));
+      cap.alpha=easeOut(ph(t,56.58,57.2))*(1-ph(t,59.4,59.78));
+      // FP tick @59.44 (handled by fpCount; add a spark)
+      if(t>=59.44 && !S.fired.has('fptick')){ S.fired.add('fptick'); burst(TALLY[0]+196,TALLY[1]+28,C.danger,10,2,0.14); }
+    },destroy(){ lampForce=null; if(hasOverlayFx('vZoom'))removeOverlayFx('vZoom'); }};
+  });
+
+  // ---------- S9 : VERSE 2c 59.78-63.18 (no delete) ----------
+  scene(59.78,63.18,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const bar=new PIXI.Container(); c.addChild(bar); bar.position.set(640,120); bar.alpha=0;
+    const barG=new PIXI.Graphics(); bar.addChild(barG);
+    // add tool (certain) + eraser (greyed slash)
+    barG.beginFill(C.ink,0.6).lineStyle(2,C.certain,1).drawRoundedRect(-130,-22,90,44,8).endFill();
+    const addT=txt('add ✚',18,C.certain,'800'); addT.position.set(-85,0); bar.addChild(addT);
+    barG.beginFill(C.ink,0.6).lineStyle(2,C.danger,0.7).drawRoundedRect(40,-22,110,44,8).endFill();
+    const delT=txt('delete ⌫',18,C.danger,'800'); delT.position.set(95,0); delT.alpha=0.5; bar.addChild(delT);
+    const slash=new PIXI.Graphics(); bar.addChild(slash); slash.lineStyle(4,C.danger,0.9).moveTo(48,-18).lineTo(142,18);
+    const cap=txt('základní Bloom filter: jen add',18,C.muted,'700'); cap.position.set(640,160); cap.alpha=0; legible(cap); c.addChild(cap);
+    const basicLbl=txt('*základní* Bloom filter',18,C.muted,'800'); basicLbl.position.set(640,300); basicLbl.alpha=0; legible(basicLbl); c.addChild(basicLbl);
+    const ext=txt('rozšíření: Counting / Bitwise BF',14,C.muted,'700'); ext.position.set(1080,610); ext.alpha=0; legible(ext); c.addChild(ext);
+    const hand=new PIXI.Graphics(); c.addChild(hand);
+    const fail=txt('✗',24,C.danger,'900'); fail.alpha=0; legible(fail); c.addChild(fail);
+    return {c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.34;
+      bar.alpha=easeOut(ph(t,59.78,60.4))*(1-ph(t,62.9,63.18));
+      cap.alpha=easeOut(ph(t,59.78,60.4))*(1-ph(t,61.4,61.9));
+      basicLbl.alpha=easeOut(ph(t,61.61,62.2))*(1-ph(t,62.9,63.18));
+      ext.alpha=0.4*easeOut(ph(t,61.61,62.4));
+      // hand tries to drag eraser onto a lamp, bounces back
+      const attempt=Math.floor((t-59.78)/0.9);
+      const lp=ph(t,59.78+attempt*0.9,59.78+attempt*0.9+0.45);
+      const hx=lerp(735,curCellX(8),easeInOut(lp<=0.5?lp/0.5:1-(lp-0.5)/0.5));
+      hand.clear(); hand.beginFill(C.danger,0.5).drawCircle(hx,142,8).endFill();
+      hand.alpha=(t<62.0)?1:0;
+      if(lp>0.45 && lp<0.55){ fail.position.set(hx,120); fail.alpha=easeOut(ph(t,59.78+attempt*0.9+0.4,59.78+attempt*0.9+0.55))*(1-ph(t,59.78+attempt*0.9+0.7,59.78+attempt*0.9+0.85)); }
+    }};
+  });
+
+  // ---------- S10 : VERSE 2d 63.18-68.50 (shared bit -> lock) ----------
+  scene(63.18,68.50,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    // wires from lamp 7 to badges X and B
+    const wires=new PIXI.Graphics(); c.addChild(wires);
+    const badgeX=txt('X',18,C.accent,'900'); badgeX.position.set(curCellX(7)-90,150); legible(badgeX); badgeX.alpha=0; c.addChild(badgeX);
+    const badgeB=txt('B',18,C.accent2,'900'); badgeB.position.set(curCellX(7)+90,150); legible(badgeB); badgeB.alpha=0; c.addChild(badgeB);
+    const cap=txt('jeden bit ↔ víc prvků',18,C.muted,'700'); cap.position.set(640,300); cap.alpha=0; legible(cap); c.addChild(cap);
+    // lock over the OFF switch
+    const lock=new PIXI.Container(); c.addChild(lock); lock.position.set(curCellX(7),CELL_Y); lock.alpha=0;
+    const lockG=new PIXI.Graphics(); lock.addChild(lockG);
+    lockG.lineStyle(4,C.danger,1).arc(0,-8,8,Math.PI,0,false); lockG.beginFill(C.danger,0.85).lineStyle(2,0xffffff,0.6).drawRoundedRect(-10,-2,20,16,3).endFill();
+    const cap2=txt('nulování → false negative → zakázáno',16,C.danger,'800'); cap2.position.set(640,560); cap2.alpha=0; legible(cap2); c.addChild(cap2);
+    return {c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.34;
+      lampForce=new Array(M_CELLS).fill(-1); lampForce[7]=1;
+      // wires pulse
+      wires.clear(); const wa=easeOut(ph(t,63.18,64.0))*(1-ph(t,67.8,68.5));
+      wires.lineStyle(2.5,C.chute,wa*(0.6+0.4*beat(t*1.5)));
+      wires.moveTo(curCellX(7),CELL_Y).lineTo(curCellX(7)-90,160);
+      wires.moveTo(curCellX(7),CELL_Y).lineTo(curCellX(7)+90,160);
+      badgeX.alpha=wa; badgeB.alpha=wa;
+      cap.alpha=easeOut(ph(t,63.18,63.9))*(1-ph(t,66.0,66.6));
+      // lock snap @66.62 (+ would-be FN red flicker, prevented)
+      if(t>=66.62 && !S.fired.has('lock')){ S.fired.add('lock');
+        const gp=lock.toGlobal(new PIXI.Point(0,0)); fireShock('s10shock',[gp.x,gp.y],t);
+        if(FILT.flashRed){ FILT.flashRed.alpha=0.35; sceneFlash(FILT.flashRed,true); }
+      }
+      if(FILT.flashRed && S.fired.has('lock')){ FILT.flashRed.alpha=0.35*(1-ph(t,66.62,66.82)); if(t>66.84) sceneFlash(FILT.flashRed,false); }
+      updateShock('s10shock',t);
+      lock.alpha=easeOut(ph(t,66.62,66.9)); lock.scale.set(pop(t,66.62));
+      cap2.alpha=easeOut(ph(t,66.62,67.2))*(1-ph(t,68.2,68.5));
+    },destroy(){ lampForce=null; sceneFlash(FILT.flashRed,false); if(hasOverlayFx('s10shock'))removeOverlayFx('s10shock'); }};
+  });
+
+  // ---------- S11 : BRIDGE-USE-CASE p1 68.50-83.64 (cheap RAM gate) ----------
+  scene(68.50,83.64,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    if(FILT.kawase) bgIntent.kawase=true;
+    const vaultCap=txt('disk / DB — drahé',16,C.vault,'800'); vaultCap.position.set(220,610); vaultCap.alpha=0; legible(vaultCap); c.addChild(vaultCap);
+    const ramCap=txt('filtr v RAM — levně & rychle',18,C.accent,'800'); ramCap.position.set(640,180); ramCap.alpha=0; legible(ramCap); c.addChild(ramCap);
+    const ioLbl=txt('I/O ušetřeno',14,C.certain,'800'); ioLbl.position.set(1120,76); ioLbl.alpha=0; legible(ioLbl); c.addChild(ioLbl);
+    const ioNum=txt('0',26,C.certain,'900'); ioNum.position.set(1120,104); ioNum.alpha=0; legible(ioNum); c.addChild(ioNum);
+    const savedCap=txt('drahé hledání ušetřeno',18,C.certain,'800'); savedCap.position.set(640,560); savedCap.alpha=0; legible(savedCap); c.addChild(savedCap);
+    // reject tokens
+    const rejTok=[0,1,2].map(j=>{ const g=new PIXI.Graphics(); g.beginFill(C.accent2,1).lineStyle(2,0xffffff,0.6).drawCircle(0,0,11).endFill(); g.alpha=0; c.addChild(g); return g; });
+    return {c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.32;
+      // vault forward + bright @68.50
+      vaultBright=easeOut(ph(t,68.50,70.0)); vaultDoor=0;
+      vault.position.set(lerp(120,180,easeOut(ph(t,68.50,70.0))),VAULT[1]);
+      vaultCap.alpha=easeOut(ph(t,70.54,71.2))*(1-ph(t,82.5,83.5));
+      ramCap.alpha=easeOut(ph(t,71.44,72.1))*(1-ph(t,82.5,83.5));
+      // levně/rychle sparks
+      if(t>=73.41 && !S.fired.has('levne')){ S.fired.add('levne'); burst(640,250,C.accent,8,2,0.13); }
+      if(t>=74.39 && !S.fired.has('rychle')){ S.fired.add('rychle'); burst(700,250,C.accent,8,2,0.13); }
+      // reject tokens bounce @75.30..78.94, each with ZoomBlur micro-punch
+      const bnc=[77.17,77.77,78.37];
+      rejTok.forEach((g,j)=>{ const b0=bnc[j]; const p=ph(t,b0,b0+0.9);
+        const arc=easeOutBack(clamp01(p*1.2));
+        g.position.set(lerp(640,300+j*40, p), lerp(90, 360, Math.sin(p*Math.PI)*-1+ (p<0.5?lerp(90,300,p*2):lerp(300,560,(p-0.5)*2)) ) );
+        // simpler bounce: drop to strip then ricochet to bottom-right
+        const y=p<0.4? lerp(90,CELL_Y,easeOut(p/0.4)) : lerp(CELL_Y,560,easeOutBack((p-0.4)/0.6));
+        const x=p<0.4? 640 : lerp(640,1000,easeOut((p-0.4)/0.6));
+        g.position.set(x,y); g.alpha=(p>0.02&&p<0.98)?1:0;
+        // marquee slam to NE on reject
+        if(p>0.35 && p<0.55){ setMarquee('ne',t); }
+        if(t>=b0 && !S.fired.has('rb'+j)){ S.fired.add('rb'+j); if(FILT.zoom){ FILT.zoom.center=[640,CELL_Y]; FILT.zoom.strength=0.16; addOverlayFx('s11z'+j,FILT.zoom); } }
+        if(hasOverlayFx('s11z'+j)){ FILT.zoom.strength=0.16*(1-ph(t,b0,b0+0.18)); if(t>b0+0.19) removeOverlayFx('s11z'+j); }
+      });
+      // I/O counter ticks up with bounced tokens
+      ioLbl.alpha=easeOut(ph(t,78.94,79.6)); ioNum.alpha=ioLbl.alpha;
+      let io=0; bnc.forEach(b0=>{ if(t>=b0+0.5) io++; }); if(t>=78.94) io=Math.max(io, Math.min(3,Math.floor((t-78.94)*2)+1));
+      ioNum.text=String(io);
+      savedCap.alpha=easeOut(ph(t,78.94,79.6))*(1-ph(t,82.8,83.6));
+      // green check streak @82.45
+      if(t>=82.45 && !S.fired.has('chk')){ S.fired.add('chk'); burst(900,300,C.certain,12,3,0.16); }
+    },destroy(){ vaultBright=0; vault.position.set(VAULT[0],VAULT[1]); for(let j=0;j<3;j++) if(hasOverlayFx('s11z'+j))removeOverlayFx('s11z'+j); }};
+  });
+
+  // ---------- S12 : BRIDGE-USE-CASE p2 83.64-92.04 (crawler + DB) ----------
+  scene(83.64,92.04,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    if(FILT.kawase) bgIntent.kawase=true;
+    // crawler-bot
+    const bot=new PIXI.Container(); c.addChild(bot); bot.position.set(1280,120);
+    const botG=new PIXI.Graphics(); bot.addChild(botG);
+    botG.beginFill(0x9fb0e6,0.95).lineStyle(2,0xffffff,0.6).drawRoundedRect(-22,-16,44,32,8).endFill();
+    botG.beginFill(C.chute,1).drawCircle(0,-2,8).endFill(); botG.beginFill(0xffffff,0.9).drawCircle(-2,-4,3).endFill();
+    for(let l=0;l<3;l++){ botG.lineStyle(2,0x9fb0e6,0.9).moveTo(-22,-8+l*8).lineTo(-34,-12+l*9); botG.moveTo(22,-8+l*8).lineTo(34,-12+l*9); }
+    if(IMG['crawler-bot']) heroSprite(bot,'crawler-bot',0,0,80,0.9,false);
+    const card=new PIXI.Graphics(); bot.addChild(card); card.beginFill(0xffffff,0.85).lineStyle(2,C.muted,1).drawRoundedRect(24,-12,40,26,4).endFill();
+    const cardLbl=txt('URL',12,C.ink,'800'); cardLbl.position.set(44,1); bot.addChild(cardLbl);
+    const botLbl=txt('web crawler',18,C.muted,'700'); botLbl.position.set(900,80); botLbl.alpha=0; legible(botLbl); c.addChild(botLbl);
+    const ask=txt('„Viděl jsem tu adresu?"',18,C.chute,'800'); ask.position.set(640,180); ask.alpha=0; legible(ask); c.addChild(ask);
+    const dbCap=txt('DB potvrdí levný reject',18,C.vault,'800'); dbCap.position.set(640,560); dbCap.alpha=0; legible(dbCap); c.addChild(dbCap);
+    const skip=txt('přeskoč',16,C.certain,'800'); skip.position.set(900,300); skip.alpha=0; legible(skip); c.addChild(skip);
+    const urlTok=new PIXI.Graphics(); c.addChild(urlTok); urlTok.beginFill(C.accent,1).lineStyle(2,0xffffff,0.6).drawCircle(0,0,11).endFill(); urlTok.alpha=0;
+    return {c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.32;
+      vaultBright=0.5;
+      bot.position.set(lerp(1280,900,easeOut(ph(t,83.64,85.0))),120);
+      botLbl.alpha=easeOut(ph(t,84.45,85.1))*(1-ph(t,91.0,92.0));
+      ask.alpha=easeOut(ph(t,85.40,86.0))*(1-ph(t,87.2,87.8));
+      // query token drops @85.40, query POP @86.72
+      const dp=ph(t,85.40,86.0); urlTok.alpha=easeOut(dp)*(1-ph(t,87.4,88.0)); urlTok.position.set(640,lerp(140,CELL_Y,easeOut(dp)));
+      if(t>=86.72 && t<87.44){ setMarquee('ne',t); skip.alpha=easeOut(ph(t,86.72,87.1))*(1-ph(t,87.3,87.8)); }
+      // vault door cracks for a "možná" @87.44 then shuts
+      vaultDoor=triWave(t,87.44,90.5);
+      dbCap.alpha=easeOut(ph(t,87.44,88.1))*(1-ph(t,91.2,92.0));
+    },destroy(){ vaultBright=0; vaultDoor=0; }};
+  });
+
+  // ---------- S13 : VERSE 3 (the trade-off) 92.04-110.44 (F7 seesaw) ----------
+  scene(92.04,110.44,'VERSE 3','verse',(S)=>{
+    const c=new PIXI.Container();
+    // pour tokens (ParticleContainer)
+    const pourPC=new PIXI.ParticleContainer(40,{position:true,alpha:true,scale:true},40,true); c.addChild(pourPC);
+    const pour=[]; for(let i=0;i<40;i++){ const s=new PIXI.Sprite(DOT_TEX); s.anchor.set(0.5); s.tint=C.accent2; s.scale.set(0.18); s.alpha=0; pourPC.addChild(s); pour.push({s,seed:Math.random()}); }
+    const cap1=txt('menší m → víc kolizí → víc FP',16,C.danger,'800'); cap1.position.set(640,560); cap1.alpha=0; legible(cap1); c.addChild(cap1);
+    // seesaw balance beam
+    const seesaw=new PIXI.Container(); c.addChild(seesaw); seesaw.position.set(640,430); seesaw.alpha=0;
+    const beamG=new PIXI.Graphics(); seesaw.addChild(beamG);
+    const lLbl=txt('FP %',14,C.danger,'800'); lLbl.position.set(-150,0); legible(lLbl); seesaw.addChild(lLbl);
+    const rLbl=txt('paměť',14,C.chute,'800'); rLbl.position.set(150,0); legible(rLbl); seesaw.addChild(rLbl);
+    // headline tag
+    const head=new PIXI.Container(); c.addChild(head); head.position.set(640,300); head.alpha=0;
+    const headBig=txt('Set<String> > 50 MB',20,C.muted,'800'); headBig.position.set(0,-22); legible(headBig); head.addChild(headBig);
+    const headChip=txt('1.13 MB · 7 hashů · > 44× menší · 1% FP',18,C.accent,'800'); headChip.position.set(0,10); legible(headChip); head.addChild(headChip);
+    if(hasF('GlowFilter')){ headChip._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); headChip.filters=(headChip.filters||[]).concat([headChip._g]); }
+    return {c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.36;
+      // pour tokens fall fast 92.04..96.0 (deterministic from t)
+      pour.forEach((o,i)=>{ const t0=92.04+o.seed*3.0; const p=ph(t,t0,t0+1.2);
+        if(t>=t0 && t<100.14){ o.s.alpha=(p>0.02&&p<0.98)?0.8:0; o.s.x=lerp(640, curCellX(i%16), easeOut(p)); o.s.y=lerp(40,CELL_Y,easeOut(p)); }
+        else o.s.alpha=0; });
+      // FP dial climbs 92.04..96.14, deeper red by 100.14, drops 100.14..104.04
+      if(t<96.14) fpVal=easeOut(ph(t,92.04,96.14))*0.6;
+      else if(t<100.14) fpVal=lerp(0.6,0.85,easeOut(ph(t,96.14,100.14)));
+      else if(t<104.04) fpVal=lerp(0.85,0.12,easeOut(ph(t,100.14,104.04)));
+      else fpVal=0.12;
+      cap1.alpha=easeOut(ph(t,96.14,96.8))*(1-ph(t,99.6,100.2));
+      // memory meter rises 104.04..106.50 (and grows as strip widens)
+      if(t<100.14) memVal=0.18;
+      else if(t<104.04) memVal=lerp(0.18,0.45,easeOut(ph(t,100.14,104.04)));
+      else memVal=lerp(0.45,0.85,easeOut(ph(t,104.04,106.50)));
+      // seesaw @104.04
+      seesaw.alpha=easeOut(ph(t,104.04,104.8))*(1-ph(t,109.4,110.2));
+      const tilt=lerp(0.25,-0.25, clamp01(1-fpVal)); // FP down -> memory up
+      seesaw.rotation=tilt;
+      beamG.clear(); beamG.lineStyle(6,C.muted,0.8).moveTo(-180,0).lineTo(180,0);
+      beamG.beginFill(C.danger,0.8).drawCircle(-180,0,12).endFill(); beamG.beginFill(C.chute,0.8).drawCircle(180,0,12).endFill();
+      beamG.beginFill(C.muted,0.9).drawPolygon([0,0,-14,30,14,30]).endFill();
+      // headline tag slam @107.54
+      head.alpha=easeOut(ph(t,106.63,107.3));
+      if(t>=109.6) head.alpha=1-ph(t,109.6,110.44);
+      if(headChip._g) headChip._g.outerStrength=2+1.5*beat(t);
+      head.scale.set(0.92+0.08*pop(t,107.54));
+      if(t>=107.54 && !S.fired.has('head')){ S.fired.add('head');
+        fireShock('s13shock',[640,300],t);
+        // BulgePinch warp pop on overlayFx (F-guarded fallback = DisplacementFilter)
+        if(FILT.bulge){ FILT.bulge.center=[640/1280,300/720]; FILT.bulge.radius=240; FILT.bulge.strength=0.40; addOverlayFx('tradePop',FILT.bulge); }
+        else if(FILT.bulgeDisp){ FILT.bulgeDisp.scale.set(30); addOverlayFx('tradePop',FILT.bulgeDisp); }
+      }
+      if(hasOverlayFx('tradePop')){ const st=0.40*(1-ph(t,107.54,107.84)); if(FILT.bulge) FILT.bulge.strength=st; else if(FILT.bulgeDisp) FILT.bulgeDisp.scale.set(30*(st/0.40)); if(t>107.90) removeOverlayFx('tradePop'); }
+      updateShock('s13shock',t);
+      // instrumental gap 108.74..110.44: gentle camera push, headline holds then fades
+      if(t>=108.74) camDollyScale=1+0.025*easeInOut(triWave(t,108.74,110.44));
+    },destroy(){ fpVal=0; memVal=0.18; if(hasOverlayFx('tradePop'))removeOverlayFx('tradePop'); if(hasOverlayFx('s13shock'))removeOverlayFx('s13shock'); }};
+  });
+
+  // ---------- S14 : CHORUS-2 (reprise, climactic) 110.44-134.66 (occ #2) ----------
+  scene(110.44,134.66,'CHORUS','chorus',(S)=>{
+    const V=buildVerdict(2,S);
+    // L-a one-0 -> NE @110.44 ; L-b ALL -> MOŽNÁ @114.77 ; L-c NE reliable @118.28 ;
+    // L-d coda FN/FP @122.29 ; L-e OUTRO callback @126.54 ; L-f FINAL double-flip @130.96
+    const LS={ lines:[
+      {start:110.44, next:114.77, vWord:112.28, veto:111.79, vetoLamp:7, mode:'ne'},
+      {start:114.77, next:118.28, vWord:116.73, mode:'mozna'},
+      {start:118.28, next:122.29, vWord:120.53, mode:'trust'}
+    ]};
+    // OUTRO callback caption
+    const outCap=txt('Bloom filter · ∈ S?',22,C.muted,'700'); outCap.position.set(640,180); outCap.alpha=0; legible(outCap); V.c.addChild(outCap);
+    return {c:V.c,update(lt,t){
+      camDollyScale=1; moteEnvelope=0.42; moteDensity=1.8;
+      marqState.bloomGain=0.9;
+      if(t<122.29){ updateVerdict(V,t,LS); }
+      else if(t<126.54){
+        // coda: FN weld + FP tick (replay S6 beat)
+        lampForce=null;
+        if(t>=122.29 && !S.fired.has('weld2')){ S.fired.add('weld2'); if(FILT.flashGreen){ FILT.flashGreen.alpha=0.4; sceneFlash(FILT.flashGreen,true);} const gp=tallies.toGlobal(new PIXI.Point(196,-6)); fireShock('s14shock',[gp.x,gp.y],t); }
+        if(FILT.flashGreen && S.fired.has('weld2')){ FILT.flashGreen.alpha=0.4*(1-ph(t,122.29,122.49)); if(t>122.5) sceneFlash(FILT.flashGreen,false); }
+        updateShock('s14shock',t);
+        setMarquee('ne',t);
+      }
+      else {
+        lampForce=null;
+        // OUTRO L-e callback @126.54 (calm glow) then L-f FINAL double-flip @130.96
+        outCap.alpha=easeOut(ph(t,126.54,127.3))*(1-ph(t,130.5,131.0));
+        if(t>=130.96){
+          // double flip: NE @130.96 -> MOŽNÁ @133.15 -> settle MOŽNÁ on "je." @134.16
+          if(t<133.15){ setMarquee('ne',t); for(const i of QX) (lampForce=lampForce||new Array(M_CELLS).fill(-1)); if(lampForce){ for(const i of QX) lampForce[i]=1; lampForce[7]=0; } }
+          else { setMarquee('mozna',t); lampForce=new Array(M_CELLS).fill(-1); for(const i of QX) lampForce[i]=1; }
+          if(t>=130.96 && t<131.0 && FILT.zoom && !hasOverlayFx('s14z')){ FILT.zoom.center=[MARQ[0],MARQ[1]]; FILT.zoom.strength=0.26; addOverlayFx('s14z',FILT.zoom); }
+          if(t>=133.15 && t<133.20 && FILT.zoom && !hasOverlayFx('s14z')){ FILT.zoom.center=[MARQ[0],MARQ[1]]; FILT.zoom.strength=0.26; addOverlayFx('s14z',FILT.zoom); }
+          if(hasOverlayFx('s14z')){ const fT=(t<133.15?130.96:133.15); FILT.zoom.strength=0.26*(1-ph(t,fT,fT+0.25)); if(t>fT+0.26) removeOverlayFx('s14z'); }
+        } else { setMarquee('idle',t); }
+      }
+    },destroy(){ lampForce=null; moteDensity=1; if(hasOverlayFx('s14z'))removeOverlayFx('s14z'); if(hasOverlayFx('vZoom'))removeOverlayFx('vZoom'); if(hasOverlayFx('vShock'))removeOverlayFx('vShock'); if(hasOverlayFx('s14shock'))removeOverlayFx('s14shock'); sceneFlash(FILT.flashGreen,false); sceneFlash(FILT.flashWhite,false); }};
+  });
+
+  // ---------- S15 : END-CARD / instrumental tail 134.66-138.792 (F8 bonus) ----------
+  scene(134.66,138.792,'END','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // odometers over the lamps (F8) — persistent digit Texts (no per-frame allocation)
+    const odo=new PIXI.Graphics(); c.addChild(odo);
+    const odoDigits=QX.map(i=>{ const d=txt('0',14,C.accent,'900'); d.position.set(curCellX(i),CELL_Y); d.alpha=0; c.addChild(d); return d; });
+    const countCap=txt('Counting BF: čítač místo bitu → umí delete',18,C.muted,'800'); countCap.position.set(640,200); countCap.alpha=0; legible(countCap); c.addChild(countCap);
+    const bitwCap=txt('Bitwise BF: stack counting filtrů',16,C.muted,'700'); bitwCap.position.set(640,236); bitwCap.alpha=0; legible(bitwCap); c.addChild(bitwCap);
+    const badge=txt('🎰  Bloom filter · ESW B4M36ESW',20,C.muted,'700'); badge.position.set(640,560); badge.alpha=0; legible(badge); c.addChild(badge);
+    return {c,update(lt,t){
+      const q=ph(t,134.66,138.0);
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      // marquee holds MOŽNÁ; strip holds lit pattern
+      setMarquee('mozna',t);
+      lampForce=new Array(M_CELLS).fill(-1); for(const i of QX) lampForce[i]=1;
+      // odometers morph in over the lit lamps (each lamp grows a tiny 3-bit 0..7 counter)
+      odo.clear();
+      const morph=easeInOut(ph(t,134.66,136.0));
+      QX.forEach((i,qi)=>{ const x=curCellX(i);
+        odo.beginFill(C.ink,0.7*morph).lineStyle(1.5,C.accent,morph).drawRoundedRect(x-12,CELL_Y-10,24,20,3).endFill();
+        const n=((Math.floor(t*3)+i)%8);          // 0..7 rolling counter
+        const d=odoDigits[qi]; d.text=String(n); d.alpha=morph;
+        // overflow flash when it rolls past 7 (the caveat)
+        if(n===7 && Math.floor(t*3)%8===7){ d.style.fill=C.danger; } else { d.style.fill=C.accent; }
+      });
+      countCap.alpha=easeOut(ph(t,135.0,135.8));
+      bitwCap.alpha=easeOut(ph(t,135.8,136.5));
+      badge.alpha=easeOut(ph(t,134.66,135.6));
+      // motes thin + camera settle handled by global gates / render
+      moteVisibleRatio=lerp(1.0,0.2,easeInOut(q));
+      moteEnvelope=lerp(0.42,0.12,easeInOut(q));
+      if(bloomF) bloomF.bloomScale=1.0+0.25*Math.exp(-Math.pow((t-137.5),2)/0.25);
+    },destroy(){ moteVisibleRatio=1; lampForce=null; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene (ColorMatrix on bgLayer)
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='bridge'){ bgGrade.saturate(-0.08,false); bgGrade.brightness(0.97,true); }     // cool toward vault
+    else if(sec==='chorus'){ bgGrade.saturate(0.20,false); }
+    else if(sec==='outro'){ bgGrade.saturate(0.05,false); }
+    else { bgGrade.saturate(0.12,false); }
+    // S13 FP-red warm nudge
+    if(t>=92.04 && t<104.04){ const warm=triWave(t,92.04,104.04); bgGrade.saturate(0.12*warm,true); }
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM, word-by-word)  — exact picker (§5)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=160, LAST_WORD_END=134660;
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;     // GLOBAL GATE first
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; } // primary window
+    return null;                                                 // FALLBACK REMOVED — gaps show no line
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    const dt=app.ticker.deltaMS/1000;
+    // reset transient bg-filter intents each frame (only the owning scene re-enables)
+    bgIntent.kawase=false;
+    // reset per-frame forced lamp + marquee defaults (active scene re-sets them)
+    lampForce=null;
+    moteDensity=1;
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='bridge'){ const cool=ph(t,68.50,70.0); top=lerpColor(C.bgTop,C.bgTopCool,cool*0.6); bot=lerpColor(C.bgBot,C.bgBotCool,cool*0.6); }
+    if(t>=92.04 && t<104.04){ const warm=triWave(t,92.04,104.04); top=lerpColor(top,C.bgTopWarm,warm*0.35); bot=lerpColor(bot,C.bgBotWarm,warm*0.25); }
+    if(t>=134.66){ const q=easeInOut(ph(t,134.66,138.0)); top=lerpColor(top,0x0e1a44,q); bot=lerpColor(bot,0x0a1230,q); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // confetti drift + reflection + godray time
+    confTile.tilePosition.y=(-(t*22))%64; confTile.alpha=0.05*(moteEnvelope/0.36);
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time=t; }
+    bgIntent.godray=(sec==='intro'||sec==='outro');
+
+    // ----- scene manager (backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.12);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame from intent flags -----
+    { const arr=[bgGrade];
+      if(bgIntent.kawase && FILT.kawase){ FILT.kawase.strength=3; arr.push(FILT.kawase); }
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+
+    // ----- persistent arcade set -----
+    renderArcade(t,sec);
+
+    // ----- camera -----
+    updateCamera(t,dt);
+
+    // ----- karaoke -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — motes + sparks (non-load-bearing) + PAUSE-FREEZE gate
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    // Ambient motes/sparks advance ONLY while the audio is actually playing. Pausing freezes them,
+    // so a paused frame is fully static — the rest of the scene is already a pure function of audio time.
+    const playing = !player.paused && !player.ended;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp; m.s.rotation+=m.rot*dt;
+        if(m.s.y<-20){ m.s.y=H+20; m.s.x=Math.random()*W; } }
+      const baseShow=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      const densShow=(moteDensity>=1) || (i/motes.length) < moteDensity; // density<1 unused; >1 keeps all
+      const visible=baseShow && densShow;
+      m.s.alpha=visible? moteEnvelope*(0.7+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS (set __READY__ LAST)
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>

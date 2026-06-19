@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P12 – Virtualizace · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="11-jvm-alokace-objektu.html">← předchozí: Alokace objektů</a>
+    <a class="nav-link" href="13-jvm-garbage-collectors.html">další: Garbage collectory →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 12 · <span class="badge badge-c">C/C++ část</span></div>
+    <h1>Virtualizace (IOMMU, SR-IOV, PCI pass-through, virtio)</h1>
+    <p class="perex">Jak funguje moderní systémová virtualizace a – co je pro efektivní software podstatné –
+    <strong>odkud se berou režie a jak je zmírnit</strong>. Od teoretického základu (Popek &amp; Goldberg,
+    trap-and-emulate) přes hardwarově asistovanou virtualizaci (VT-x, VMCS, vnořené stránkování) až po
+    virtualizaci I/O: emulace zařízení, paravirtualizace virtio, PCI pass-through s IOMMU, hardwarové
+    multiplexování SR-IOV a efektivní síť mezi virtuálními stroji.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#co-je">Co je virtualizace a proč</a></li>
+      <li><a href="#komponenty">Komponenty: host, hypervizor, VMM, guest</a></li>
+      <li><a href="#typy-hv">Typy hypervizorů (typ 1 vs typ 2)</a></li>
+      <li><a href="#typy-virt">Typy virtualizace</a></li>
+      <li><a href="#cpu">Virtualizace CPU – trap-and-emulate</a></li>
+      <li><a href="#hw">Hardwarově asistovaná virtualizace</a></li>
+      <li><a href="#mmu">Virtualizace paměti a vnořené stránkování</a></li>
+      <li><a href="#io">Virtualizace I/O a virtio</a></li>
+      <li><a href="#iommu">IOMMU, PCI pass-through, SR-IOV</a></li>
+      <li><a href="#kontejnery">Kontejnery a běhové prostředí</a></li>
+      <li><a href="#rezie">Proč je to pomalejší a jak to zmírnit</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="co-je">Co je virtualizace a proč</h2>
+  <div class="box pisnicka" id="pisen-virtualni-virtual">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Virtuální virtuál</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s16">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p>Virtualizace vytváří <strong>virtuální stroj (VM)</strong> – iluzi samostatného počítače, na němž
+  může běžet <strong>neupravený operační systém</strong>. Guest si myslí, že vlastní celý hardware
+  („bare metal“), zatímco ve skutečnosti sdílí fyzický stroj s ostatními.</p>
+
+  <p>První široce nasazenou VM byl <strong>IBM VM/370</strong> (produkce <strong>1972</strong>). Sálový
+  počítač té doby zabíral celou místnost, stál miliony dolarů a byl pomalý – každá vteřina nečinnosti
+  znamenala ztracené peníze. Před VM se spouštěly jen <strong>dávkové úlohy</strong> (batch:
+  nahraj skript, doběhni, opakuj). S virtuálními stroji šlo stroj <strong>časově sdílet</strong>
+  (time-sharing) a čekání jedné úlohy využít jinou.</p>
+
+  <div class="box poznamka">
+    <p class="box-title">💬 Popek &amp; Goldberg (1974) – tři požadavky na monitor VM</p>
+    <dl class="pojmy-list">
+      <dt>Ekvivalence (equivalence)</dt><dd>guest nepozná, že je virtualizovaný.</dd>
+      <dt>Řízení prostředků (resource control)</dt><dd>guesti se navzájem neovlivní.</dd>
+      <dt>Efektivita (efficiency)</dt><dd>většina instrukcí běží nativní rychlostí.</dd>
+    </dl>
+  </div>
+
+  <h3>Virtuální stroj vs víceuživatelský OS</h3>
+  <p>V 80.–90. letech převládly v <em>důvěryhodných</em> prostředích <strong>víceuživatelské OS</strong>
+  (UNIX, Linux, Windows). Hardware zlevnil, sálové počítače mizely a programy spolu snadno spolupracovaly
+  přes systémová volání.</p>
+  <table>
+    <thead><tr><th>Virtuální stroj</th><th>Víceuživatelský OS</th></tr></thead>
+    <tbody>
+      <tr><td>Guest se domnívá, že vlastní bare metal</td><td>Programy <strong>vědí</strong>, že stroj sdílí</td></tr>
+      <tr><td>Veškerý přístup k HW je odchytáván</td><td>Spolupráce přes syscally</td></tr>
+      <tr><td>Vyšší režie, silnější izolace</td><td>UNIX, Linux, Windows</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Návrat VM s cloudem</h3>
+  <p>Virtuální stroje se vrátily s <strong>veřejným cloudem (2006+)</strong> – stejný ekonomický problém,
+  ale <strong>mnohem tvrdší bezpečnostní model</strong>:</p>
+  <ul>
+    <li>Sálový počítač 70. let: mnoho <em>známých</em> uživatelů, jeden drahý stroj.</li>
+    <li>Veřejný cloud: mnoho <em>anonymních</em> nájemců, jedna obří flotila. Virtuální stroj banky může sdílet hostitele
+      s nepřátelským nájemcem.</li>
+    <li>Víceuživatelský OS byl navržen pro známé uživatele se sociální odpovědností; jeho model hrozeb
+      nepočítal s anonymními útočníky a má desítky let nasbíranou plochu zranitelností v jádře (miliony
+      řádků kódu, zero-day exploity nelze ignorovat).</li>
+  </ul>
+
+  <div class="box insight">
+    <p class="box-title">💡 Proč VM dnes</p>
+    <ul>
+      <li><strong>Efektivní sdílení</strong> – pronájem výseku stroje či flotily.</li>
+      <li><strong>Bezpečnostní hranice</strong> – izolace vzájemně nedůvěřujících nájemců.</li>
+      <li><strong>Škálování</strong> – dynamická změna přidělených prostředků.</li>
+      <li><strong>Mobilita</strong> – snapshot, migrace, obnova.</li>
+      <li><strong>Pohodlí vývojáře</strong> – WSL2, multiplatformní testování.</li>
+    </ul>
+  </div>
+
+  <h2 id="komponenty">Komponenty: host, hypervizor, VMM, guest</h2>
+  <dl class="pojmy-list">
+    <dt>Host (hostitel)</dt><dd>Fyzický stroj a jeho prostředí, na němž celá virtualizace běží.</dd>
+    <dt>Guest (host)</dt><dd>Virtualizovaný systém – neupravené guest aplikace + guest jádro OS běžící uvnitř VM.</dd>
+    <dt>Hypervizor</dt><dd>Privilegovaný kód, který <strong>dohlíží na běh VM, tj. obsluhuje trapy</strong>
+      (přechody do privilegovaného režimu). Hranice typu je rozmazaná – hypervizor umí spouštět i nativní aplikace.</dd>
+    <dt>VMM (Virtual Machine Monitor)</dt><dd>Software, který <strong>emuluje hardwarovou platformu</strong>
+      (síť, grafika, úložiště, …).</dd>
+  </dl>
+
+  <div class="box pozor">
+    <p class="box-title">⚠️ Rozdíl hypervizor vs VMM</p>
+    <p>VMM je často implementován <strong>uvnitř hypervizoru</strong>, proto se oba pojmy pletou. Dnešní
+    platformy jsou ale složité (PC nese <strong>45 let</strong> dědictví, <strong>miliony řádků</strong>
+    emulačního kódu). Je <strong>bezpečnější spouštět VMM v uživatelském režimu</strong>, mimo privilegovaný
+    režim (příklad: <strong>KVM &amp; qemu</strong>). Bývalo to pomalejší, ale mikrohypervizor
+    <strong>NOVA</strong> (TU Dresden) jako první ukázal, že to může být i rychlejší; stejné principy
+    používají moderní řešení jako <strong>Firecracker</strong>.</p>
+  </div>
+
+  <h3>Kolik privilegovaných úrovní je potřeba?</h3>
+  <p><strong>Dvě stačí, více je pohodlných.</strong> Při čistě softwarovém dvouúrovňovém řešení je hypervizor
+  v ringu 0 a <strong>guest jádro i guest uživatel jsou oba v ringu 3</strong>; každá privilegovaná operace
+  v guest jádře trapuje do hypervizoru a každý guest syscall <strong>trapuje dvakrát</strong> (nejdřív
+  hypervizor, ten pak předá guest jádru). x86 má VMX root vs non-root × ringy 0–3 = <strong>8 efektivních
+  úrovní</strong>; ARMv8 má EL0 (user) → EL1 (jádro) → EL2 (hypervizor) → EL3 (secure monitor).</p>
+
+  <h2 id="typy-hv">Typy hypervizorů</h2>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-stack">
+        <div class="diag-cap">Typ 1 – nativní / bare-metal</div>
+        <div class="diag-grid">
+          <div class="diag-box accent"><span class="db-title">Guest 1</span><span class="db-sub">apps + OS</span></div>
+          <div class="diag-box accent"><span class="db-title">Guest 2</span><span class="db-sub">apps + OS</span></div>
+        </div>
+        <div class="diag-layer"><span class="dl-title">Hypervizor</span></div>
+        <div class="diag-layer"><span class="dl-title">Hardware</span></div>
+      </div>
+      <div class="diag-stack">
+        <div class="diag-cap">Typ 2 – hostovaný (hosted)</div>
+        <div class="diag-grid">
+          <div class="diag-box"><span class="db-title">Host apps</span></div>
+          <div class="diag-box accent"><span class="db-title">Guest</span><span class="db-sub">apps + OS</span></div>
+        </div>
+        <div class="diag-layer"><span class="dl-title">Jádro host OS + Hypervizor</span></div>
+        <div class="diag-layer"><span class="dl-title">Hardware</span></div>
+      </div>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Typ 1 – nativní / bare-metal</th><th>Typ 2 – hostovaný</th></tr></thead>
+    <tbody>
+      <tr><td>Hypervizor sedí přímo na HW a spouští guest jádra</td><td>Hypervizor žije vedle (uvnitř) jádra host OS; vedle guestů běží i host aplikace</td></tr>
+      <tr><td>Minimální režie, menší TCB (důvěryhodná báze)</td><td>Využije ovladače host OS; větší TCB</td></tr>
+      <tr><td>Xen, VMware ESX, Hyper-V</td><td>KVM, VirtualBox, WSL2</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="typy-virt">Typy virtualizace</h2>
+  <p>Rozlišujeme dvě hlavní kategorie. Dále nás zajímá <strong>systémová VM</strong>.</p>
+  <table>
+    <thead><tr><th>Běhová VM (runtime)</th><th>Systémová VM</th></tr></thead>
+    <tbody>
+      <tr><td>JVM, CPython, runtime WebAssembly</td><td>KVM, Xen, Hyper-V, Firecracker</td></tr>
+      <tr><td>Spouští jeden programový model</td><td>Spouští <strong>neupravený OS</strong></td></tr>
+      <tr><td>Cíl: <strong>přenositelnost</strong></td><td>Cíl: <strong>izolace</strong></td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>Plná virtualizace systému</strong> – neupravený guest OS běží přes trap-and-emulate (níže).</li>
+    <li><strong>Paravirtualizace</strong> – guest ví, že je virtualizovaný, a komunikuje s hypervizorem
+      efektivním protokolem (virtio).</li>
+    <li><strong>Emulace celého systému</strong> – softwarový emulátor CPU dekóduje a vykonává každou guest
+      instrukci; QEMU TCG takto spustí celé OS (např. ARM Linux na x86) za cenu <strong>5–100× zpomalení</strong>.
+      Tři varianty: čistá interpretace (nejpomalejší), binární překlad (přelož bloky jednou a cachuj),
+      JIT překlad (přelož horké cesty za běhu).</li>
+    <li><strong>Virtualizace běhového prostředí / kontejnery</strong> – sdílí jádro hostitele, izolace přes
+      namespaces a cgroups (níže).</li>
+  </ul>
+
+  <h2 id="cpu">Virtualizace CPU – trap-and-emulate</h2>
+  <p>Klíčový mechanismus, který se vyhne softwarové emulaci CPU: <strong>běžné instrukce běží přímo na
+  křemíku</strong>; citlivá instrukce trapuje do hypervizoru, ten ji vyemuluje a guest pokračuje.</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-blue"><span class="dn-title">Neprivilegovaný (VM)</span><span class="dn-sub">běžné instrukce na křemíku</span></div>
+      <div class="diag-arrow"><span class="lbl">trap (citlivá instrukce)</span></div>
+      <div class="diag-node c-purple"><span class="dn-title">Privilegovaný (HV)</span><span class="dn-sub">emulace</span></div>
+      <div class="diag-arrow"><span class="lbl">resume (pokračuj)</span></div>
+      <div class="diag-node c-blue"><span class="dn-title">Neprivilegovaný (VM)</span><span class="dn-sub">pokračuje na křemíku</span></div>
+    </div>
+    <div class="diag-cap">Citlivá instrukce trapuje do hypervizoru, ten ji vyemuluje a guest pokračuje.</div>
+  </div>
+  <table>
+    <thead><tr><th>Rychlá cesta</th><th>Pomalá cesta</th></tr></thead>
+    <tbody>
+      <tr><td>Běžné instrukce přímo na křemíku (aritmetika, registry, většina přístupů do paměti)</td>
+        <td>Citlivá instrukce → <strong>trap</strong> → hypervizor emuluje → resume</td></tr>
+      <tr><td><strong>≈ 99 % nativní rychlosti CPU</strong></td>
+        <td>Přístup k zařízení stále vyžaduje emulaci ve VMM: NIC, disk, BIOS, …</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Citlivé vs privilegované instrukce</h3>
+  <p class="kv">„Všechny citlivé instrukce musí být privilegované.“ — Popek &amp; Goldberg (1974)</p>
+  <dl class="pojmy-list">
+    <dt>Citlivá (sensitive)</dt><dd>mění globální stav (společný všem VM, ne lokální jedné VM – např. signál
+      resetu CPU), nebo se podle něj chová různě. Příklad: <code>HLT</code> – kdyby guest mohl zastavit CPU,
+      <strong>zemřou všechny ostatní guesty</strong>; nebo instrukce čtoucí aktuální úroveň privilegií –
+      guest musí věřit, že je v ringu 0.</dd>
+    <dt>Privilegovaná (privileged)</dt><dd>trapuje do ringu 0, když běží v ringu &gt; 0 (většina instrukcí
+      jen pro ring 0 na x86).</dd>
+  </dl>
+  <div class="box insight">
+    <p class="box-title">💡 Teorém</p>
+    <p>Pokud <strong>citlivé ⊆ privilegované</strong> → každá citlivá instrukce trapuje → <strong>trap-and-emulate
+    funguje</strong>.</p>
+  </div>
+
+  <h3>x86 měl problém s virtualizací</h3>
+  <ul>
+    <li>x86 byl navržen v roce <strong>1978</strong>, dlouho předtím, než byla virtualizace téma.</li>
+    <li>Asi <strong>17 instrukcí</strong> je <strong>citlivých, ale ne privilegovaných</strong> – ovlivní
+      globální stav, ale v uživatelském režimu <strong>netrapují</strong>.</li>
+    <li><code>PUSHF</code> uloží příznak povolení přerušení (globální stav); <code>POPF</code> jej v ringu 0
+      respektuje, ale v uživatelském režimu jej <strong>tiše ignoruje</strong> (žádný trap!). Guest jádro,
+      které maskuje svá přerušení instrukcí <code>POPF</code>, <strong>tiše selže</strong>.</li>
+    <li>V 80.–90. letech tedy x86 nebyl řádně virtualizovatelný. <strong>VMware (1999)</strong> to vyřešil
+      chytrým <strong>binárním překladem</strong> (JIT přepis nebezpečných instrukcí). Intel a AMD to opravili
+      až v letech <strong>2005–2006</strong> – <strong>33 let</strong> po VM/370.</li>
+  </ul>
+
+  <h2 id="hw">Hardwarově asistovaná virtualizace</h2>
+  <p><strong>Intel VT-x</strong> (Pentium 4 661, listopad 2005) a <strong>AMD-V</strong> (2006) přidaly
+  <strong>ortogonální bit režimu</strong>: <strong>VMX root</strong> = host, <strong>VMX non-root</strong>
+  = guest. Oba režimy mají stále ringy 0–3, ale v non-root režimu citlivé instrukce <strong>opravdu trapují</strong>.
+  HW emuluje věci rychleji než SW. Tři pilíře: více privilegovaných úrovní, vnořené stránkování a virtualizace I/O.</p>
+
+  <h3>Intel VMX a VMCS</h3>
+  <ul>
+    <li>VMX root = host (ringy 0–3), VMX non-root = guest (ringy 0–3, plně virtualizovatelná ISA).</li>
+    <li>root → non-root = <strong>VM Enter</strong> (<code>vmlaunch</code>, <code>vmresume</code>).</li>
+    <li>non-root → root = <strong>VM Exit</strong> (citlivé instrukce, výpadky, I/O).</li>
+  </ul>
+  <p>Stav přechodů drží <strong>VM Control Structure (VMCS)</strong> – struktura v paměti až 4 KiB (např.
+  1024 B):</p>
+  <div class="diag">
+    <div class="diag-stack">
+      <div class="diag-layer"><span class="dl-title">VM-execution control fields</span><span class="dl-sub">řídicí pole vykonávání</span></div>
+      <div class="diag-layer"><span class="dl-title">Host state</span><span class="dl-sub">stav hostitele</span></div>
+      <div class="diag-layer"><span class="dl-title">Guest state</span><span class="dl-sub">stav guesta</span></div>
+      <div class="diag-layer"><span class="dl-title">VM-exit information fields</span><span class="dl-sub">informace o VM exitu</span></div>
+      <div class="diag-layer"><span class="dl-title">VM-entry control fields</span></div>
+      <div class="diag-layer"><span class="dl-title">VM-exit control fields</span></div>
+    </div>
+    <div class="diag-cap">VM Control Structure (VMCS)</div>
+  </div>
+  <p>Obsahuje registry, řídicí pole a důvod exitu. Na každém přechodu se <strong>uloží/obnoví stav hosta
+  i guesta</strong>. Cena: ~<strong>600–900 cyklů</strong> na minimální VM exit (Skylake+); starší HW je pomalejší.</p>
+
+  <h3>Cena VM exitu</h3>
+  <p>Cena hardwarového „round-tripu“ klesla za dvě dekády asi <strong>5×</strong>:</p>
+  <table>
+    <thead><tr><th>Generace</th><th>Rok</th><th>HW cena (cykly)</th></tr></thead>
+    <tbody>
+      <tr><td>Pentium 4 (Prescott)</td><td>2005</td><td>~3 963</td></tr>
+      <tr><td>Nehalem / Westmere</td><td>2009–2010</td><td>761 – 1 500</td></tr>
+      <tr><td>Sandy / Ivy Bridge</td><td>2011–2013</td><td>784 – 1 200</td></tr>
+      <tr><td>Skylake</td><td>2015–2019</td><td>600 – 900</td></tr>
+      <tr><td>Sapphire Rapids / Zen 4</td><td>2022–2023</td><td>500 – 900</td></tr>
+    </tbody>
+  </table>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Hrubá HW cena vs reálná cena</p>
+    <p>Samotný HW přechod je <strong>&lt; 1 000 cyklů</strong>, ale cena viditelná aplikací je
+    <strong>2 000–8 000 cyklů</strong>: hypervizor musí uložit stav, přečíst důvod exitu, předat řízení
+    handleru a obnovit stav.</p>
+  </div>
+
+  <h2 id="mmu">Virtualizace paměti a vnořené stránkování</h2>
+  <p>Guest OS si myslí, že vlastní fyzickou paměť, a vede vlastní tabulky stránek. Ale <strong>„guest fyzická“
+  není host fyzická</strong> – je potřeba <strong>druhý překlad</strong>. Vlastní tabulky stránek guesta
+  mapují <em>guest virtuální → guest fyzická</em>; hypervizorovy <strong>vnořené tabulky stránek</strong>
+  pak mapují <em>guest fyzická (= host virtuální) → host fyzická (systémová fyzická)</em>.</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-blue"><span class="dn-title">Guest virtuální</span></div>
+      <div class="diag-arrow"><span class="lbl">guest tabulky stránek (PDPT → PD → PT)</span></div>
+      <div class="diag-node c-purple"><span class="dn-title">Guest fyzická</span><span class="dn-sub">= host virtuální</span></div>
+      <div class="diag-arrow"><span class="lbl">host (vnořené) tabulky stránek</span></div>
+      <div class="diag-node c-green"><span class="dn-title">Host fyzická</span><span class="dn-sub">systémová</span></div>
+    </div>
+  </div>
+  <p>Druhý stupeň řeší hardware: Intel <strong>EPT</strong>, AMD <strong>NPT</strong>, ARM <strong>Stage-2</strong>.</p>
+
+  <h3>Procházení tabulek a TLB ve VM</h3>
+  <p>Na holém železe je virtuální adresa rozdělena na indexy; od <code>CR3</code> se průchod (walk) noří přes úrovně
+  <strong>L4 → L3 (PDP) → L2 (PD) → L1 (PT)</strong> = <strong>4 přístupy do paměti</strong>. V VM jsou
+  <strong>dva registry CR3</strong> – guest <code>gCR3</code> a vnořený <code>nCR3</code>. Každý přístup do
+  guest tabulky (guest fyzická adresa, gPA) se musí sám přeložit vnořeným walkem na systémovou fyzickou
+  adresu (SPA), takže každá guest úroveň se řeší celým vnořeným walkem napříč úrovněmi.</p>
+  <div class="box pozor">
+    <p class="box-title">⚠️ TLB miss ve VM</p>
+    <p>Nejhorší případ výpadku TLB ve VM: <strong>24 přístupů do paměti</strong> (vs <strong>4</strong> na
+    holém železe). Historicky (2008) to znamenalo 15 % (Intel) / 38 % (AMD) režie. Moderně (Skylake-SP +
+    EPT + 2 MiB stránky): SPEC CPU2017 jen <strong>1–4 %</strong>; STREAM (omezený pamětí) <strong>10–15 %</strong>
+    (4 KiB) → <strong>1–3 %</strong> (huge pages).</p>
+  </div>
+  <div class="box insight">
+    <p class="box-title">💡 Zmírnění výpadků TLB</p>
+    <ol>
+      <li><strong>Tagované TLB</strong> – Intel <strong>VPID</strong>, AMD <strong>ASID</strong> – žádný flush
+        při přepnutí VM.</li>
+      <li><strong>Page-walk cache</strong> – Intel <strong>PML</strong>, AMD <strong>NPT caching</strong> –
+        cachují mezivýsledky překladu.</li>
+      <li><strong>STLB</strong> – druhoúrovňové TLB.</li>
+      <li><strong>Huge pages</strong> – <code>madvise(MADV_HUGEPAGE)</code>, <code>mmap(MAP_HUGETLB)</code>.</li>
+    </ol>
+  </div>
+
+  <h3>Příklad: mini VMM nad KVM</h3>
+  <p><strong>KVM</strong> je linuxový hostovaný hypervizor (typ 2), který skrývá HW-asistovanou virtualizaci
+  různých architektur za <strong>API založené na <code>ioctl</code></strong>. Miniaturní user-space VMM:
+  (1) nastaví paměť VM, (2) nahraje kód, (3) spustí VM, (4) obslouží VM exity a vyemuluje sériový port,
+  (5) opakuje od kroku 3. Nejjednodušší HW k virtualizaci je <strong>sériový port</strong>. Guest je
+  16bitový kód v reálném režimu, který po bytech zapisuje „Hello world!\n“ na sériový port; každý
+  <code>out</code> na port <code>0x3f8</code> vyvolá <strong>VM Exit</strong>, který user-space VMM obslouží:</p>
+  <pre><code>    .code16
+    .global start
+  start:
+    mov $0x3f8, %dx   # bázová adresa sériového portu
+    mov $msg, %si     # adresa zprávy
+  next:
+    mov (%si), %al
+    or  %al,%al
+    jz  halt
+    out %al, (%dx)    # &lt;-- zápis na sériový port -- VM Exit!
+    inc %si
+    jmp next
+  halt:
+    hlt
+  msg:  .asciz "Hello world!\n"</code></pre>
+
+  <h2 id="io">Virtualizace I/O a virtio</h2>
+  <h3>Jak funguje moderní síťová karta (NIC)</h3>
+  <p>Moderní NIC řídí tři spolupracující struktury:</p>
+  <ul>
+    <li><strong>NIC registry</strong> (na zařízení) – mj. ukazatele head/tail prstenců: <code>TX head</code>,
+      <code>TX tail</code>, <code>RX head</code>, <code>RX tail</code>, …</li>
+    <li><strong>Buffer descriptory</strong> (prstenec v paměti) – každý drží <code>addr</code>, <code>size</code>,
+      <code>flags</code>.</li>
+    <li><strong>Data paketů</strong> (v paměti) – skutečné buffery, na něž descriptory ukazují.</li>
+  </ul>
+  <p><strong>Vysílání (TX):</strong> (1) zapiš data do bufferu, (2) vyplň prázdný descriptor, (3) upozorni
+  NIC zápisem do registru <strong>TX tail</strong>. NIC pak přečte prstenec přes <strong>DMA</strong>
+  a paket odešle. <strong>Příjem (RX):</strong> (1) alokuj buffery a aktualizuj descriptory, (2) aktualizuj
+  registry RX head/tail, (3) při příjmu NIC uloží data do paměti a <strong>vyvolá přerušení</strong>.</p>
+  <p><strong>Scatter-Gather DMA:</strong> NIC poskládá výsledný paket z <strong>několika kusů rozházených
+  v paměti</strong> – typicky hlavička (z OS) + data (z aplikace) – a vyhne se zbytečné kopii dat kvůli
+  místu na hlavičku. Descriptor pak odkazuje více fragmentů (<code>addr[2]</code>, <code>size[2]</code>,
+  <code>flags</code>).</p>
+
+  <h3>Emulace NIC ve VMM</h3>
+  <ul>
+    <li>Použij <strong>MMU</strong> a <strong>odchytávej přístupy k registrům NIC</strong> (paměťově mapované I/O).</li>
+    <li>Při zápisu do <strong>TX tail</strong> VMM projde zařazené buffery a odešle je přes reálný NIC
+      (např. BSD sockets API se <code>SOCK_RAW</code>). Příjem analogicky.</li>
+    <li><strong>Dávkování (batching)</strong>: mnoho paketů na jeden VM Exit → menší režie.</li>
+  </ul>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Počet VM Exitů je naše výkonnostní metrika</p>
+    <p>Ne každý HW je „hezký“ k virtualizaci: na TX/RX připadá několik VM Exitů a odchytávané registry jsou
+    v <strong>téže MMIO stránce</strong> promíchané s neškodnými (např. read-only) → <strong>zbytečné VM
+    Exity</strong> i pro neškodné přístupy. VMM navíc musí emulovat nejen RX/TX, ale i správu (vyjednání
+    linky, konfigurace), což bývá <strong>složitější než samotné RX/TX</strong>.</p>
+  </div>
+
+  <h3>Virtio (paravirtualizace)</h3>
+  <p>Není ani snadné, ani nutné emulovat skutečný NIC – stačí emulovat <strong>TX, RX a trochu konfigurace</strong>
+  (např. MAC adresu). Většina moderního I/O HW (disk, síť, …) vypadá podobně, tak proč pro každé vymýšlet
+  jiný formát prstence? <strong>Virtio</strong> je <strong>univerzální protokol VM ↔ hypervizor</strong>
+  založený na prstencových bufferech, používaný pro síť, úložiště, sériovou linku, GPU, … VM objevují virtio
+  zařízení standardně přes <strong>PCI probing</strong>.</p>
+  <p>Srovnání plné emulace reálného NIC (Intel e1000) vs paravirtualizovaného virtio – virtio vyhrává drtivě
+  ve všech metrikách:</p>
+  <table>
+    <thead><tr><th>Metrika</th><th>Intel e1000</th><th>virtio</th></tr></thead>
+    <tbody>
+      <tr><td>Propustnost (vyšší lepší)</td><td>239 Mbps</td><td><strong>5 230 Mbps</strong></td></tr>
+      <tr><td>VM exity (nižší lepší)</td><td>základ</td><td><strong>30× méně</strong></td></tr>
+      <tr><td>Přerušení (nižší lepší)</td><td>základ</td><td><strong>14× méně</strong></td></tr>
+      <tr><td>Cykly / paket (nižší lepší)</td><td>&gt; 652k</td><td><strong>79k</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="iommu">IOMMU, PCI pass-through a SR-IOV</h2>
+  <h3>PCI pass-through – motivace a problém</h3>
+  <p>I virtio potřebuje <strong>jeden VM Exit</strong> na (dávku) TX operací. Když VM Exity nechceme vůbec,
+  můžeme dát VM <strong>výhradní přístup</strong> k NIC tím, že namapujeme registry a buffery zařízení přímo
+  do adresních prostorů guesta – guest pak zařízení programuje a DMA přistává přímo v jeho paměti, bez VM Exitu.</p>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Nebezpečí bez překladu adres pro zařízení</p>
+    <p>Zařízení dělá DMA podle <strong>fyzické adresy</strong>. Zlomyslný guest by mohl nasměrovat NIC do
+    oblasti hostitele a <strong>NIC přepíše hypervizor</strong> nebo libovolnou host paměť. Bez překladu adres
+    <em>pro zařízení</em> tedy pass-through rozbíjí izolaci. To motivuje IOMMU.</p>
+  </div>
+  <table>
+    <thead><tr><th>Problém</th><th>Hardwarové řešení</th></tr></thead>
+    <tbody>
+      <tr><td><strong>1. DMA do špatné paměti</strong> – zlá VM naprogramuje NIC ke čtení/zápisu host paměti.</td>
+        <td><strong>IOMMU / VT-d / SMMU</strong> – <strong>překlad DMA adres per zařízení</strong>.</td></tr>
+      <tr><td><strong>2. Přerušení zařízení</strong> – host nemá ovladač, neumí bezpečně potvrdit přerušení;
+        hrozí smyčka (host injektuje IRQ do VM a je přerušen znovu dřív, než VM stihne běžet).</td>
+        <td><strong>MSI / PCIe</strong> – maskování přerušení <strong>per zdroj</strong> bez ovladače
+        (těžké u sdílených paralelních PCI linek).</td></tr>
+    </tbody>
+  </table>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 IOMMU (Input-Output Memory Management Unit)</p>
+    <p>IOMMU (Intel <strong>VT-d</strong>, ARM <strong>SMMU</strong>) je obdoba MMU pro periferní zařízení.
+    Poskytuje <strong>„tabulky stránek zařízení“</strong>: každý DMA přístup zařízení překládá z adresy, kterou
+    vidí zařízení (resp. guest fyzické), na skutečnou systémovou fyzickou adresu = <strong>DMA remapping</strong>.
+    Tím <strong>chrání paměť</strong> – zařízení (a guest, který je řídí) může DMA jen do paměti, kterou mu
+    IOMMU zpřístupní, a nemůže přepsat hypervizor ani cizí paměť. IOMMU je tak nezbytnou podmínkou bezpečného
+    PCI pass-through (vedle MSI pro přerušení). Vyžaduje podporu v HW i hypervizoru.</p>
+  </div>
+
+  <h3>SR-IOV (Single-Root I/O Virtualization)</h3>
+  <p>PCI pass-through je skvělý, ale máme-li <strong>mnoho VM sdílejících jeden NIC</strong>, bez pass-through
+  by každá VM měla emulovaný NIC a VMM by je multiplexoval <strong>v softwaru</strong>. Nápad: multiplexovat
+  <strong>v hardwaru</strong>.</p>
+  <ul>
+    <li>NIC vystaví jednu <strong>fyzickou funkci (PF, physical function)</strong> plus několik
+      <strong>virtuálních funkcí (VF, virtual functions)</strong>.</li>
+    <li>Každá <strong>VF</strong> má vlastní zjednodušené PCI rozhraní a vlastní prstence RX/TX.</li>
+    <li>PF spravuje hypervizor; VMM každého guesta je napevno napojen přímo na svou VF (slide kreslí až 8 VF).</li>
+  </ul>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">Guest1 + VMM1</span><span class="db-sub">→ VF1</span></div>
+      <div class="diag-box accent"><span class="db-title">Guest2 + VMM2</span><span class="db-sub">→ VF2</span></div>
+      <div class="diag-box accent"><span class="db-title">Guest3 + VMM3</span><span class="db-sub">→ VF3</span></div>
+    </div>
+    <div class="diag-layer"><span class="dl-title">Hypervizor</span><span class="dl-sub">spravuje PF</span></div>
+    <div class="diag-cap">NIC (hardware)</div>
+    <div class="diag-grid">
+      <div class="diag-box"><span class="db-title">VF1</span></div>
+      <div class="diag-box"><span class="db-title">VF2</span></div>
+      <div class="diag-box"><span class="db-title">VF3</span></div>
+      <div class="diag-box"><span class="db-title">… VF8</span></div>
+      <div class="diag-box accent"><span class="db-title">PF</span><span class="db-sub">← Hypervizor</span></div>
+    </div>
+  </div>
+
+  <h3>Hardwarové offloadování a efektivní síť mezi VM</h3>
+  <p>Ve veřejném cloudu pass-through obecně není žádoucí (rozbíjí control plane). Infrastruktura se proto
+  <strong>přesouvá (offloaduje) na dedikované karty</strong> (SmartNIC / DPU / IPU): režie host CPU klesne z
+  <strong>~30 % na ~1 %</strong> a karty vystaví <strong>standardní paravirtualizované rozhraní (virtio)</strong>,
+  takže VM zůstávají migrovatelné. Příklady: <strong>NVIDIA BlueField</strong> (SoC s vlastním OS),
+  <strong>AWS Nitro</strong> (ASIC pro VPC, NVMe, správu), <strong>Azure AccelNet</strong> (FPGA SmartNIC).</p>
+  <p><strong>Síť mezi VM:</strong> softwarový přepínač přesune paket přímo mezi VM: (1) paket je v paměti
+  zdrojové VM, (2) VMM dostane VM Exit (virtio <code>kick()</code>), (3) VMM notifikuje SW switch přes IPC,
+  (4) switch <code>memcpy()</code> paket přímo do prstence cílové VM (switch má přes <code>mmap()</code>
+  paměť všech VM, stejně jako by reálný NIC dělal DMA), (5) cílový VMM injektuje přerušení své VM.</p>
+  <p><strong>TSO / LRO:</strong> mezi VM není potřeba TCP segmentace vůbec. <strong>TSO</strong> (TCP Segmentation
+  Offload) přenese segmentaci na NIC, <strong>LRO</strong> (Large Receive Offload) přenese skládání paketů (reassembly). Podporuje-li
+  je virtuální NIC, <code>memcpy()</code> mezi VM přenáší celé TCP segmenty – mnohem rychleji.</p>
+
+  <h2 id="kontejnery">Kontejnery a virtualizace běhového prostředí</h2>
+  <p>Kontejnery (Linux) přidávají do víceuživatelského OS plnohodnotné izolační primitivy, aniž by spouštěly celé
+  guest jádro – sdílejí jádro hostitele:</p>
+  <dl class="pojmy-list">
+    <dt>Namespaces</dt><dd>izolují pohled procesu na systémové prostředky (PID, síť, mount, uživatelé, …) –
+      proces vidí jen „svoji“ část systému.</dd>
+    <dt>cgroups (control groups)</dt><dd>omezují a účtují prostředky (CPU, paměť, I/O) skupině procesů.</dd>
+  </dl>
+  <p>Jsou lehčí a rychlejší než plné VM, ale sdílejí jádro hostitele – plocha zranitelností jádra (miliony
+  řádků) zůstává, proto v cloudu doplňují, nikoli plně nahrazují izolaci VM.</p>
+
+  <h2 id="rezie">Proč je virtualizace pomalejší a jak to zmírnit</h2>
+  <p>Virtualizace je <strong>další vrstva nepřímosti</strong> – přidává režie, a to <strong>i s hardwarovou
+  podporou</strong>. Hlavní zdroje zpomalení a jak je vývojář/administrátor zmírní:</p>
+  <table>
+    <thead><tr><th>Zdroj režie</th><th>Proč</th><th>Zmírnění</th></tr></thead>
+    <tbody>
+      <tr><td>VM Exity</td><td>Citlivé instrukce a přístup k zařízení trapují; reálná cena 2 000–8 000 cyklů
+        (uložení/obnova stavu, dispatch handleru), i HW přechod stojí stovky cyklů.</td>
+        <td>Paravirtualizace (virtio) + <strong>dávkování</strong> paketů; minimalizovat počet exitů
+        (metrika výkonu).</td></tr>
+      <tr><td>Přístup do paměti</td><td>Dvouúrovňové stránkování: výpadek TLB až <strong>24 přístupů</strong>
+        místo 4.</td>
+        <td><strong>Huge pages</strong> (<code>MADV_HUGEPAGE</code>, <code>MAP_HUGETLB</code>),
+        <strong>tagované TLB</strong> (VPID/ASID), page-walk cache, STLB.</td></tr>
+      <tr><td>Device I/O (emulace)</td><td>Emulace reálného NIC = mnoho exitů, sdílené MMIO stránky, složitá
+        správa.</td><td><strong>Paravirtualizace (virtio)</strong> místo plné emulace.</td></tr>
+      <tr><td>Sdílení zařízení více VM</td><td>Softwarový multiplexing ve VMM.</td>
+        <td><strong>SR-IOV</strong> (PF/VF), <strong>PCI pass-through</strong> (s IOMMU + MSI).</td></tr>
+      <tr><td>Síť mezi VM</td><td>Mnoho malých <code>memcpy()</code>, TCP segmentace.</td>
+        <td><strong>TSO / LRO</strong> – přenášet celé TCP segmenty.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Co je IOMMU a k čemu se používá?</summary>
+    <div class="odpoved">
+      <p>IOMMU (Input-Output Memory Management Unit; Intel <strong>VT-d</strong>, ARM <strong>SMMU</strong>) je
+      jednotka pro správu paměti pro periferní zařízení – obdoba MMU, ale pro DMA. Vede „tabulky stránek
+      zařízení“ a překládá adresy, podle nichž zařízení provádí <strong>DMA</strong> (typicky guest fyzické),
+      na skutečné systémové fyzické adresy = <strong>DMA remapping</strong>. Tím <strong>chrání paměť</strong>:
+      zařízení smí DMA jen do paměti, kterou mu IOMMU zpřístupní, takže <strong>nemůže přepsat hypervizor ani
+      cizí (host) paměť</strong>. Je proto nezbytné pro bezpečný <strong>PCI pass-through</strong> (vedle MSI
+      pro maskování přerušení per zdroj) – bez něj by zlomyslný guest naprogramoval zařízení k DMA kamkoli
+      do fyzické paměti.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">3 b</span> Software ve virtualizovaném systému běží
+    typicky pomaleji i při HW-asistované virtualizaci. Jaké jsou důvody a jak je vývojář/administrátor zmírní?</summary>
+    <div class="odpoved">
+      <p><strong>Důvody:</strong></p>
+      <ul>
+        <li><strong>VM Exity</strong> – citlivé instrukce a přístup k zařízení trapují do hypervizoru; reálná
+          cena je 2 000–8 000 cyklů (uložení/obnova stavu, čtení důvodu exitu, dispatch handleru).</li>
+        <li><strong>Dvouúrovňové (vnořené) stránkování</strong> – druhý překlad guest fyzická → host fyzická;
+          výpadek TLB stojí až <strong>24 přístupů do paměti</strong> místo 4.</li>
+        <li><strong>Emulace I/O zařízení</strong> – mnoho VM Exitů, sdílené MMIO stránky způsobují zbytečné exity.</li>
+      </ul>
+      <p><strong>Zmírnění:</strong></p>
+      <ul>
+        <li>Paměť: <strong>huge pages</strong> (<code>MADV_HUGEPAGE</code>, <code>MAP_HUGETLB</code>),
+          tagované TLB (VPID/ASID), page-walk cache.</li>
+        <li>I/O: <strong>paravirtualizace (virtio)</strong> místo emulace reálného HW, dávkování operací
+          (méně exitů).</li>
+        <li>Sdílení zařízení: <strong>SR-IOV</strong> a <strong>PCI pass-through</strong> (s IOMMU + MSI).</li>
+        <li>Síť mezi VM: <strong>TSO / LRO</strong>.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Více VM přistupuje k jedné síťové kartě – jaké jsou
+    přístupy, jejich HW požadavky a efektivita?</summary>
+    <div class="odpoved">
+      <p><strong>1. Emulace + virtio (paravirtualizace):</strong> VMM multiplexuje kartu v softwaru. Virtio je
+      univerzální prstencový protokol VM↔hypervizor; žádný speciální HW není potřeba. Oproti plné emulaci
+      (e1000) má ~22× vyšší propustnost (5 230 vs 239 Mbps), 30× méně VM exitů, 14× méně přerušení. Stále ale
+      potřebuje <strong>jeden VM Exit</strong> na dávku TX.</p>
+      <p><strong>2. PCI pass-through:</strong> jedna VM dostane výhradní, bezexitový přístup k NIC. Vyžaduje
+      <strong>IOMMU/VT-d</strong> (překlad DMA per zařízení, jinak hrozí přepis host paměti) a <strong>MSI</strong>
+      (maskování přerušení per zdroj). Nejrychlejší, ale kartu dostane <strong>jen jedna VM</strong> – nesdílí se
+      mezi více VM a komplikuje migraci/control plane.</p>
+      <p><strong>3. SR-IOV:</strong> hardwarové multiplexování – NIC vystaví jednu <strong>PF</strong> a více
+      <strong>VF</strong>, každá VF má vlastní PCI rozhraní a RX/TX prstence; každá VF se předá jiné VM
+      (s IOMMU + MSI jako u pass-through). Spojuje výhodu pass-through (bez VM Exitů, blízko nativní rychlosti)
+      se sdílením jedné karty mnoha VM. Vyžaduje NIC s podporou SR-IOV.</p>
+      <p>Pro cloud bývá nejvhodnější <strong>hardwarové offloadování</strong> (SmartNIC/DPU) vystavující virtio
+      rozhraní – režie host CPU ~30 % → ~1 % a VM zůstávají migrovatelné.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P12</span> Vysvětli trap-and-emulate a rozdíl citlivá vs privilegovaná instrukce.</summary>
+    <div class="odpoved">
+      <p>Běžné instrukce běží přímo na křemíku (~99 % nativní rychlosti); <strong>citlivá</strong> instrukce
+      trapuje do hypervizoru, ten ji vyemuluje a guest pokračuje. <strong>Citlivá</strong> instrukce mění
+      globální stav nebo se podle něj chová různě (např. <code>HLT</code>). <strong>Privilegovaná</strong>
+      instrukce trapuje, když běží v ringu &gt; 0. Trap-and-emulate funguje, právě když <strong>citlivé ⊆
+      privilegované</strong> (Popek &amp; Goldberg). x86 měl ~17 citlivých-ale-neprivilegovaných instrukcí
+      (např. <code>POPF</code>), proto byl do VT-x (2005) řádně nevirtualizovatelný.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P12</span> Rozdíl mezi hypervizorem typu 1 a typu 2; co je VMM?</summary>
+    <div class="odpoved">
+      <p><strong>Typ 1 (nativní/bare-metal):</strong> hypervizor sedí přímo na HW (Xen, ESX, Hyper-V) –
+      minimální režie, menší TCB. <strong>Typ 2 (hostovaný):</strong> hypervizor je vedle/uvnitř jádra host OS
+      (KVM, VirtualBox, WSL2) – využije ovladače hostitele, ale větší TCB. <strong>VMM</strong> je software
+      emulující HW platformu (síť, disk, …); bývá uvnitř hypervizoru, ale bezpečnější je spustit ho v
+      uživatelském režimu (KVM + qemu).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P12</span> Co je vnořené stránkování (EPT/NPT) a proč zpomaluje paměť?</summary>
+    <div class="odpoved">
+      <p>Guest vede vlastní tabulky stránek (guest virt. → guest fyz.), ale guest fyzická adresa není host
+      fyzická – hypervizorovy <strong>vnořené tabulky</strong> přidají druhý překlad (guest fyz. → host fyz.),
+      hardwarově řešený přes Intel <strong>EPT</strong> / AMD <strong>NPT</strong> / ARM <strong>Stage-2</strong>.
+      Procházení tabulek je dvourozměrné (dva CR3), takže výpadek TLB stojí až <strong>24 přístupů</strong>
+      místo 4. Zmírnění: huge pages, tagované TLB (VPID/ASID), page-walk cache, STLB.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P12</span> Co je virtio a proč je rychlejší než emulace reálného NIC?</summary>
+    <div class="odpoved">
+      <p>Virtio je univerzální <strong>paravirtualizovaný</strong> prstencový protokol VM↔hypervizor (síť,
+      úložiště, sériová linka, GPU), objevovaný přes PCI probing. Místo aby napodoboval složitý reálný HW
+      (s management/MMIO pastmi), emuluje jen TX, RX a trochu konfigurace. Proto dává oproti e1000 ~22× vyšší
+      propustnost, 30× méně VM exitů, 14× méně přerušení a ~8× méně cyklů na paket.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P12</span> Co odlišuje kontejnery od plných VM?</summary>
+    <div class="odpoved">
+      <p>Kontejnery <strong>sdílejí jádro hostitele</strong> a izolaci dělají přes <strong>namespaces</strong>
+      (izolovaný pohled na PID, síť, mount, …) a <strong>cgroups</strong> (limity a účtování CPU/paměti/I/O).
+      Jsou lehčí a rychlejší než VM, ale sdílené jádro znamená větší plochu zranitelností – proto v cloudu
+      izolaci VM doplňují, ne plně nahrazují.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li>Virtualizace = další vrstva nepřímosti → režie, <strong>i s HW podporou</strong>. Klíč je vědět,
+        kde režie je, a umět ji zmírnit.</li>
+      <li><strong>Trap-and-emulate</strong> funguje, když <strong>citlivé ⊆ privilegované</strong>; běžné
+        instrukce běží ~99 % nativně. x86 to dlouho porušoval (~17 instrukcí), opraveno VT-x (2005) / AMD-V (2006).</li>
+      <li>Hypervizor obsluhuje trapy; <strong>typ 1</strong> = na HW (menší TCB), <strong>typ 2</strong> =
+        v host OS (KVM); <strong>VMM</strong> emuluje HW, nejbezpečněji v user mode.</li>
+      <li><strong>Vnořené stránkování</strong> (EPT/NPT/Stage-2): druhý překlad, TLB miss až 24 přístupů →
+        huge pages, tagované TLB.</li>
+      <li>I/O: emulace = mnoho VM Exitů → <strong>virtio</strong> (paravirtualizace). Počet VM Exitů je metrika.</li>
+      <li>Sdílení karty více VM: <strong>SR-IOV</strong> (PF/VF), <strong>PCI pass-through</strong> – obojí
+        potřebuje <strong>IOMMU</strong> (DMA remapping, ochrana paměti) + <strong>MSI</strong>. Síť mezi VM:
+        <strong>TSO/LRO</strong>.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="11-jvm-alokace-objektu.html">← Předchozí: Alokace objektů</a></span>
+    <span><a href="13-jvm-garbage-collectors.html">Další: Garbage collectory →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

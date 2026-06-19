@@ -1,0 +1,1265 @@
+{
+  "song": "Protobaf a JSON",
+  "title": "Z objektu na bajty",
+  "source": "11-serializace-protobuf.md",
+  "language": "cs",
+  "duration_ms": 183400,
+  "lines": [
+    {
+      "start_ms": 50,
+      "end_ms": 29980,
+      "text": "Objekt v paměti",
+      "words": [
+        {
+          "w": "Objekt",
+          "start_ms": 50,
+          "end_ms": 1990
+        },
+        {
+          "w": "v",
+          "start_ms": 1990,
+          "end_ms": 5520
+        },
+        {
+          "w": "paměti",
+          "start_ms": 5520,
+          "end_ms": 29980
+        }
+      ]
+    },
+    {
+      "start_ms": 29980,
+      "end_ms": 39100,
+      "text": "Deserializace dělá cestu zpět, z bajtů zase objekt, tak jak byl předtím hned.",
+      "words": [
+        {
+          "w": "Deserializace",
+          "start_ms": 29980,
+          "end_ms": 31680
+        },
+        {
+          "w": "dělá",
+          "start_ms": 31680,
+          "end_ms": 32460
+        },
+        {
+          "w": "cestu",
+          "start_ms": 32460,
+          "end_ms": 33110
+        },
+        {
+          "w": "zpět,",
+          "start_ms": 33110,
+          "end_ms": 34130
+        },
+        {
+          "w": "z",
+          "start_ms": 34130,
+          "end_ms": 34290
+        },
+        {
+          "w": "bajtů",
+          "start_ms": 34290,
+          "end_ms": 35230
+        },
+        {
+          "w": "zase",
+          "start_ms": 35230,
+          "end_ms": 35860
+        },
+        {
+          "w": "objekt,",
+          "start_ms": 35860,
+          "end_ms": 37090
+        },
+        {
+          "w": "tak",
+          "start_ms": 37090,
+          "end_ms": 37320
+        },
+        {
+          "w": "jak",
+          "start_ms": 37320,
+          "end_ms": 37600
+        },
+        {
+          "w": "byl",
+          "start_ms": 37600,
+          "end_ms": 37870
+        },
+        {
+          "w": "předtím",
+          "start_ms": 37870,
+          "end_ms": 38690
+        },
+        {
+          "w": "hned.",
+          "start_ms": 38690,
+          "end_ms": 39100
+        }
+      ]
+    },
+    {
+      "start_ms": 39100,
+      "end_ms": 48160,
+      "text": "JSON a XML jsou textové, názvy polí přímo v datech, člověk to čte.",
+      "words": [
+        {
+          "w": "JSON",
+          "start_ms": 39100,
+          "end_ms": 39640
+        },
+        {
+          "w": "a",
+          "start_ms": 39640,
+          "end_ms": 39770
+        },
+        {
+          "w": "XML",
+          "start_ms": 39770,
+          "end_ms": 40180
+        },
+        {
+          "w": "jsou",
+          "start_ms": 40180,
+          "end_ms": 40720
+        },
+        {
+          "w": "textové,",
+          "start_ms": 40720,
+          "end_ms": 42070
+        },
+        {
+          "w": "názvy",
+          "start_ms": 42070,
+          "end_ms": 42880
+        },
+        {
+          "w": "polí",
+          "start_ms": 42880,
+          "end_ms": 43550
+        },
+        {
+          "w": "přímo",
+          "start_ms": 43550,
+          "end_ms": 44500
+        },
+        {
+          "w": "v",
+          "start_ms": 44500,
+          "end_ms": 44630
+        },
+        {
+          "w": "datech,",
+          "start_ms": 44630,
+          "end_ms": 45710
+        },
+        {
+          "w": "člověk",
+          "start_ms": 45710,
+          "end_ms": 46790
+        },
+        {
+          "w": "to",
+          "start_ms": 46790,
+          "end_ms": 47060
+        },
+        {
+          "w": "čte.",
+          "start_ms": 47060,
+          "end_ms": 48160
+        }
+      ]
+    },
+    {
+      "start_ms": 48160,
+      "end_ms": 57700,
+      "text": "JSON čitelný a samopopisný, ale velký a pomalý při parsování.",
+      "words": [
+        {
+          "w": "JSON",
+          "start_ms": 48160,
+          "end_ms": 48760
+        },
+        {
+          "w": "čitelný",
+          "start_ms": 48760,
+          "end_ms": 50110
+        },
+        {
+          "w": "a",
+          "start_ms": 50110,
+          "end_ms": 50260
+        },
+        {
+          "w": "samopopisný,",
+          "start_ms": 50260,
+          "end_ms": 52360
+        },
+        {
+          "w": "ale",
+          "start_ms": 52360,
+          "end_ms": 52810
+        },
+        {
+          "w": "velký",
+          "start_ms": 52810,
+          "end_ms": 53710
+        },
+        {
+          "w": "a",
+          "start_ms": 53710,
+          "end_ms": 53860
+        },
+        {
+          "w": "pomalý",
+          "start_ms": 53860,
+          "end_ms": 54910
+        },
+        {
+          "w": "při",
+          "start_ms": 54910,
+          "end_ms": 55510
+        },
+        {
+          "w": "parsování.",
+          "start_ms": 55510,
+          "end_ms": 57700
+        }
+      ]
+    },
+    {
+      "start_ms": 57700,
+      "end_ms": 62480,
+      "text": "Protobaf binární a nese schéma v sobě,",
+      "words": [
+        {
+          "w": "Protobaf",
+          "start_ms": 57700,
+          "end_ms": 58710
+        },
+        {
+          "w": "binární",
+          "start_ms": 58710,
+          "end_ms": 59900
+        },
+        {
+          "w": "a",
+          "start_ms": 59900,
+          "end_ms": 60070
+        },
+        {
+          "w": "nese",
+          "start_ms": 60070,
+          "end_ms": 60600
+        },
+        {
+          "w": "schéma",
+          "start_ms": 60600,
+          "end_ms": 61600
+        },
+        {
+          "w": "v",
+          "start_ms": 61600,
+          "end_ms": 61740
+        },
+        {
+          "w": "sobě,",
+          "start_ms": 61740,
+          "end_ms": 62480
+        }
+      ]
+    },
+    {
+      "start_ms": 62480,
+      "end_ms": 66820,
+      "text": "malý a rychlý, proto soubor k tomu měj.",
+      "words": [
+        {
+          "w": "malý",
+          "start_ms": 62480,
+          "end_ms": 63090
+        },
+        {
+          "w": "a",
+          "start_ms": 63090,
+          "end_ms": 63210
+        },
+        {
+          "w": "rychlý,",
+          "start_ms": 63210,
+          "end_ms": 64300
+        },
+        {
+          "w": "proto",
+          "start_ms": 64300,
+          "end_ms": 64910
+        },
+        {
+          "w": "soubor",
+          "start_ms": 64910,
+          "end_ms": 65650
+        },
+        {
+          "w": "k",
+          "start_ms": 65650,
+          "end_ms": 65770
+        },
+        {
+          "w": "tomu",
+          "start_ms": 65770,
+          "end_ms": 66260
+        },
+        {
+          "w": "měj.",
+          "start_ms": 66260,
+          "end_ms": 66820
+        }
+      ]
+    },
+    {
+      "start_ms": 66820,
+      "end_ms": 71480,
+      "text": "Pole poznáš podle čísla, ne podle jména,",
+      "words": [
+        {
+          "w": "Pole",
+          "start_ms": 66820,
+          "end_ms": 67220
+        },
+        {
+          "w": "poznáš",
+          "start_ms": 67220,
+          "end_ms": 68020
+        },
+        {
+          "w": "podle",
+          "start_ms": 68020,
+          "end_ms": 68520
+        },
+        {
+          "w": "čísla,",
+          "start_ms": 68520,
+          "end_ms": 69550
+        },
+        {
+          "w": "ne",
+          "start_ms": 69550,
+          "end_ms": 69840
+        },
+        {
+          "w": "podle",
+          "start_ms": 69840,
+          "end_ms": 70570
+        },
+        {
+          "w": "jména,",
+          "start_ms": 70570,
+          "end_ms": 71480
+        }
+      ]
+    },
+    {
+      "start_ms": 71480,
+      "end_ms": 77100,
+      "text": "přidáš nové pole a stará verze žije dál.",
+      "words": [
+        {
+          "w": "přidáš",
+          "start_ms": 71480,
+          "end_ms": 72740
+        },
+        {
+          "w": "nové",
+          "start_ms": 72740,
+          "end_ms": 73450
+        },
+        {
+          "w": "pole",
+          "start_ms": 73450,
+          "end_ms": 74020
+        },
+        {
+          "w": "a",
+          "start_ms": 74020,
+          "end_ms": 74160
+        },
+        {
+          "w": "stará",
+          "start_ms": 74160,
+          "end_ms": 75010
+        },
+        {
+          "w": "verze",
+          "start_ms": 75010,
+          "end_ms": 75720
+        },
+        {
+          "w": "žije",
+          "start_ms": 75720,
+          "end_ms": 76430
+        },
+        {
+          "w": "dál.",
+          "start_ms": 76430,
+          "end_ms": 77100
+        }
+      ]
+    },
+    {
+      "start_ms": 85100,
+      "end_ms": 94550,
+      "text": "XML je ještě upovídanější, otevírací a zavírací tag tě tíží,",
+      "words": [
+        {
+          "w": "XML",
+          "start_ms": 85100,
+          "end_ms": 85570
+        },
+        {
+          "w": "je",
+          "start_ms": 85570,
+          "end_ms": 85880
+        },
+        {
+          "w": "ještě",
+          "start_ms": 85880,
+          "end_ms": 86960
+        },
+        {
+          "w": "upovídanější,",
+          "start_ms": 86960,
+          "end_ms": 89810
+        },
+        {
+          "w": "otevírací",
+          "start_ms": 89810,
+          "end_ms": 91180
+        },
+        {
+          "w": "a",
+          "start_ms": 91180,
+          "end_ms": 91300
+        },
+        {
+          "w": "zavírací",
+          "start_ms": 91300,
+          "end_ms": 92550
+        },
+        {
+          "w": "tag",
+          "start_ms": 92550,
+          "end_ms": 92930
+        },
+        {
+          "w": "tě",
+          "start_ms": 92930,
+          "end_ms": 93300
+        },
+        {
+          "w": "tíží,",
+          "start_ms": 93300,
+          "end_ms": 94550
+        }
+      ]
+    },
+    {
+      "start_ms": 94550,
+      "end_ms": 98740,
+      "text": "protobaf má schéma v proto souboru,",
+      "words": [
+        {
+          "w": "protobaf",
+          "start_ms": 94550,
+          "end_ms": 95550
+        },
+        {
+          "w": "má",
+          "start_ms": 95550,
+          "end_ms": 95930
+        },
+        {
+          "w": "schéma",
+          "start_ms": 95930,
+          "end_ms": 96810
+        },
+        {
+          "w": "v",
+          "start_ms": 96810,
+          "end_ms": 96930
+        },
+        {
+          "w": "proto",
+          "start_ms": 96930,
+          "end_ms": 97800
+        },
+        {
+          "w": "souboru,",
+          "start_ms": 97800,
+          "end_ms": 98740
+        }
+      ]
+    },
+    {
+      "start_ms": 98740,
+      "end_ms": 103300,
+      "text": "čísla polí to je klíč, ne názvy, to ber.",
+      "words": [
+        {
+          "w": "čísla",
+          "start_ms": 98740,
+          "end_ms": 99580
+        },
+        {
+          "w": "polí",
+          "start_ms": 99580,
+          "end_ms": 100180
+        },
+        {
+          "w": "to",
+          "start_ms": 100180,
+          "end_ms": 100420
+        },
+        {
+          "w": "je",
+          "start_ms": 100420,
+          "end_ms": 100660
+        },
+        {
+          "w": "klíč,",
+          "start_ms": 100660,
+          "end_ms": 101620
+        },
+        {
+          "w": "ne",
+          "start_ms": 101620,
+          "end_ms": 102100
+        },
+        {
+          "w": "názvy,",
+          "start_ms": 102100,
+          "end_ms": 102580
+        },
+        {
+          "w": "to",
+          "start_ms": 102580,
+          "end_ms": 102820
+        },
+        {
+          "w": "ber.",
+          "start_ms": 102820,
+          "end_ms": 103300
+        }
+      ]
+    },
+    {
+      "start_ms": 103300,
+      "end_ms": 106420,
+      "text": "Varint kóduje čísla proměnnou délkou,",
+      "words": [
+        {
+          "w": "Varint",
+          "start_ms": 103300,
+          "end_ms": 103880
+        },
+        {
+          "w": "kóduje",
+          "start_ms": 103880,
+          "end_ms": 104440
+        },
+        {
+          "w": "čísla",
+          "start_ms": 104440,
+          "end_ms": 105010
+        },
+        {
+          "w": "proměnnou",
+          "start_ms": 105010,
+          "end_ms": 105740
+        },
+        {
+          "w": "délkou,",
+          "start_ms": 105740,
+          "end_ms": 106420
+        }
+      ]
+    },
+    {
+      "start_ms": 106420,
+      "end_ms": 108620,
+      "text": "malé číslo jeden bajt a tím šetří místo,",
+      "words": [
+        {
+          "w": "malé",
+          "start_ms": 106420,
+          "end_ms": 106700
+        },
+        {
+          "w": "číslo",
+          "start_ms": 106700,
+          "end_ms": 107090
+        },
+        {
+          "w": "jeden",
+          "start_ms": 107090,
+          "end_ms": 107380
+        },
+        {
+          "w": "bajt",
+          "start_ms": 107380,
+          "end_ms": 107660
+        },
+        {
+          "w": "a",
+          "start_ms": 107660,
+          "end_ms": 107700
+        },
+        {
+          "w": "tím",
+          "start_ms": 107700,
+          "end_ms": 107880
+        },
+        {
+          "w": "šetří",
+          "start_ms": 107880,
+          "end_ms": 108280
+        },
+        {
+          "w": "místo,",
+          "start_ms": 108280,
+          "end_ms": 108620
+        }
+      ]
+    },
+    {
+      "start_ms": 108620,
+      "end_ms": 110300,
+      "text": "sedm bitů hodnoty a jeden příznak,",
+      "words": [
+        {
+          "w": "sedm",
+          "start_ms": 108620,
+          "end_ms": 108830
+        },
+        {
+          "w": "bitů",
+          "start_ms": 108830,
+          "end_ms": 109100
+        },
+        {
+          "w": "hodnoty",
+          "start_ms": 109100,
+          "end_ms": 109420
+        },
+        {
+          "w": "a",
+          "start_ms": 109420,
+          "end_ms": 109470
+        },
+        {
+          "w": "jeden",
+          "start_ms": 109470,
+          "end_ms": 109750
+        },
+        {
+          "w": "příznak,",
+          "start_ms": 109750,
+          "end_ms": 110300
+        }
+      ]
+    },
+    {
+      "start_ms": 110300,
+      "end_ms": 114800,
+      "text": "říká jestli další bajt přijde, nebo konec,",
+      "words": [
+        {
+          "w": "říká",
+          "start_ms": 110300,
+          "end_ms": 111060
+        },
+        {
+          "w": "jestli",
+          "start_ms": 111060,
+          "end_ms": 111580
+        },
+        {
+          "w": "další",
+          "start_ms": 111580,
+          "end_ms": 112190
+        },
+        {
+          "w": "bajt",
+          "start_ms": 112190,
+          "end_ms": 112530
+        },
+        {
+          "w": "přijde,",
+          "start_ms": 112530,
+          "end_ms": 113260
+        },
+        {
+          "w": "nebo",
+          "start_ms": 113260,
+          "end_ms": 113800
+        },
+        {
+          "w": "konec,",
+          "start_ms": 113800,
+          "end_ms": 114800
+        }
+      ]
+    },
+    {
+      "start_ms": 114800,
+      "end_ms": 118300,
+      "text": "beze schématu jsou ta data nečitelná,",
+      "words": [
+        {
+          "w": "beze",
+          "start_ms": 114800,
+          "end_ms": 115230
+        },
+        {
+          "w": "schématu",
+          "start_ms": 115230,
+          "end_ms": 116420
+        },
+        {
+          "w": "jsou",
+          "start_ms": 116420,
+          "end_ms": 116760
+        },
+        {
+          "w": "ta",
+          "start_ms": 116760,
+          "end_ms": 116930
+        },
+        {
+          "w": "data",
+          "start_ms": 116930,
+          "end_ms": 117280
+        },
+        {
+          "w": "nečitelná,",
+          "start_ms": 117280,
+          "end_ms": 118300
+        }
+      ]
+    },
+    {
+      "start_ms": 118300,
+      "end_ms": 122460,
+      "text": "potřebuješ proto soubor, a z něj kód.",
+      "words": [
+        {
+          "w": "potřebuješ",
+          "start_ms": 118300,
+          "end_ms": 119800
+        },
+        {
+          "w": "proto",
+          "start_ms": 119800,
+          "end_ms": 120440
+        },
+        {
+          "w": "soubor,",
+          "start_ms": 120440,
+          "end_ms": 121430
+        },
+        {
+          "w": "a",
+          "start_ms": 121430,
+          "end_ms": 121770
+        },
+        {
+          "w": "z",
+          "start_ms": 121770,
+          "end_ms": 121940
+        },
+        {
+          "w": "něj",
+          "start_ms": 121940,
+          "end_ms": 122100
+        },
+        {
+          "w": "kód.",
+          "start_ms": 122100,
+          "end_ms": 122460
+        }
+      ]
+    },
+    {
+      "start_ms": 122460,
+      "end_ms": 127030,
+      "text": "Avro, Cap'n Proto, FlatBuffers k tomu Cap'n",
+      "words": [
+        {
+          "w": "Avro,",
+          "start_ms": 122460,
+          "end_ms": 123000
+        },
+        {
+          "w": "Cap'n",
+          "start_ms": 123000,
+          "end_ms": 123540
+        },
+        {
+          "w": "Proto,",
+          "start_ms": 123540,
+          "end_ms": 124000
+        },
+        {
+          "w": "FlatBuffers",
+          "start_ms": 124000,
+          "end_ms": 125350
+        },
+        {
+          "w": "k",
+          "start_ms": 125350,
+          "end_ms": 125470
+        },
+        {
+          "w": "tomu",
+          "start_ms": 125470,
+          "end_ms": 125980
+        },
+        {
+          "w": "Cap'n",
+          "start_ms": 125980,
+          "end_ms": 127030
+        }
+      ]
+    },
+    {
+      "start_ms": 127030,
+      "end_ms": 131000,
+      "text": "Proto a FlatBuffers umí zero-copy,",
+      "words": [
+        {
+          "w": "Proto",
+          "start_ms": 127030,
+          "end_ms": 127960
+        },
+        {
+          "w": "a",
+          "start_ms": 127960,
+          "end_ms": 128080
+        },
+        {
+          "w": "FlatBuffers",
+          "start_ms": 128080,
+          "end_ms": 129400
+        },
+        {
+          "w": "umí",
+          "start_ms": 129400,
+          "end_ms": 129880
+        },
+        {
+          "w": "zero-copy,",
+          "start_ms": 129880,
+          "end_ms": 131000
+        }
+      ]
+    },
+    {
+      "start_ms": 131000,
+      "end_ms": 136440,
+      "text": "čteš ta data přímo z bufferu bez parsování,",
+      "words": [
+        {
+          "w": "čteš",
+          "start_ms": 131000,
+          "end_ms": 131620
+        },
+        {
+          "w": "ta",
+          "start_ms": 131620,
+          "end_ms": 131830
+        },
+        {
+          "w": "data",
+          "start_ms": 131830,
+          "end_ms": 132260
+        },
+        {
+          "w": "přímo",
+          "start_ms": 132260,
+          "end_ms": 133000
+        },
+        {
+          "w": "z",
+          "start_ms": 133000,
+          "end_ms": 133100
+        },
+        {
+          "w": "bufferu",
+          "start_ms": 133100,
+          "end_ms": 133800
+        },
+        {
+          "w": "bez",
+          "start_ms": 133800,
+          "end_ms": 134220
+        },
+        {
+          "w": "parsování,",
+          "start_ms": 134220,
+          "end_ms": 136440
+        }
+      ]
+    },
+    {
+      "start_ms": 136000,
+      "end_ms": 140060,
+      "text": "to je zero-copy, paměť rovnou jako data.",
+      "words": [
+        {
+          "w": "to",
+          "start_ms": 136000,
+          "end_ms": 136220
+        },
+        {
+          "w": "je",
+          "start_ms": 136220,
+          "end_ms": 136440
+        },
+        {
+          "w": "zero-copy,",
+          "start_ms": 136440,
+          "end_ms": 137650
+        },
+        {
+          "w": "paměť",
+          "start_ms": 137650,
+          "end_ms": 138420
+        },
+        {
+          "w": "rovnou",
+          "start_ms": 138420,
+          "end_ms": 139080
+        },
+        {
+          "w": "jako",
+          "start_ms": 139080,
+          "end_ms": 139530
+        },
+        {
+          "w": "data.",
+          "start_ms": 139530,
+          "end_ms": 140060
+        }
+      ]
+    },
+    {
+      "start_ms": 140060,
+      "end_ms": 149220,
+      "text": "JSON čitelný a samopopisný, ale velký a pomalý při parsování.",
+      "words": [
+        {
+          "w": "JSON",
+          "start_ms": 140060,
+          "end_ms": 140640
+        },
+        {
+          "w": "čitelný",
+          "start_ms": 140640,
+          "end_ms": 141940
+        },
+        {
+          "w": "a",
+          "start_ms": 141940,
+          "end_ms": 142080
+        },
+        {
+          "w": "samopopisný,",
+          "start_ms": 142080,
+          "end_ms": 144100
+        },
+        {
+          "w": "ale",
+          "start_ms": 144100,
+          "end_ms": 144530
+        },
+        {
+          "w": "velký",
+          "start_ms": 144530,
+          "end_ms": 145390
+        },
+        {
+          "w": "a",
+          "start_ms": 145390,
+          "end_ms": 145530
+        },
+        {
+          "w": "pomalý",
+          "start_ms": 145530,
+          "end_ms": 146540
+        },
+        {
+          "w": "při",
+          "start_ms": 146540,
+          "end_ms": 147110
+        },
+        {
+          "w": "parsování.",
+          "start_ms": 147110,
+          "end_ms": 149220
+        }
+      ]
+    },
+    {
+      "start_ms": 149220,
+      "end_ms": 153500,
+      "text": "Protobaf binární a nese schéma v sobě,",
+      "words": [
+        {
+          "w": "Protobaf",
+          "start_ms": 149220,
+          "end_ms": 150140
+        },
+        {
+          "w": "binární",
+          "start_ms": 150140,
+          "end_ms": 151190
+        },
+        {
+          "w": "a",
+          "start_ms": 151190,
+          "end_ms": 151300
+        },
+        {
+          "w": "nese",
+          "start_ms": 151300,
+          "end_ms": 151760
+        },
+        {
+          "w": "schéma",
+          "start_ms": 151760,
+          "end_ms": 152580
+        },
+        {
+          "w": "v",
+          "start_ms": 152580,
+          "end_ms": 152690
+        },
+        {
+          "w": "sobě,",
+          "start_ms": 152690,
+          "end_ms": 153500
+        }
+      ]
+    },
+    {
+      "start_ms": 153500,
+      "end_ms": 158140,
+      "text": "malý a rychlý, proto soubor k tomu měj.",
+      "words": [
+        {
+          "w": "malý",
+          "start_ms": 153500,
+          "end_ms": 154080
+        },
+        {
+          "w": "a",
+          "start_ms": 154080,
+          "end_ms": 154210
+        },
+        {
+          "w": "rychlý,",
+          "start_ms": 154210,
+          "end_ms": 155230
+        },
+        {
+          "w": "proto",
+          "start_ms": 155230,
+          "end_ms": 155820
+        },
+        {
+          "w": "soubor",
+          "start_ms": 155820,
+          "end_ms": 156520
+        },
+        {
+          "w": "k",
+          "start_ms": 156520,
+          "end_ms": 156630
+        },
+        {
+          "w": "tomu",
+          "start_ms": 156630,
+          "end_ms": 157090
+        },
+        {
+          "w": "měj.",
+          "start_ms": 157090,
+          "end_ms": 158140
+        }
+      ]
+    },
+    {
+      "start_ms": 158140,
+      "end_ms": 163020,
+      "text": "Pole poznáš podle čísla, ne podle jména,",
+      "words": [
+        {
+          "w": "Pole",
+          "start_ms": 158140,
+          "end_ms": 158560
+        },
+        {
+          "w": "poznáš",
+          "start_ms": 158560,
+          "end_ms": 159370
+        },
+        {
+          "w": "podle",
+          "start_ms": 159370,
+          "end_ms": 159880
+        },
+        {
+          "w": "čísla,",
+          "start_ms": 159880,
+          "end_ms": 160950
+        },
+        {
+          "w": "ne",
+          "start_ms": 160950,
+          "end_ms": 161240
+        },
+        {
+          "w": "podle",
+          "start_ms": 161240,
+          "end_ms": 161970
+        },
+        {
+          "w": "jména,",
+          "start_ms": 161970,
+          "end_ms": 163020
+        }
+      ]
+    },
+    {
+      "start_ms": 163020,
+      "end_ms": 169100,
+      "text": "přidáš nové pole a stará verze žije dál.",
+      "words": [
+        {
+          "w": "přidáš",
+          "start_ms": 163020,
+          "end_ms": 163740
+        },
+        {
+          "w": "nové",
+          "start_ms": 163740,
+          "end_ms": 164140
+        },
+        {
+          "w": "pole",
+          "start_ms": 164140,
+          "end_ms": 164520
+        },
+        {
+          "w": "a",
+          "start_ms": 164520,
+          "end_ms": 164730
+        },
+        {
+          "w": "stará",
+          "start_ms": 164730,
+          "end_ms": 166030
+        },
+        {
+          "w": "verze",
+          "start_ms": 166030,
+          "end_ms": 167110
+        },
+        {
+          "w": "žije",
+          "start_ms": 167110,
+          "end_ms": 168190
+        },
+        {
+          "w": "dál.",
+          "start_ms": 168190,
+          "end_ms": 169100
+        }
+      ]
+    },
+    {
+      "start_ms": 169100,
+      "end_ms": 175780,
+      "text": "Číslo pole drží evoluci schématu,",
+      "words": [
+        {
+          "w": "Číslo",
+          "start_ms": 169100,
+          "end_ms": 170430
+        },
+        {
+          "w": "pole",
+          "start_ms": 170430,
+          "end_ms": 171200
+        },
+        {
+          "w": "drží",
+          "start_ms": 171200,
+          "end_ms": 172340
+        },
+        {
+          "w": "evoluci",
+          "start_ms": 172340,
+          "end_ms": 173680
+        },
+        {
+          "w": "schématu,",
+          "start_ms": 173680,
+          "end_ms": 175780
+        }
+      ]
+    },
+    {
+      "start_ms": 175780,
+      "end_ms": 183400,
+      "text": "neměň stará čísla a všechno snese se.",
+      "words": [
+        {
+          "w": "neměň",
+          "start_ms": 175780,
+          "end_ms": 177120
+        },
+        {
+          "w": "stará",
+          "start_ms": 177120,
+          "end_ms": 178270
+        },
+        {
+          "w": "čísla",
+          "start_ms": 178270,
+          "end_ms": 179600
+        },
+        {
+          "w": "a",
+          "start_ms": 179600,
+          "end_ms": 179790
+        },
+        {
+          "w": "všechno",
+          "start_ms": 179790,
+          "end_ms": 181310
+        },
+        {
+          "w": "snese",
+          "start_ms": 181310,
+          "end_ms": 182260
+        },
+        {
+          "w": "se.",
+          "start_ms": 182260,
+          "end_ms": 183400
+        }
+      ]
+    }
+  ]
+}

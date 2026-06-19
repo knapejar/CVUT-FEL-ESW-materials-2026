@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P8 – Konkurence dat v JVM · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="07-beh-programu-jit.html">← předchozí: Běh programu a JIT</a>
+    <a class="nav-link" href="09-efektivni-servery-c10k.html">další: Efektivní servery →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 8 · <span class="badge badge-java">Java/JVM část</span></div>
+    <h1>Konkurence dat v JVM: vícevláknový přístup a neblokující algoritmy</h1>
+    <p class="perex">Proč korektní a rychlý souběžný kód na JVM vyžaduje pochopit, co se děje <em>pod</em>
+    úrovní Java zdroje: superskalární a out-of-order procesor přehazuje paměťové operace, a tak data
+    race vede k překvapivým výsledkům. Postupně si vybudujeme nástroje pro řízení viditelnosti a
+    atomicity – <code>volatile</code> a paměťové bariéry, <code>synchronized</code> a
+    <code>ReentrantLock</code> (a jak JVM zámky implementuje přes mark word, thin/fat a biased lock),
+    a balík atomik postavený na hardwarovém CAS. Nakonec neblokující (lock-free) algoritmy: Treiberův
+    zásobník, ABA problém a konkurenční kolekce. Všechny ukázky strojového kódu jsou z
+    <strong>JVM 8 (64bit, halda &lt;32 GB), Intel Haswell, syntaxe AT&amp;T</strong>.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#datarace">Data race a přehazování instrukcí</a></li>
+      <li><a href="#jmm">CPU paměťový model (JMM)</a></li>
+      <li><a href="#volatile">Volatile a paměťová bariéra</a></li>
+      <li><a href="#sync">Synchronized a zámky v JVM</a></li>
+      <li><a href="#reentrant">ReentrantLock</a></li>
+      <li><a href="#atomic">Atomické operace a CAS</a></li>
+      <li><a href="#updaters">Field updatery a složené typy</a></li>
+      <li><a href="#nonblock">Neblokující algoritmy</a></li>
+      <li><a href="#treiber">Neblokující zásobník (Treiber)</a></li>
+      <li><a href="#kolekce">Neblokující kolekce</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="datarace">Data race a přehazování instrukcí</h2>
+  <div class="box pisnicka" id="pisen-data-rejs">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Data Rejs</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s02">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p><strong>Data race</strong> (datový souběh) nastane, když dvě nebo více vláken přistupují ke stejné
+  sdílené proměnné <strong>bez synchronizace</strong>, přičemž <strong>alespoň jeden přístup je zápis</strong>.
+  Výsledek pak závisí na nepředvídatelném pořadí operací a procesor i kompilátor smí nezávislé čtení a
+  zápisy <strong>přeházet</strong>, takže může vzniknout výsledek, který by žádné sekvenční prokládání
+  vláken nedovolilo.</p>
+
+  <p>Klasický příklad: dvě vlákna sdílejí čtyři pole inicializovaná na <code>0</code>:</p>
+  <pre><code>public int A = 0;
+public int B = 0;
+public int C = 0;
+public int D = 0;</code></pre>
+
+  <table>
+    <thead><tr><th>Vlákno 1</th><th>Vlákno 2</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><pre><code>public void method1() {
+    int r2 = A;
+    B = 1;
+    D = r2;
+}</code></pre></td>
+        <td><pre><code>public void method2() {
+    int r1 = B;
+    A = 2;
+    C = r1;
+}</code></pre></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Otázka: jaké hodnoty mohou mít <code>C</code> a <code>D</code>?</strong> Intuitivně čekáme
+  <code>C=0, D=0</code>, <code>C=1, D=0</code> nebo <code>C=0, D=2</code>. Možný je ale i čtvrtý výsledek
+  <strong><code>C=1, D=2</code></strong>, protože procesor i kompilátor smí v každé metodě prohodit
+  nezávislé čtení a zápis.</p>
+
+  <h3>Přehazování provádí i C2 (server) JIT kompilátor</h3>
+  <p>Bytecode pro <code>method1</code> (před přehozením):</p>
+  <pre><code> 0: aload_0
+ 1: getfield      #2   // Field A:I
+ 4: istore_1
+ 5: aload_0
+ 6: iconst_1
+ 7: putfield      #3   // Field B:I
+10: aload_0
+11: iload_1
+12: putfield      #5   // Field D:I
+15: return</code></pre>
+
+  <p>Instrukce přeházené C2 kompilátorem (<code>RSI</code> ukazuje na instanci objektu):</p>
+  <pre><code>0x0000000010639924c: movl   $0x1,0x10(%rsi)    ;*putfield B
+                                               ; - datarace.DataRace::method1@7  (line 11)
+
+0x0000000010639925d: mov    0xc(%rsi),%r11d
+0x00000000106399257: mov    %r11d,0x18(%rsi)   ;*putfield D
+                                               ; - datarace.DataRace::method1@12 (line 12)</code></pre>
+  <p>Zápis do <code>B</code> (<code>putfield B</code>) je vygenerován <strong>před</strong> čtením
+  <code>A</code> (<code>mov 0xc(%rsi),%r11d</code>) – store byl posunut před load. Stejné přehození
+  nastane v <code>method2</code>, a tak vznikne čtvrtý výsledek <code>C=1, D=2</code>.</p>
+
+  <p>Struktura objektu na haldě (offsety <code>0xc</code>, <code>0x10</code>, <code>0x18</code> výše jsou
+  pozice polí <code>A</code>, <code>B</code>, <code>D</code> uvnitř datové části za hlavičkou):</p>
+  <div class="diag">
+    <div class="diag-stack">
+      <div class="diag-layer"><span class="dl-title">8 B — mark word</span></div>
+      <div class="diag-layer"><span class="dl-title">4 B / 8 B — Klass ref.</span><span class="dl-title">4 B = 32bit (nebo 64bit při haldě &lt;32 GB) · 8 B = 64bit bez komprimovaných OOP</span></div>
+      <div class="diag-layer"><span class="dl-title">… data objektu</span></div>
+    </div>
+    <div class="diag-cap">Klass = interní reprezentace metadat třídy v JVM</div>
+  </div>
+
+  <h2 id="jmm">CPU paměťový model a Java Memory Model (JMM)</h2>
+  <p><strong>Java Memory Model</strong> definuje pravidla, za kterých je zápis jednoho vlákna viditelný
+  pro čtení jiného vlákna, a které přehazování je povolené. Bez explicitní synchronizace (<code>volatile</code>,
+  zámky, atomiky) JMM <strong>nezaručuje</strong>, že jiné vlákno uvidí zápisy ve stejném pořadí, v jakém
+  byly napsány ve zdrojovém kódu. Důvodem je samotná architektura procesoru.</p>
+
+  <h3>Pipelining a superskalární vykonávání</h3>
+  <p>Procesor zpracovává instrukce v <strong>pipeline</strong> – jednotlivé fáze (IF – fetch, ID – decode,
+  EX – execute, MEM – paměťový přístup, WB – write back) se u po sobě jdoucích instrukcí překrývají:</p>
+  <table>
+    <thead>
+      <tr><th>Instrukce \ takt</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Instrukce i</td><td>IF</td><td>ID</td><td>EX</td><td>MEM</td><td>WB</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>Instrukce i+1</td><td></td><td>IF</td><td>ID</td><td>EX</td><td>MEM</td><td>WB</td><td></td><td></td><td></td></tr>
+      <tr><td>Instrukce i+2</td><td></td><td></td><td>IF</td><td>ID</td><td>EX</td><td>MEM</td><td>WB</td><td></td><td></td></tr>
+      <tr><td>Instrukce i+3</td><td></td><td></td><td></td><td>IF</td><td>ID</td><td>EX</td><td>MEM</td><td>WB</td><td></td></tr>
+      <tr><td>Instrukce i+4</td><td></td><td></td><td></td><td></td><td>IF</td><td>ID</td><td>EX</td><td>MEM</td><td>WB</td></tr>
+    </tbody>
+  </table>
+  <p>Každá fáze je navíc <strong>paralelizovaná</strong> (Haswell zvládne až <strong>4 instrukce za takt</strong>).
+  Jádro má <strong>8 výpočetních jednotek</strong> (4× celočíselná ALU, 2× FPU násobička, 2× čtení paměti …)
+  a μops (mikrooperace) s různou latencí běží v každém taktu paralelně.</p>
+  <ul>
+    <li><strong>Nezávislé instrukce</strong> lze provést mimo pořadí nebo paralelně – pokud nepoužívají
+    stejný registr nebo paměťovou adresu.</li>
+    <li><strong>Čtení z paměti se nepřehazují</strong> mezi sebou (paralelní nezávislá čtení jsou ale povolena).</li>
+    <li><strong>Pozdější nezávislé čtení smí předběhnout zápis</strong> – serializují se jen zápisy
+    (stores zůstávají v pořadí, loads je smí předbíhat). Právě toto umožňuje výsledek <code>C=1, D=2</code>.</li>
+  </ul>
+
+  <h3>CPU vs. jádro vs. vlákno – paměťová hierarchie</h3>
+  <p>Procesor obsahuje více <strong>jader</strong>; každé jádro má privátní L1/L2 cache a běží na něm HW
+  vlákna, všechna jádra sdílejí L3 cache a hlavní paměť.</p>
+  <table>
+    <thead><tr><th>Úroveň</th><th>Velikost</th><th>Řádek</th><th>Latence</th><th>Asociativita</th></tr></thead>
+    <tbody>
+      <tr><td>L1 datová cache</td><td>32 KB</td><td>64 B</td><td>4 ns</td><td>8cestná</td></tr>
+      <tr><td>L1 instrukční cache</td><td>32 KB</td><td>64 B</td><td>4 ns</td><td>4cestná</td></tr>
+      <tr><td>L2 cache</td><td>256 KB</td><td>64 B</td><td>10 ns</td><td>8cestná</td></tr>
+      <tr><td>L3 cache</td><td>12 MB</td><td>64 B</td><td>50 ns</td><td>16cestná</td></tr>
+      <tr><td>Hlavní paměť</td><td>—</td><td>64 B</td><td>75 ns</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>Všechny zápisy do hlavní paměti běží v režimu <strong>write-back</strong>: standardní zápis nejprve
+  vyžaduje data v cache (drahý cache miss, pokud chybí); <strong>non-temporal zápisy</strong> (vhodné pro
+  velké bloky) jdou přímo do paměti bez cachování; k dispozici jsou i prefetch instrukce.</p>
+
+  <h2 id="volatile">Volatile a paměťová bariéra</h2>
+  <p>Pokud označíme <code>A</code> a <code>B</code> jako <code>volatile</code>:</p>
+  <pre><code>public volatile int A = 0;
+public volatile int B = 0;
+public int C = 0;
+public int D = 0;
+
+public void method1() {
+    int r2 = A;
+    B = 1;
+    D = r2;
+}</code></pre>
+
+  <p>vznikne tento strojový kód:</p>
+  <pre><code>0x000000010710e08c: mov    0xc(%rsi),%r11d
+0x000000010710e090: movl   $0x1,0x10(%rsi)
+0x000000010710e097: lock addl $0x0,(%rsp)</code></pre>
+
+  <div class="box poznamka">
+    <p class="box-title">💬 Jak se volatile projeví v nativním kódu</p>
+    <p>Paměťové operace okolo <strong>zápisu do volatile</strong> proměnné se v C1/C2 nepřehazují.
+    Bariérou je instrukce <code>lock addl $0x0,(%rsp)</code> – přičte 0 k vrcholu zásobníku, takže
+    <strong>nedělá žádnou užitečnou práci</strong>; podstatný je jen vedlejší účinek prefixu
+    <code>lock</code>: zakáže přehazování instrukcí a zajistí, že všechny předchozí zápisy jsou
+    viditelné ostatním procesorům. Je to <strong>nejrychlejší zápisová paměťová bariéra</strong>.
+    <strong>Čtecí bariéra není potřeba</strong> – čtení se při běhu CPU nepřehazují.</p>
+  </div>
+
+  <h3>K jakým operacím je volatile užitečné</h3>
+  <ul>
+    <li><strong>Nikdy se necachuje lokálně</strong> ve vlákně – všechny přístupy jdou přímo do hlavní paměti.</li>
+    <li>Zaručuje <strong>atomické čtení a zápis</strong> jednoho pole (definuje zápisovou paměťovou bariéru).</li>
+    <li>Lze použít pro <strong>primitivy i reference</strong> na objekty.</li>
+    <li><strong>Neblokuje</strong> běh vlákna.</li>
+  </ul>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Cena a omezení</p>
+    <ul>
+      <li>Volatile <strong>zápisy</strong> jsou kvůli vyprazdňování cache výrazně pomalejší (~<strong>100×</strong>).</li>
+      <li>Volatile <strong>čtení</strong> (když probíhají zápisy) jsou také pomalejší (~<strong>25×</strong>,
+      podle počtu jader) – kvůli invalidaci cache.</li>
+      <li>Stále je to <strong>rychlejší než zámky / synchronizace</strong>.</li>
+    </ul>
+    <p>Volatile <strong>není potřeba</strong> pro: neměnné (immutable) objekty; proměnnou, k níž přistupuje
+    jen jedno vlákno (context switch už cache vyprázdní); proměnnou uvnitř složené synchronizované operace.</p>
+  </div>
+
+  <h3>Volatile není pro čtení–úprava–zápis</h3>
+  <pre><code>public class VolatileCounter {
+    private volatile int cnt = 0;
+
+    public int get() {
+        return cnt;
+    }
+
+    public void increment() {
+        cnt++;
+    }
+}</code></pre>
+  <p>Bude to fungovat ve vícevláknovém prostředí? <strong>NE.</strong> <code>increment</code> se přeloží
+  na tři samostatné instrukce (<code>RSI</code> je <code>this</code>):</p>
+  <pre><code>0x000000010911544c: mov    0xc(%rsi),%edi
+0x000000010911544f: inc    %edi
+0x0000000109115451: mov    %edi,0xc(%rsi)
+0x0000000109115457: lock addl $0x0,(%rsp)</code></pre>
+  <p>Čtení–inkrement–zápis jsou <strong>tři instrukce</strong>, takže dvě vlákna se mohou proložit a ztratit
+  aktualizaci. Bariéra <code>lock</code> sice zviditelní zápis, ale <strong>neudělá z celého <code>cnt++</code>
+  atomickou operaci</strong>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Kdy je volatile naopak nutné</p>
+    <p><strong>Užitečné pro zápis jediným vláknem</strong> (např. terminační příznak). Pokud příznak
+    nastavuje <em>jiné</em> vlákno, <strong>musí</strong> být volatile – jinak by C2 kompilátor vytáhl
+    čtení z cyklu ven (hoisting) a vznikla by <strong>nekonečná smyčka</strong>, která příznak nikdy znovu
+    neotestuje.</p>
+  </div>
+
+  <h3>Volatile pole (arrays)</h3>
+  <pre><code>public class VolatileIntArray {
+    private volatile int[] array;
+
+    public VolatileIntArray(int capacity) {
+        array = new int[capacity];
+    }
+
+    public int get(int index) {
+        return array[index];
+    }
+
+    public void put(int index, int value) {
+        array[index] = value;
+    }
+}</code></pre>
+  <p>Je zápis do prvku pole obsloužen jako volatile? <strong>NE</strong> – volatile je jen <strong>reference
+  na pole</strong>, nikoli jednotlivé prvky. V assembleru <code>put</code> je sice kontrola meze (<code>cmp</code>/<code>jae</code>
+  → <code>ArrayIndexOutOfBoundsException</code>), ale <strong>žádná <code>lock</code> bariéra</strong> kolem zápisu:</p>
+  <pre><code># this:  rsi:rsi = 'datarace/VolatileIntArray'
+# parm0: rdx     = int
+# parm1: rcx     = int
+0x000000011170bcc: mov     0xc(%rsi),%esi
+0x000000011170bcf: shl     $0x3,%rsi              ;*getfield array
+0x000000011170bd3: movslq  %edx,%rdi
+0x000000011170bd6: cmp     0xc(%rsi),%edx         ; implicit exception -> 0x...bbf9
+0x000000011170bd9: jae     0x000000011170bbf9     ;  -> ArrayOutOfBoundsException
+0x000000011170bdf: mov     %ecx,0x10(%rsi,%rdi,4) ;*iastore</code></pre>
+
+  <p><strong>Řešení:</strong> po zápisu prvku znovu přiřadit (stejnou) referenci pole, aby volatile zápis
+  reference vygeneroval bariéru:</p>
+  <pre><code>private volatile int[] array;
+
+public void put(int index, int value) {
+    array[index] = value;
+    array = array;          // dodatečné (zbytečné) přiřazení reference pole
+}</code></pre>
+  <pre><code>0x000000010db21a67: mov    %r8d,0xc(%rsi)      ;*putfield array
+0x000000010db21a6f: lock addl $0x0,(%rsp)      ; - VolatileIntArray::put@12 (line 16)</code></pre>
+  <p>Prefix <code>lock</code> zakáže veškeré přehazování kolem sebe a zviditelní předchozí zápisy ostatním
+  CPU. Stále to ale <strong>není vhodné pro čtení–úprava–zápis</strong> (aktualizace prvku sama o sobě
+  není atomická).</p>
+
+  <h2 id="sync">Synchronized a zámky v JVM</h2>
+  <p>Při použití zámků <strong>nejsou s read-modify-write problémy</strong>. Klíčové slovo
+  <code>synchronized</code> zajišťuje vzájemné vyloučení:</p>
+  <pre><code>public class SynchronizedCounter {
+    private int cnt = 0;
+
+    public int get() {
+        return cnt;
+    }
+
+    public synchronized void increment() {
+        cnt++;
+    }
+}</code></pre>
+  <ul>
+    <li><strong>metoda vs. blok</strong></li>
+    <li><strong>instance objektu vs. instance třídy</strong> (u statických metod se zamyká instance třídy).</li>
+  </ul>
+
+  <h3>Implementace zámku v JVM – mark word</h3>
+  <p>Stav zámku objektu je uložen v jeho <strong>mark word</strong> (64bit JVM). Layout podle stavu zámku:</p>
+  <table>
+    <thead><tr><th>Obsah (high → low)</th><th>Tag bity</th><th>Stav</th></tr></thead>
+    <tbody>
+      <tr><td>Reference na vytlačenou (displaced) hlavičku</td><td><code>00</code></td><td><strong>Thin locked</strong> (tenký zámek)</td></tr>
+      <tr><td>NULL (0)</td><td><code>00</code></td><td>Inflating (nafukování)</td></tr>
+      <tr><td>Unused · Hashcode · Age · 0</td><td><code>01</code></td><td><strong>Unlocked</strong> (odemčeno)</td></tr>
+      <tr><td>Reference na Java vlákno · epoch · Age · 1</td><td><code>01</code></td><td><strong>Biased / biasable</strong> <em>(odebráno od Java 15)</em></td></tr>
+      <tr><td>Reference na monitor</td><td><code>10</code></td><td><strong>Fat locked</strong> (tlustý zámek)</td></tr>
+      <tr><td><em>(rezervováno)</em></td><td><code>11</code></td><td>Rezervováno pro GC</td></tr>
+    </tbody>
+  </table>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Druhy zámků v JVM</p>
+    <dl class="pojmy-list">
+      <dt>Thin lock (tenký zámek)</dt><dd>Nekonkurovaný zámek. Mark word se mění přes <strong>CAS instrukce</strong>.
+      Lock record na zásobníku obsahuje 8B vytlačení původní mark word (rekurzivní zámek má 0) a 4B/8B
+      komprimovaný OOP na zamčený objekt. Před přechodem na fat lock se používá <strong>spin-locking
+      (10 taktů s volatile čtením + NOPy)</strong>.</dd>
+      <dt>Fat lock (tlustý zámek)</dt><dd>Používá <strong>monitor objekt na haldě</strong> (nafouknutí ho
+      vytvoří, vyfouknutí zničí). Spustí ho <strong>konkurovaný zámek</strong> nebo volání
+      <code>wait()</code>/<code>notify()</code>. Monitor drží původní mark word, OS zámek, podmínky a množinu
+      vláken; podporuje <strong>parking</strong> (uspání vlákna).</dd>
+      <dt>Biased lock (předpojatý zámek)</dt><dd>Optimalizace pro případ, kdy objekt zamyká stále totéž
+      vlákno – zámek se „nakloní“ (bias) k tomu vláknu a další lock/unlock týmž vláknem je zdarma.
+      <strong>Odebráno od Java 15.</strong> Assembler byl optimalizován pro thin locking.</dd>
+      <dt>Reentrant lock (znovuvstupitelný zámek)</dt><dd>Vlákno, které zámek už drží, ho může získat
+      znovu (rekurzivně) bez deadlocku; viz <code>ReentrantLock</code> níže a rekurzivní lock record
+      s hodnotou 0 v mark word.</dd>
+    </dl>
+  </div>
+
+  <p>Stavový automat biased lockingu (rovněž <strong>odebrán od Java 15</strong>): objekt začne jako
+  <strong>biasable</strong>; první zamčení vláknem T ho udělá <strong>biased</strong> k T s aktuální epochou
+  (další lock/unlock vláknem T je zdarma). Hromadný rebias (<em>bulk rebias</em>) ho udělá
+  <strong>re-biasable</strong> (bias smí převzít nové vlákno T'); hromadné odebrání (<em>bulk revoke</em>)
+  ho posune do prostého <strong>unlocked</strong>. Z unlocked se nekonkurovaným zámkem stane
+  <strong>thin lock</strong>; konkurence nebo <code>wait/notify</code> ho <strong>nafoukne</strong> na
+  <strong>fat (inflated)</strong> monitor a vyfouknutí (<em>deflate</em>) ho vrátí zpět.</p>
+
+  <h2 id="reentrant">ReentrantLock</h2>
+  <pre><code>public class ReentrantCounter {
+    private int cnt = 0;
+    private ReentrantLock lock = new ReentrantLock();
+
+    public int get() {
+        return cnt;
+    }
+
+    public void increment() {
+        lock.lock();
+        try {
+            cnt++;
+        } finally {
+            lock.unlock();   // ! vždy uvolnit ve finally
+        }
+    }
+}</code></pre>
+  <div class="box pozor">
+    <p class="box-title">⚠️ unlock() vždy ve finally</p>
+    <p><code>unlock()</code> musí být v bloku <code>finally</code>, aby se zámek uvolnil i při výjimce.</p>
+  </div>
+
+  <p>Proti <code>synchronized</code> nabízí <strong>rozšířené operace</strong>:</p>
+  <ul>
+    <li><code>lock()</code>, <code>unlock()</code></li>
+    <li><code>lockInterruptibly()</code> – vyhodí <code>InterruptedException</code></li>
+    <li><code>boolean tryLock()</code></li>
+    <li><code>boolean tryLock(long timeout, TimeUnit unit)</code> – vyhodí <code>InterruptedException</code></li>
+  </ul>
+  <p><strong>Férovost (fairness):</strong> blokovaná vlákna lze <strong>uspořádat</strong> pro férové zamykání.
+  <code>new ReentrantLock(boolean fair)</code> – <strong>ve výchozím stavu neférový</strong>;
+  <code>synchronized</code> je rovněž neférový. <strong>Neférový <code>ReentrantLock</code> je o něco rychlejší
+  než <code>synchronized</code></strong>, žije ale jako <strong>další instance na haldě</strong>.
+  <strong>Férové zámky jsou pomalejší (~100×).</strong></p>
+
+  <h2 id="atomic">Atomické operace a CAS</h2>
+  <p>Nejrychlejší čítač pro vícevláknové použití je založen na <code>AtomicInteger</code>:</p>
+  <pre><code>public class AtomicCounter {
+    private AtomicInteger cnt = new AtomicInteger(/* initialValue: */ 0);
+
+    public int get() {
+        return cnt.get();
+    }
+
+    public void increment() {
+        cnt.incrementAndGet();
+    }
+}</code></pre>
+
+  <p>Vnitřní implementace používá <strong>neblokující vzor = CAS smyčku</strong>:</p>
+  <pre><code>private static final long valueOffset;
+
+static {
+    try {
+        valueOffset = unsafe.objectFieldOffset
+            (AtomicInteger.class.getDeclaredField(/* name: */ "value"));
+    } catch (Exception ex) { throw new Error(ex); }
+}
+
+private volatile int value;
+
+public final int getAndAddInt(Object var1, long var2, int var4) {
+    int var5;
+    do {
+        var5 = this.getIntVolatile(var1, var2);
+    } while (!this.compareAndSwapInt(var1, var2, var5, var5 + var4));   // <-- Non-blocking pattern (CAS loop)
+    return var5;
+}
+
+public final int getAndIncrement() {
+    return unsafe.getAndAddInt(this, valueOffset, /* 1 */ 1);
+}</code></pre>
+
+  <h3>Co je CAS (compare-and-swap)</h3>
+  <p><strong>CAS</strong> atomicky porovná hodnotu v paměti s očekávanou; pokud souhlasí, zapíše novou hodnotu
+  a vrátí úspěch, jinak nezmění nic a vrátí neúspěch. C2 kompilátor celou CAS smyčku z <code>increment</code>
+  zkolabuje do <strong>jediné instrukce</strong> <code>lock addl</code> (<code>RSI</code> je <code>this</code>,
+  <code>R12 = 0</code>):</p>
+  <pre><code>0x000000010b108d4c: mov    0xc(%rsi),%r11d   ;*getfield cnt
+0x000000010b108d53: test   %r11d,%r11d       ; kontrola null pointeru
+0x000000010b108d5d: je     0x000000010b108d68
+0x000000010b108d55: lock addl $0x1,0xc(%r12,%r11,8)  ;*invokevirtual getAndAddInt
+                                             ; - AtomicInteger::incrementAndGet (line 186)</code></pre>
+  <ul>
+    <li><strong>Smyčka <code>while</code> je nahrazena jedinou instrukcí</strong> (<code>lock addl</code>).</li>
+    <li>Prefix <code>lock</code> zakáže veškeré přehazování a zviditelní předchozí zápisy ostatním CPU.</li>
+    <li>Prefix <code>lock</code> zajistí jádru <strong>výhradní vlastnictví příslušného cache řádku</strong>
+    po dobu operace. Cache koherence je zajištěna protokolem <strong>MESIF (Haswell)</strong> se záložním zámkem paměťové sběrnice.</li>
+    <li><strong>Čítač přes <code>AtomicInteger</code> je nejrychlejší ze všech</strong> pro vícevláknové použití.</li>
+  </ul>
+
+  <h3>Hardwarový CAS – atomické instrukce</h3>
+  <ul>
+    <li><strong>32bit CPU podporují 64bitové CAS:</strong> <code>cmpxchg src, dst</code> – s <strong>implicitním
+    prefixem <code>lock</code></strong>.</li>
+    <li><strong>64bit CPU podporují 128bitové CAS:</strong> <code>cmpxchg16b</code> – pracuje s páry registrů
+    <code>RDX:RAX</code> a <code>RCX:RBX</code>.</li>
+    <li>Java v balíku <code>java.util.concurrent.atomic</code> používá <strong>jen 64bitové CAS</strong>:
+    <code>AtomicBoolean</code>, <code>AtomicInteger</code>, <code>AtomicLong</code>, <code>AtomicReference</code>,
+    <code>AtomicIntegerArray</code>, <code>AtomicLongArray</code>, <code>AtomicReferenceArray</code>.</li>
+  </ul>
+
+  <h2 id="updaters">Atomic field updatery a složené typy</h2>
+  <p><strong>Field updatery</strong> jsou vhodné pro <strong>velký počet objektů</strong> daného typu –
+  <strong>šetří paměť</strong>, protože každá instance nemusí mít vnořený extra (atomický) objekt. Odkazují
+  přímo na volatile proměnnou bez getterů/setterů, ale <strong>jejich operace jsou méně efektivní</strong>.</p>
+  <p>Před (vnořený <code>AtomicInteger</code> v každém objektu) → po (jeden sdílený statický updater, pole je
+  jen <code>volatile int</code>):</p>
+  <pre><code>public class ObjectWithAtomic {
+    private static AtomicIntegerFieldUpdater&lt;ObjectWithAtomic&gt;
+        valueUpdater = AtomicIntegerFieldUpdater.newUpdater(ObjectWithAtomic.class, "value");
+    private volatile int value = 0;
+
+    public void method1() {
+        if (valueUpdater.compareAndSet(this, 1, 2)) {
+            // ...
+        }
+    }
+}</code></pre>
+  <p>Existují <code>AtomicIntegerFieldUpdater</code>, <code>AtomicLongFieldUpdater</code> a
+  <code>AtomicReferenceFieldUpdater</code>. <strong>Žádné field updatery pro pole (arrays) neexistují.</strong></p>
+
+  <h3>Atomické složené typy a ABA problém</h3>
+  <ul>
+    <li><strong><code>AtomicMarkableReference</code></strong> – reference na objekt <strong>s mark bitem</strong>.</li>
+    <li><strong><code>AtomicStampedReference</code></strong> – reference na objekt <strong>s celočíselným „razítkem“ (stamp)</strong>.</li>
+  </ul>
+  <div class="box insight">
+    <p class="box-title">💡 ABA problém</p>
+    <p>Hodnota se změní <strong>A → B</strong> a pak zpět <strong>B → A</strong>. Prosté CAS na hodnotě nepozná,
+    že se mezitím něco stalo – v obou případech vidí <code>A</code> a chybně uspěje. <strong>Mark/stamp</strong>
+    oba stavy odliší (razítko se mezitím zvýší), takže ABA odhalí. Tyto typy <strong>nepoužívají dvojnásobně
+    široký CAS (CAS2/CASX)</strong> – jsou proto <strong>výrazně pomalejší</strong> kvůli alokaci objektu.</p>
+  </div>
+  <p>Protože reference + stamp/mark je větší než 64 bitů a Java používá jen 64bitové CAS, zabalí se obě hodnoty
+  do neměnného objektu <code>Pair</code> a CAS se provede na (volatile) <strong>referenci na pár</strong>:</p>
+  <pre><code>public class AtomicStampedReference&lt;V&gt; {
+
+    private static class Pair&lt;T&gt; {
+        final T reference;
+        final int stamp;
+        private Pair(T reference, int stamp) {
+            this.reference = reference;
+            this.stamp = stamp;
+        }
+        static &lt;T&gt; Pair&lt;T&gt; of(T reference, int stamp) {
+            return new Pair&lt;T&gt;(reference, stamp);
+        }
+    }
+
+    private volatile Pair&lt;V&gt; pair;
+
+    public boolean compareAndSet(V expectedReference,
+                                 V newReference,
+                                 int expectedStamp,
+                                 int newStamp) {
+        Pair&lt;V&gt; current = pair;
+        return
+            expectedReference == current.reference &&
+            expectedStamp == current.stamp &&
+            ((newReference == current.reference &&
+              newStamp == current.stamp) ||
+             casPair(current, Pair.of(newReference, newStamp)));
+    }
+}</code></pre>
+
+  <h2 id="nonblock">Neblokující algoritmy</h2>
+  <div class="box pisnicka" id="pisen-lok-fri-a-wejt-fri">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Lok Frí a Wejt Frí</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s06">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p><strong>Neblokující (lock-free) algoritmy</strong> jsou založeny na <strong>CAS / CMPXCHG</strong> a
+  instrukcích s prefixem <code>LOCK</code>. Jsou <strong>lock-free, ale typicky ne wait-free</strong> (kvůli
+  neomezeným retry smyčkám).</p>
+
+  <p>Sdílené zdroje chráněné zámky mají nevýhody:</p>
+  <ul>
+    <li><strong>Vlákno s vysokou prioritou může být zablokováno</strong> (např. obsluha přerušení).</li>
+    <li><strong>Hrubozrnné zamykání snižuje paralelismus</strong> (neférové zámky).</li>
+    <li><strong>Jemnozrnné a férové zamykání zvyšuje režii.</strong></li>
+    <li>Hrozí <strong>deadlock</strong> a <strong>inverze priorit</strong> (vlákno s nízkou prioritou drží
+    zdroj, který potřebuje vlákno s vysokou prioritou).</li>
+  </ul>
+  <p>Vlastnosti neblokujících algoritmů:</p>
+  <ul>
+    <li><strong>Předčí blokující algoritmy</strong>, protože většina CAS / CMPXCHG <strong>uspěje napoprvé</strong>.</li>
+    <li><strong>Odstraňují cenu</strong> synchronizace, uspávání vláken a přepínání kontextu.</li>
+  </ul>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Lock-free vs. wait-free</p>
+    <dl class="pojmy-list">
+      <dt>Non-blocking (lock-free)</dt><dd>Zaručuje, že <strong>systém jako celek vždy pokročí</strong> –
+      vždy alespoň jedno vlákno dokončí operaci v konečném počtu kroků. Jednotlivé vlákno ale může
+      teoreticky <strong>opakovat svou retry smyčku neomezeně dlouho</strong> (jeho CAS stále selhává,
+      protože je jiná vlákna předbíhají). Neuvázne (žádné deadlocky), ale negarantuje strop na počet kroků
+      pro konkrétní vlákno.</dd>
+      <dt>Wait-free</dt><dd>Silnější záruka: <strong>každé</strong> vlákno dokončí svou operaci v
+      <strong>konečném (předem omezeném) počtu kroků</strong> bez ohledu na chování ostatních. Žádné
+      neomezené opakování. <strong>Real-time systémy vyžadují wait-free</strong> algoritmy – lock-free
+      nestačí.</dd>
+    </dl>
+  </div>
+
+  <h2 id="treiber">Neblokující zásobník (Treiberův algoritmus, 1986)</h2>
+  <p>Zásobník je jednosměrně zřetězený seznam s atomickou referencí <code>head</code>; <code>push</code>
+  i <code>pop</code> jsou <strong>CAS smyčky</strong>, které se opakují, pokud se <code>head</code> mezitím
+  změnila:</p>
+  <pre><code>static class Node&lt;E&gt; {
+    final E item;
+    Node&lt;E&gt; next;
+
+    public Node(E item) { this.item = item; }
+}
+
+AtomicReference&lt;Node&lt;E&gt;&gt; head = new AtomicReference&lt;Node&lt;E&gt;&gt;();
+
+public void push(E item) {
+    Node&lt;E&gt; newHead = new Node&lt;E&gt;(item);
+    Node&lt;E&gt; oldHead;
+    do {
+        oldHead = head.get();
+        newHead.next = oldHead;
+    } while (!head.compareAndSet(oldHead, newHead));
+}
+
+public E pop() {
+    Node&lt;E&gt; oldHead;
+    Node&lt;E&gt; newHead;
+    do {
+        oldHead = head.get();
+        if (oldHead == null)
+            return null;
+        newHead = oldHead.next;
+    } while (!head.compareAndSet(oldHead, newHead));
+    return oldHead.item;
+}</code></pre>
+
+  <p><strong>Push</strong> (vlož nový vrchol C před A → B) a <strong>pop</strong> (odeber vrchol A, zůstane B):</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-num">1</span><span class="dn-title">head ► A ► B ► (konec)</span><span class="dn-sub">výchozí stav zásobníku</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-num">2</span><span class="dn-title">C (připravený uzel)</span><span class="dn-sub">C.next = oldHead = head.get() = A</span></div>
+      <div class="diag-arrow"><span class="lbl">head.compareAndSet(A, C)</span></div>
+      <div class="diag-node c-green"><span class="dn-num">3</span><span class="dn-title">head ► C ► A ► B ► (konec)</span><span class="dn-sub">po úspěšném CAS</span></div>
+    </div>
+    <div class="diag-cap">PUSH — vlož nový vrchol C před A</div>
+  </div>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-num">1</span><span class="dn-title">head ► A ► B ► (konec)</span><span class="dn-sub">výchozí stav zásobníku</span></div>
+      <div class="diag-arrow"><span class="lbl">head.compareAndSet(A, B)</span></div>
+      <div class="diag-node c-green"><span class="dn-num">2</span><span class="dn-title">head ► B ► (konec)</span><span class="dn-sub">po úspěšném CAS, odebrán vrchol A</span></div>
+    </div>
+    <div class="diag-cap">POP — odeber vrchol A, zůstane B</div>
+  </div>
+
+  <div class="box pozor">
+    <p class="box-title">⚠️ ABA problém v zásobníku</p>
+    <p><strong>Push po pop může způsobit ABA problém, pokud se znovu použije adresa!</strong> Adresa
+    uvolněného uzlu může být realokována, takže <code>head</code> se může rovnat staré referenci, i když se
+    zásobník mezitím změnil – CAS pak <strong>chybně uspěje</strong>. Řešením je
+    <code>AtomicStampedReference</code> / <code>AtomicMarkableReference</code>.</p>
+  </div>
+
+  <h2 id="kolekce">Neblokující kolekce a mapy</h2>
+  <p><strong>Blokující</strong> kolekce a mapy jsou synchronizované wrappery:</p>
+  <pre><code>static &lt;T&gt;   Collection&lt;T&gt; Collections.synchronizedCollection(Collection&lt;T&gt; c)
+static &lt;T&gt;   List&lt;T&gt;       Collections.synchronizedList(List&lt;T&gt; list)
+static &lt;K,V&gt; Map&lt;K,V&gt;      Collections.synchronizedMap(Map&lt;K,V&gt; m)
+static &lt;T&gt;   Set&lt;T&gt;        Collections.synchronizedSet(Set&lt;T&gt; s)
+// také pro SortedSet a SortedMap</code></pre>
+
+  <p><strong>Neblokující</strong> kolekce a mapy:</p>
+  <ul>
+    <li><strong><code>ConcurrentLinkedQueue</code></strong> (<code>Collection</code>, <code>Queue</code>):
+    <code>peek()</code>, <code>poll()</code>, <code>offer(E)</code> v <strong>FIFO</strong> pořadí.</li>
+    <li><strong><code>ConcurrentLinkedDeque</code></strong> (<code>Collection</code>, <code>Deque</code>):
+    offer/poll/peek na <strong>obou koncích</strong>.</li>
+    <li><strong><code>ConcurrentHashMap</code></strong> (<code>Map</code>): <code>putIfAbsent(K,V)</code>,
+    <code>remove(Object,Object)</code>, <code>replace(K, oldV, newV)</code>.</li>
+    <li><strong><code>ConcurrentSkipListMap</code></strong> (<code>SortedMap</code>),
+    <strong><code>ConcurrentSkipListSet</code></strong> (<code>SortedSet</code>).</li>
+  </ul>
+  <div class="box poznamka">
+    <p class="box-title">💬 Pozor na jedno vlákno</p>
+    <p>Neblokující kolekce a mapy jsou <strong>pomalejší pro jednovláknový přístup</strong> – kvůli použití
+    CAS instrukcí.</p>
+  </div>
+
+  <h3>ConcurrentHashMap – struktura a konkurence</h3>
+  <ul>
+    <li><strong>Souběžná čtení</strong> – <code>get</code>, <code>iterator</code> (čtení bez zamykání).</li>
+    <li><strong>Minimalizace konkurence při zápisu:</strong> výchozí <strong>úroveň konkurence 16</strong>
+    (počet zapisujících vláken). <strong>Vložení do prázdného segmentu používá CAS</strong>; pozdější změny
+    jsou na <strong>zámcích segmentů</strong>.</li>
+    <li><strong>Konkurence v segmentu:</strong> pro <strong>méně než 8 prvků</strong> se použije seznam, jakmile bin naroste, převede se na
+    <strong>vyvážený strom</strong> (udržuje <code>next</code> pro iteraci).</li>
+    <li><strong>Změna velikosti tabulky</strong> při překročení <strong>load factoru 0,75</strong>:
+    rozšiřování o <strong>mocniny dvojky</strong>; každý záznam se přesune na stejný nebo o mocninu dvojky
+    posunutý index; <strong>znovupoužití interního <code>Node</code></strong>, pokud se <code>next</code>
+    nemění (většina případů); <strong>kterékoli vlákno smí pomoci</strong> s přesunem místo blokování;
+    <strong>forward nodes</strong> upozorní na přesunuté biny. Pokud znáš odhad, zadej
+    <code>initialCapacity</code> (vyhne se opakovanému zvětšování).</li>
+  </ul>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Co je data race v programu? K jakým operacím je užitečná proměnná volatile v JVM a jak se to projeví v nativním kódu? Jmenuj 2 atomické instrukce.</summary>
+    <div class="odpoved">
+      <p><strong>Data race</strong> = dvě či více vláken přistupují bez synchronizace ke stejné sdílené
+      proměnné, přičemž alespoň jeden přístup je zápis; výsledek závisí na nepředvídatelném pořadí, které
+      CPU i JIT smí přehazovat (klasický příklad <code>C=1, D=2</code>).</p>
+      <p><strong>Volatile</strong> je užitečné pro <strong>viditelnost a atomické čtení/zápis jednoho pole</strong>,
+      typicky <strong>terminační příznak nastavovaný jiným vláknem</strong> (bez něj by C2 vytáhl čtení z cyklu, takže by vznikla nekonečná smyčka). <strong>Není</strong> vhodné pro read-modify-write (<code>cnt++</code> jsou 3 instrukce).</p>
+      <p>V nativním kódu se zápis do volatile projeví <strong>zápisovou paměťovou bariérou</strong>
+      <code>lock addl $0x0,(%rsp)</code> – nedělá žádnou práci, podstatný je jen prefix <code>lock</code>,
+      který zakáže přehazování a zviditelní předchozí zápisy ostatním CPU. Je to nejrychlejší zápisová bariéra;
+      čtecí bariéra není potřeba.</p>
+      <p>Dvě atomické instrukce: <strong><code>cmpxchg</code></strong> (compare-and-swap, implicitní
+      <code>lock</code>) a <strong><code>cmpxchg16b</code></strong> (128bit CAS); resp. <code>lock addl</code>
+      / <code>lock xadd</code>.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Napiš neblokující zásobník (push a pop). Jaký je rozdíl mezi non-blocking a wait-free?</summary>
+    <div class="odpoved">
+      <p>Treiberův zásobník – jednosměrně zřetězený seznam s <code>AtomicReference&lt;Node&gt; head</code>,
+      <code>push</code> i <code>pop</code> jsou CAS smyčky:</p>
+      <pre><code>public void push(E item) {
+    Node&lt;E&gt; newHead = new Node&lt;E&gt;(item);
+    Node&lt;E&gt; oldHead;
+    do {
+        oldHead = head.get();
+        newHead.next = oldHead;
+    } while (!head.compareAndSet(oldHead, newHead));
+}
+
+public E pop() {
+    Node&lt;E&gt; oldHead, newHead;
+    do {
+        oldHead = head.get();
+        if (oldHead == null) return null;
+        newHead = oldHead.next;
+    } while (!head.compareAndSet(oldHead, newHead));
+    return oldHead.item;
+}</code></pre>
+      <p><strong>Non-blocking (lock-free):</strong> systém jako celek vždy pokročí (vždy aspoň jedno vlákno
+      dokončí operaci), ale <strong>konkrétní vlákno může opakovat retry smyčku neomezeně</strong>.
+      <strong>Wait-free:</strong> <strong>každé</strong> vlákno dokončí operaci v <strong>konečném, předem
+      omezeném počtu kroků</strong> bez ohledu na ostatní. Treiberův zásobník je lock-free, ne wait-free.
+      Real-time systémy potřebují wait-free.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P8</span> Vysvětli thin lock, fat lock a biased lock. Kde je stav zámku uložen?</summary>
+    <div class="odpoved">
+      <p>Stav zámku je v <strong>mark word</strong> objektu. <strong>Thin lock</strong> = nekonkurovaný zámek,
+      mark word se mění přes CAS, lock record na zásobníku, před fallbackem krátký spin (10 taktů).
+      <strong>Fat lock</strong> = monitor objekt na haldě (OS zámek, podmínky, parking), nastane při konkurenci
+      nebo <code>wait()/notify()</code> (nafouknutí/vyfouknutí). <strong>Biased lock</strong> = optimalizace,
+      kdy se zámek „nakloní“ k jednomu vláknu a další lock/unlock týmž vláknem je zdarma –
+      <strong>odebráno od Java 15</strong>.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P8</span> Co je CAS a co je ABA problém? Jak se ABA řeší?</summary>
+    <div class="odpoved">
+      <p><strong>CAS (compare-and-swap)</strong> atomicky porovná hodnotu v paměti s očekávanou a jen při shodě
+      zapíše novou hodnotu (HW instrukce <code>cmpxchg</code> s prefixem <code>lock</code>). Je základem atomik
+      a lock-free algoritmů (CAS smyčka).</p>
+      <p><strong>ABA problém:</strong> hodnota se změní A → B → A; prosté CAS vidí v obou okamžicích A a
+      chybně uspěje, i když se mezitím něco stalo (např. v zásobníku byla realokována adresa uvolněného uzlu).
+      <strong>Řešení:</strong> <code>AtomicStampedReference</code> (razítko) nebo
+      <code>AtomicMarkableReference</code> (mark bit) – razítko/mark se mezitím zvýší a odliší stavy. Tyto
+      typy alokují objekt <code>Pair</code> (nepoužívají dvojširoký CAS), a jsou proto pomalejší.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P8</span> Proč nestačí volatile na <code>cnt++</code> a co použít místo toho?</summary>
+    <div class="odpoved">
+      <p><code>cnt++</code> je <strong>čtení–inkrement–zápis = tři instrukce</strong>; dvě vlákna se mohou
+      proložit a ztratit aktualizaci. Volatile bariéra zápis zviditelní, ale celou operaci neudělá atomickou.
+      Řešením je <code>synchronized</code>/<code>ReentrantLock</code>, nebo nejlépe (a nejrychleji)
+      <code>AtomicInteger.incrementAndGet()</code>, který C2 zkolabuje do jediného <code>lock addl</code>.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li><strong>Data race</strong> = nesynchronizovaný souběžný přístup (aspoň jeden zápis); CPU i C2 JIT
+      přehazují operace → výsledek <code>C=1, D=2</code>. Zápisy se serializují, pozdější čtení smí předběhnout zápis.</li>
+      <li><strong>volatile</strong> dá viditelnost + atomické čtení/zápis jednoho pole přes bariéru
+      <code>lock addl $0x0,(%rsp)</code> (nejlevnější bariéra); není pro read-modify-write a u polí je volatile
+      jen reference, ne prvky. Volatile zápis ~100×, čtení ~25× dražší, stále levnější než zámky.</li>
+      <li><strong>JVM zámky</strong> v mark word: nekonkurovaný → <strong>thin lock</strong> (CAS + krátký spin),
+      konkurovaný / <code>wait/notify</code> → <strong>fat lock</strong> (monitor na haldě, parking).
+      <strong>Biased lock odebrán od Java 15.</strong></li>
+      <li><strong>ReentrantLock</strong> přidá <code>tryLock</code>, časované/přerušitelné zamykání a férovost;
+      neférový je o málo rychlejší než <code>synchronized</code> (ale objekt na haldě), férový ~100× pomalejší.</li>
+      <li><strong>Atomiky</strong> stojí na HW <strong>CAS</strong> (<code>cmpxchg</code>, implicitní <code>lock</code>;
+      <code>cmpxchg16b</code> pro 128 bit); Java používá jen 64bit CAS. <code>AtomicInteger</code> čítač je nejrychlejší.</li>
+      <li><strong>AtomicStampedReference/MarkableReference</strong> řeší <strong>ABA problém</strong>, ale alokují
+      <code>Pair</code> → pomalé. <strong>Field updatery</strong> šetří paměť, ale jsou pomalejší; pro pole neexistují.</li>
+      <li><strong>Lock-free</strong> = systém pokročí, ale vlákno může opakovat neomezeně; <strong>wait-free</strong>
+      = každé vlákno v konečném počtu kroků (real-time potřebuje wait-free).</li>
+      <li><strong>Treiberův zásobník (1986)</strong> – lock-free LIFO (CAS na <code>head</code>), pozor na ABA při
+      realokaci adres. <strong>ConcurrentHashMap</strong>: čtení bez zámků, CAS na prázdný bin pak zámky segmentů
+      (konkurence 16), seznam &lt;8 jinak strom, resize při load factoru 0,75 po mocninách dvojky.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="07-beh-programu-jit.html">← Běh programu a JIT</a></span>
+    <span><a href="09-efektivni-servery-c10k.html">Další: Efektivní servery →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

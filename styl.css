@@ -1,0 +1,455 @@
+/* ===== ESW – studijní materiály – společný styl ===== */
+:root {
+  --c-text: #1b1f24;
+  --c-muted: #5a6470;
+  --c-bg: #f6f7f9;
+  --c-card: #ffffff;
+  --c-border: #d8dde3;
+  --c-accent: #2563eb;        /* modrá – hlavní */
+  --c-accent-d: #1d4ed8;
+  --c-c: #0f766e;             /* C/C++ část – tyrkysová */
+  --c-java: #b45309;          /* Java/JVM část – oranžová */
+  --c-pojem: #6d28d9;         /* klíčové pojmy – fialová */
+  --c-pozor: #b91c1c;         /* varování – červená */
+  --c-ok: #15803d;            /* tip/insight – zelená */
+  --radius: 10px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--c-text);
+  background: var(--c-bg);
+}
+
+.wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0 20px 80px;
+}
+
+/* ---- horní navigační lišta ---- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(255,255,255,.92);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--c-border);
+}
+.topbar .topbar-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.topbar a { text-decoration: none; color: var(--c-accent-d); font-weight: 600; }
+.topbar a:hover { text-decoration: underline; }
+.topbar .spacer { flex: 1; }
+.topbar .nav-link.disabled { color: var(--c-muted); pointer-events: none; opacity: .5; }
+
+/* ---- štítek části ---- */
+.badge {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: 999px;
+  color: #fff;
+  letter-spacing: .02em;
+}
+.badge-c { background: var(--c-c); }
+.badge-java { background: var(--c-java); }
+.badge-soft { background: #e5e9ef; color: var(--c-muted); }
+
+/* ---- nadpisy ---- */
+header.page-head {
+  padding: 34px 0 8px;
+}
+header.page-head .lecnum {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--c-muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+h1 {
+  font-size: 2.05rem;
+  line-height: 1.2;
+  margin: 6px 0 14px;
+}
+h2 {
+  font-size: 1.5rem;
+  margin: 2.2em 0 .6em;
+  padding-bottom: .25em;
+  border-bottom: 2px solid var(--c-border);
+}
+h3 { font-size: 1.2rem; margin: 1.6em 0 .4em; }
+h4 { font-size: 1.03rem; margin: 1.3em 0 .3em; color: var(--c-muted); }
+
+p { margin: .7em 0; }
+a { color: var(--c-accent-d); }
+
+ul, ol { margin: .6em 0; padding-left: 1.4em; }
+li { margin: .28em 0; }
+
+/* ---- perex / úvod ---- */
+.perex {
+  font-size: 1.12rem;
+  color: var(--c-muted);
+  border-left: 4px solid var(--c-accent);
+  padding: 2px 0 2px 16px;
+  margin: 16px 0 8px;
+}
+
+/* ---- barevné bloky ---- */
+.box {
+  border: 1px solid var(--c-border);
+  border-left-width: 5px;
+  border-radius: var(--radius);
+  background: var(--c-card);
+  padding: 14px 18px;
+  margin: 18px 0;
+  box-shadow: var(--shadow);
+}
+.box .box-title {
+  font-weight: 700;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.box.pojmy { border-left-color: var(--c-pojem); }
+.box.pojmy .box-title { color: var(--c-pojem); }
+.box.poznamka { border-left-color: var(--c-accent); }
+.box.poznamka .box-title { color: var(--c-accent-d); }
+.box.pozor { border-left-color: var(--c-pozor); background: #fef5f5; }
+.box.pozor .box-title { color: var(--c-pozor); }
+.box.insight { border-left-color: var(--c-ok); background: #f3faf5; }
+.box.insight .box-title { color: var(--c-ok); }
+.box.shrnuti { border-left-color: var(--c-accent); background: #f4f7ff; }
+.box.shrnuti .box-title { color: var(--c-accent-d); }
+.box.pisnicka { border-left-color: #db2777; background: #fdf2f8; }
+.box.pisnicka .box-title { color: #be185d; }
+.box.pisnicka a { color: #be185d; font-weight: 700; }
+
+/* definiční seznam pojmů */
+dl.pojmy-list { margin: 0; }
+dl.pojmy-list dt { font-weight: 700; margin-top: .7em; color: var(--c-text); }
+dl.pojmy-list dd { margin: 0 0 0 0; color: var(--c-text); }
+
+/* ---- zkouškové otázky (rozbalovací) ---- */
+details.otazka {
+  border: 1px solid var(--c-border);
+  border-left: 5px solid var(--c-accent);
+  border-radius: var(--radius);
+  background: var(--c-card);
+  margin: 12px 0;
+  padding: 0 18px;
+  box-shadow: var(--shadow);
+}
+details.otazka > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 13px 0;
+  list-style: none;
+}
+details.otazka > summary::-webkit-details-marker { display: none; }
+details.otazka > summary::before {
+  content: "▸";
+  color: var(--c-accent);
+  font-size: .9em;
+  margin-right: 8px;
+}
+details.otazka[open] > summary::before { content: "▾"; }
+details.otazka > summary .q-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--c-accent);
+  border-radius: 999px;
+  padding: 1px 9px;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: baseline;
+  margin-right: 6px;
+}
+details.otazka .odpoved {
+  border-top: 1px dashed var(--c-border);
+  padding: 4px 0 16px;
+}
+
+/* ---- kód ---- */
+pre, code {
+  font-family: "Cascadia Code", "Fira Code", Consolas, "Liberation Mono", monospace;
+  font-size: .92em;
+}
+code {
+  background: #eef1f5;
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: #b4254e;
+}
+pre {
+  background: #1e2430;
+  color: #e7ecf3;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  line-height: 1.5;
+}
+pre code { background: none; color: inherit; padding: 0; }
+
+/* ASCII / schéma blok */
+pre.schema { background: #0f1620; color: #9fe7c9; }
+
+/* ---- tabulky ---- */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 16px 0;
+  font-size: .95rem;
+  background: var(--c-card);
+  box-shadow: var(--shadow);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+th, td {
+  border: 1px solid var(--c-border);
+  padding: 8px 11px;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: #eef2f8; font-weight: 700; }
+tr:nth-child(even) td { background: #fafbfc; }
+
+/* ---- rozcestník (index) ---- */
+.hero {
+  background: linear-gradient(135deg, #1d4ed8, #0f766e);
+  color: #fff;
+  border-radius: 16px;
+  padding: 36px 30px;
+  margin: 24px 0;
+  box-shadow: var(--shadow);
+}
+.hero h1 { color: #fff; margin-top: 0; }
+.hero p { color: #e7eefc; font-size: 1.1rem; }
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+.card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.card:hover { transform: translateY(-2px); box-shadow: 0 6px 22px rgba(0,0,0,.12); }
+.card .card-num { font-size: 13px; color: var(--c-muted); font-weight: 700; }
+.card .card-title { font-weight: 700; margin: 4px 0; font-size: 1.05rem; }
+.card .card-desc { font-size: .9rem; color: var(--c-muted); }
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 30px 0 6px;
+}
+.section-label h2 { border: none; margin: 0; padding: 0; }
+
+/* ---- obsah stránky (mini TOC) ---- */
+.toc {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  margin: 18px 0;
+  box-shadow: var(--shadow);
+}
+.toc strong { display: block; margin-bottom: 6px; }
+.toc ol { columns: 2; column-gap: 28px; }
+@media (max-width: 600px){ .toc ol { columns: 1; } }
+
+/* ---- patička ---- */
+footer.page-foot {
+  margin-top: 50px;
+  padding-top: 18px;
+  border-top: 1px solid var(--c-border);
+  color: var(--c-muted);
+  font-size: .9rem;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.kv { color: var(--c-muted); font-size: .92rem; }
+
+/* zvýraznění */
+mark { background: #fff3b0; padding: 0 3px; border-radius: 3px; }
+
+/* ---- tisk ---- */
+@media print {
+  body { background: #fff; font-size: 12px; }
+  .topbar, footer.page-foot { display: none; }
+  details.otazka { break-inside: avoid; }
+  details.otazka[open] .odpoved, details.otazka .odpoved { display: block; }
+  details.otazka:not([open]) > summary { font-weight: 700; }
+  .box, table, pre { box-shadow: none; }
+  a { color: #000; text-decoration: none; }
+}
+
+/* ===================================================================== */
+/* ===== Diagramy (vizuální náhrada za ASCII „schema" bloky) ========== */
+/* ===================================================================== */
+.diag {
+  margin: 24px 0;
+  padding: 22px 18px;
+  background: linear-gradient(135deg, #f8fafc, #eef2f8);
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+  overflow-x: auto;
+  box-shadow: var(--shadow);
+}
+.diag-title {
+  text-align: center;
+  font-weight: 700;
+  color: var(--c-text);
+  margin: 0 0 14px;
+}
+.diag-cap {
+  text-align: center;
+  color: var(--c-muted);
+  font-size: .9rem;
+  margin-top: 14px;
+}
+.diag-cap code { font-size: .85em; }
+
+/* --- tok / pipeline / posloupnost kroků --- */
+.diag-flow {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.diag-flow.vert { flex-direction: column; align-items: center; }
+.diag-node {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 112px;
+  max-width: 240px;
+  background: var(--c-card);
+  border: 2px solid var(--c-accent);
+  border-top-width: 4px;
+  border-radius: 12px;
+  padding: 12px 16px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.diag-node:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.diag-node .dn-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  color: #fff;
+  font-size: .82rem; font-weight: 700;
+  margin-bottom: 6px;
+}
+.diag-node .dn-ico { font-size: 1.5rem; display: block; margin-bottom: 4px; line-height: 1; }
+.diag-node .dn-title { display: block; font-weight: 700; font-size: 1.02rem; }
+.diag-node .dn-sub { display: block; font-size: .84rem; color: var(--c-muted); margin-top: 2px; }
+
+/* barevné varianty kroků */
+.diag-node.c-blue   { border-color: var(--c-accent); } .diag-node.c-blue   .dn-num { background: var(--c-accent); }
+.diag-node.c-purple { border-color: var(--c-pojem);  } .diag-node.c-purple .dn-num { background: var(--c-pojem);  }
+.diag-node.c-amber  { border-color: var(--c-java);   } .diag-node.c-amber  .dn-num { background: var(--c-java);   }
+.diag-node.c-green  { border-color: var(--c-ok);     } .diag-node.c-green  .dn-num { background: var(--c-ok);     }
+.diag-node.c-teal   { border-color: var(--c-c);      } .diag-node.c-teal   .dn-num { background: var(--c-c);      }
+.diag-node.c-red    { border-color: var(--c-pozor);  } .diag-node.c-red    .dn-num { background: var(--c-pozor);  }
+.diag-node.muted    { border-color: var(--c-border); } .diag-node.muted    .dn-num { background: var(--c-muted);  }
+
+/* šipky mezi uzly */
+.diag-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  color: var(--c-accent);
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.diag-arrow::before { content: "\25B6"; }            /* ▶ */
+.diag-flow.vert .diag-arrow { padding: 3px 0; }
+.diag-flow.vert .diag-arrow::before { content: "\25BC"; } /* ▼ */
+.diag-arrow.dashed::before { content: "\21E2"; }     /* ⇢ */
+.diag-arrow .lbl { font-size: .72rem; color: var(--c-muted); font-weight: 600; margin-left: 4px; }
+
+/* smyčka / „a opakuj" */
+.diag-loop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--c-accent-d);
+  font-weight: 600;
+}
+.diag-loop::before { content: "\21BB"; font-size: 1.3rem; } /* ↻ */
+
+/* --- vrstvy / zásobník (shora dolů) --- */
+.diag-stack { display: flex; flex-direction: column; gap: 0; max-width: 600px; margin: 0 auto; }
+.diag-layer {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-left: 5px solid var(--c-accent);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 3px 0;
+  box-shadow: var(--shadow);
+}
+.diag-layer .dl-title { font-weight: 700; }
+.diag-layer .dl-sub { font-size: .85rem; color: var(--c-muted); }
+.diag-stack .diag-arrow { color: var(--c-muted); }
+
+/* --- mřížka / topologie / skupina boxů --- */
+.diag-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.diag-box {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.diag-box.accent { border-color: var(--c-accent); border-width: 2px; }
+.diag-box .db-title { font-weight: 700; }
+.diag-box .db-sub { font-size: .82rem; color: var(--c-muted); }
+
+@media print {
+  .diag { break-inside: avoid; background: #fff; box-shadow: none; }
+  .diag-node, .diag-layer, .diag-box { box-shadow: none; }
+}

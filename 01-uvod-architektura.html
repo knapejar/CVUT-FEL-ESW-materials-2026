@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1 – Úvod a architektura počítače · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <span class="nav-link disabled">← předchozí</span>
+    <a class="nav-link" href="02-bentley-kompilator-profiling.html">další: Bentleyho pravidla →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 1 · <span class="badge badge-c">C/C++ část</span></div>
+    <h1>Úvod a architektura moderního počítače</h1>
+    <p class="perex">Co vlastně znamená „efektivní software“, kdy se vyplatí optimalizovat a jak na to
+    jít systematicky. Druhá – obsáhlejší – polovina je prohlídka moderního hardwaru: paměťová
+    hierarchie a propastné rozdíly latencí, cache, pipelining, predikce skoků, superskalární a
+    out-of-order vykonávání, vícejádro, SMT a NUMA. Tedy hardwarové triky, které rozhodují o tom,
+    jestli bude váš kód rychlý, nebo pomalý.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#motivace">Co je efektivní software</a></li>
+      <li><a href="#smycka">Optimalizační smyčka</a></li>
+      <li><a href="#stack">Technologický stack</a></li>
+      <li><a href="#hw">Princip CPU a paměti</a></li>
+      <li><a href="#hierarchie">Paměťová hierarchie a latence</a></li>
+      <li><a href="#cache">Cache</a></li>
+      <li><a href="#ilp">Paralelismus instrukcí (ILP)</a></li>
+      <li><a href="#task">Paralelismus úloh (vícejádro, SMT, NUMA)</a></li>
+      <li><a href="#bentley">Náhled: Bentleyho pravidla</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="motivace">Co je efektivní software</h2>
+  <p>Efektivní software je takový, který <strong>dobře využívá dostupné prostředky</strong> – procesor,
+  paměť, energii a síť. Efektivitu posuzujeme ze tří úhlů:</p>
+  <ul>
+    <li><strong>Rychlost</strong> – latence (doba odezvy) a propustnost (práce za jednotku času).</li>
+    <li><strong>Cena</strong> – CPU čas, paměť, šířka pásma a energie se ve velkém měřítku rovnají penězům.</li>
+    <li><strong>Omezení</strong> – vejít se do omezeného hardwaru (embedded, mobil, real-time deadline).</li>
+  </ul>
+
+  <h3>Výkon je málokdy nejvyšší priorita</h3>
+  <p>Většinou jsou důležitější jiné věci: <strong>korektnost</strong> (rychlý, ale špatný výsledek je
+  k ničemu), <strong>udržovatelnost</strong> (neudržovatelný „optimalizovaný“ kód časem zpomalí, jak
+  se mění požadavky) a <strong>cena vývoje</strong> (produkt, který se nikdy nevydá, má nulový výkon).</p>
+
+  <div class="box pozor">
+    <p class="box-title">⚠️ Předčasná optimalizace</p>
+    <p>Způsobuje <strong>chyby</strong> (chytré triky se těžko dělají správně) a často ani
+    <strong>nepomůže</strong> (zoptimalizujete nesprávných 97 % kódu, nebo váš trik bojuje proti
+    kompilátoru). Pravidla optimalizace podle M. A. Jacksona: <em>„První pravidlo: Nedělej to.
+    Druhé pravidlo (jen pro experty): Nedělej to ještě.“</em></p>
+  </div>
+
+  <h3>Kdy na výkonu opravdu záleží</h3>
+  <ol>
+    <li><strong>„Být dost rychlý“</strong> – aby byl program použitelný.</li>
+    <li><strong>Výkon jako měna</strong> – rychlé základy „umožňují“ jednoduchost ve vyšších vrstvách (např. C jádra
+      v NumPy dovolí používat Python jako lepidlo).</li>
+    <li><strong>Tvrdá omezení</strong> – real-time deadliny, rozpočet na snímek, pevný hardware;
+      zmeškat deadline je <strong>chyba</strong>, ne jen „pomalost“.</li>
+    <li><strong>Měřítko se vyplácí</strong> – při velkém objemu znamenají i malá procenta velké peníze.</li>
+    <li><strong>Výkon je produkt</strong> – rychlost je konkurenční výhoda (high-frequency trading,
+      vědecké simulace, trénink ML).</li>
+  </ol>
+
+  <h2 id="smycka">Optimalizační smyčka</h2>
+  <p>Optimalizace má být <strong>disciplinovaný cyklus</strong>: nejdřív měř, pak pochop příčinu, pak
+  změň jednu věc a nakonec ověř, jestli to pomohlo – a opakuj.</p>
+  <div class="diag"><div class="diag-flow"><div class="diag-node c-blue"><span class="dn-num">1</span><span class="dn-title">Změř</span><span class="dn-sub">co je pomalé</span></div><div class="diag-arrow"></div><div class="diag-node c-purple"><span class="dn-num">2</span><span class="dn-title">Pochop</span><span class="dn-sub">proč je to pomalé</span></div><div class="diag-arrow"></div><div class="diag-node c-amber"><span class="dn-num">3</span><span class="dn-title">Změň</span><span class="dn-sub">jednu věc</span></div><div class="diag-arrow"></div><div class="diag-node c-green"><span class="dn-num">4</span><span class="dn-title">Ověř</span><span class="dn-sub">pomohlo to?</span></div></div><div class="diag-loop">a opakuj</div></div>
+  <p>Klíč je <strong>měřit první</strong> (ne hádat) a <strong>měnit po jednom</strong> (jinak nepoznáte,
+  co zabralo).</p>
+
+  <h2 id="stack">Technologický stack</h2>
+  <p>Software běží přes hlubokou hierarchii vrstev a každá z nich může výkonu pomoci, nebo uškodit.
+  Vrstvy zároveň zakrývají, jak se hardware skutečně používá.</p>
+  <div class="diag"><div class="diag-stack">
+    <div class="diag-layer"><span class="dl-title">Vaše aplikace</span></div>
+    <div class="diag-layer"><span class="dl-title">Knihovny</span></div>
+    <div class="diag-layer"><span class="dl-title">Kompilátor</span></div>
+    <div class="diag-layer"><span class="dl-title">Běhové prostředí (Runtime)</span> <span class="dl-sub">– Garbage Collector, JIT</span></div>
+    <div class="diag-layer"><span class="dl-title">Operační systém</span> <span class="dl-sub">– Scheduler, virtuální paměť, I/O</span></div>
+    <div class="diag-layer"><span class="dl-title">Virtualizace</span></div>
+    <div class="diag-layer"><span class="dl-title">Hardware</span> <span class="dl-sub">– pipeline, cache, superskalár, SIMD, predikce, µ-ops, jádra</span></div>
+  </div></div>
+  <div class="diag"><div class="diag-flow"><div class="diag-node c-teal"><span class="dn-title">HTTP/gRPC</span></div><div class="diag-arrow"></div><div class="diag-node c-teal"><span class="dn-title">TCP/UDP</span></div><div class="diag-arrow"></div><div class="diag-node c-teal"><span class="dn-title">IP/Ethernet</span></div></div><div class="diag-cap">Síť mezi dvěma stroji</div></div>
+  <div class="box poznamka">
+    <p class="box-title">💬 Základní věta softwarového inženýrství (D. Wheeler)</p>
+    <p>„Všechny problémy v informatice lze vyřešit další <strong>úrovní nepřímosti</strong> (indirection)…
+    kromě problému příliš mnoha úrovní nepřímosti.“ Indirekce řeší problémy, ale příliš mnoho vrstev
+    výkonu škodí (viz případová studie Prime Video).</p>
+  </div>
+
+  <h3>Příklady z praxe (proč na tom záleží)</h3>
+  <ul>
+    <li><strong>Discord:</strong> služba <em>Read States</em> měla každé ~2 minuty špičky p99 latence,
+      protože Go GC skenoval miliony živých záznamů cache. Přepsání do <strong>Rustu</strong> (bez GC)
+      špičky odstranilo.</li>
+    <li><strong>Unity DOTS:</strong> stejná data, dvě rozložení v paměti. „Array of Structs“ (OOP)
+      → cache miss na každou entitu; „Struct of Arrays“ → sekvenční přístup. <strong>Až 100× rychlejší</strong>,
+      protože cache načítá <strong>64bajtové řádky</strong> a sekvenční přístup využije celý řádek.</li>
+    <li><strong>Prime Video:</strong> pipeline z AWS Lambda + Step Functions + S3 škálovala cenu
+      superlineárně. Sloučení do jednoho procesu (data v paměti) → <strong>−90 % nákladů</strong>.</li>
+    <li><strong>WhatsApp (2014):</strong> 2M+ souběžných TCP spojení na server, 450 M denních uživatelů,
+      32 inženýrů (Erlang/BEAM + ladění FreeBSD). Souvisí s <strong>problémem C10k</strong> (P9).</li>
+  </ul>
+
+  <h2 id="hw">Princip CPU a paměti</h2>
+  <p>Procesor opakovaně <strong>načítá a vykonává instrukce</strong> a vyměňuje data s pamětí přes
+  registry a ALU. Čtyři kroky:</p>
+  <ol>
+    <li>Načti instrukci z paměti.</li>
+    <li>Načti data z paměti.</li>
+    <li>Proveď výpočet (v ALU, s pomocí registrů).</li>
+    <li>Ulož výsledek do paměti (nebo registru).</li>
+  </ol>
+  <p>Příklad <code>r = a + b</code> v C a ve strojovém kódu:</p>
+  <pre><code>int a, b, r;
+void func() { r = a + b; }</code></pre>
+  <pre><code>mov eax, [0x100]  ; načti a
+add eax, [0x104]  ; přičti b
+mov [0x108], eax  ; ulož r</code></pre>
+
+  <h3>Paměť je zdroj problémů</h3>
+  <p>Paměť je hlavní zdroj výkonnostních problémů, protože je <strong>pomalá oproti procesoru</strong>.
+  Řešením je <strong>cache</strong> a celá <strong>paměťová hierarchie</strong>.</p>
+
+  <div class="box insight">
+    <p class="box-title">💡 Fyzika klade meze</p>
+    <p>Za jeden takt 3GHz procesoru urazí světlo ve vakuu jen <strong>~10 cm</strong> (v křemíku ještě
+    méně). Přenést rychle informaci z jedné strany čipu na druhou je proto reálný problém –
+    a vrstvy mezi kódem a hardwarem komplikují pochopení toho, jak se hardware skutečně používá.</p>
+  </div>
+
+  <h2 id="hierarchie">Paměťová hierarchie a latence</h2>
+  <p>Nahoře je nejrychlejší, nejmenší a nejdražší paměť, dole nejpomalejší, největší a nejlevnější.
+  Mezi úrovněmi se přenášejí různě velké jednotky.</p>
+  <table>
+    <thead><tr><th>Úroveň</th><th>Kapacita</th><th>Doba přístupu</th><th>Přenášená jednotka</th></tr></thead>
+    <tbody>
+      <tr><td>Registry CPU</td><td>stovky B</td><td>0,3–0,5 ns</td><td>operandy instrukcí (1–8 B)</td></tr>
+      <tr><td>L1 cache</td><td>desítky–stovky KB</td><td>~1 ns</td><td>bloky 32–64 B</td></tr>
+      <tr><td>L2 cache</td><td>KB–MB</td><td>jednotky ns</td><td>bloky 64–128 B</td></tr>
+      <tr><td>Hlavní paměť (DRAM)</td><td>GB</td><td>80–200 ns</td><td>stránky 4–8 KB (OS)</td></tr>
+      <tr><td>Disk</td><td>desítky TB</td><td>~10 000 000 ns</td><td>soubory (MB)</td></tr>
+    </tbody>
+  </table>
+
+  <p>Aby byly rozdíly lidsky pochopitelné, následující tabulka <strong>škáluje</strong> všechny latence
+  stejným faktorem (1 takt CPU = 1 s):</p>
+  <table>
+    <thead><tr><th>Událost</th><th>Latence</th><th>Škálováno (takt = 1 s)</th></tr></thead>
+    <tbody>
+      <tr><td>1 takt CPU</td><td>0,3 ns</td><td>1 s</td></tr>
+      <tr><td>Přístup do L1</td><td>0,9 ns</td><td>3 s</td></tr>
+      <tr><td>Přístup do L2</td><td>2,8 ns</td><td>9 s</td></tr>
+      <tr><td>Přístup do L3</td><td>12,9 ns</td><td>43 s</td></tr>
+      <tr><td>Hlavní paměť (DRAM)</td><td>120 ns</td><td>6 min</td></tr>
+      <tr><td>SSD I/O</td><td>50–150 µs</td><td>2–6 dní</td></tr>
+      <tr><td>Rotační disk I/O</td><td>1–10 ms</td><td>1–12 měsíců</td></tr>
+      <tr><td>Internet SF → New York</td><td>40 ms</td><td>4 roky</td></tr>
+      <tr><td>Restart fyzického serveru</td><td>5 min</td><td>32 tisíciletí</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Pointa:</strong> přístup do hlavní paměti stojí ~400× víc než zásah do L1. „Minout cache“
+  znamená „čekat na paměť“.</p>
+
+  <h2 id="cache">Cache</h2>
+  <p><strong>Princip:</strong> menší, ale rychlejší paměť, která využívá <strong>prostorovou</strong> a
+  <strong>časovou lokalitu</strong> přístupů.</p>
+  <dl class="pojmy-list">
+    <dt>Prostorová lokalita</dt><dd>brzy se nejspíš sáhne na <em>blízkou</em> adresu (proto se načítá celý 64B řádek).</dd>
+    <dt>Časová lokalita</dt><dd>na nedávno použité místo se nejspíš brzy sáhne <em>znovu</em>.</dd>
+  </dl>
+  <p>Problémy, které cache přináší:</p>
+  <ul>
+    <li>RAM už není „random access“ z hlediska <strong>výkonu</strong> – záleží na vzoru přístupu.</li>
+    <li>Správa více kopií jednoho údaje napříč jádry → <strong>cache koherence</strong> (detailně v P5).</li>
+  </ul>
+  <div class="box insight">
+    <p class="box-title">💡 Klíčový poznatek</p>
+    <p>Pokud se data vejdou do cache → rychle. Pokud ne → čekáte na paměť.</p>
+  </div>
+
+  <h2 id="ilp">Paralelismus na úrovni instrukcí (ILP)</h2>
+
+  <h3>Pipelining a predikce skoků</h3>
+  <p>Vykonání instrukce se rozdělí do fází (fetch → decode → spočítej operandy → načti operandy →
+  execute → writeback) a instrukce jimi <strong>protékají jako proud</strong> – v jeden okamžik je
+  v každé fázi jiná instrukce. To zvyšuje propustnost.</p>
+  <p>Fáze: <strong>FI</strong> = fetch, <strong>DI</strong> = decode, <strong>CO</strong> = spočítej operandy,
+  <strong>FO</strong> = načti operandy, <strong>EI</strong> = execute, <strong>WO</strong> = writeback.</p>
+  <table>
+    <thead><tr><th>Instrukce / takt</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th></tr></thead>
+    <tbody>
+      <tr><td>I1</td><td>FI</td><td>DI</td><td>CO</td><td>FO</td><td>EI</td><td>WO</td><td></td></tr>
+      <tr><td>I2</td><td></td><td>FI</td><td>DI</td><td>CO</td><td>FO</td><td>EI</td><td>WO</td></tr>
+      <tr><td>I3</td><td></td><td></td><td>FI</td><td>DI</td><td>CO</td><td>FO</td><td>EI</td></tr>
+    </tbody>
+  </table>
+  <p class="kv">Plynulý proud, žádné „bubliny“ – v každém taktu je v každé fázi jiná instrukce.</p>
+  <p>Problém nastává u <strong>podmíněných skoků</strong>: CPU dopředu neví, kterou větví půjde.
+  <strong>Prediktor skoků</strong> hádá směr (taken/not-taken) i cíl. Když uhodne, proud pokračuje;
+  když se splete (mispredikce), spekulativně načtené instrukce se musí <strong>zahodit</strong> (flush)
+  a pipeline restartovat → <strong>branch penalty</strong>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Klíčový poznatek</p>
+    <p>Moderní prediktory mívají na reálném kódu <strong>95 %+ úspěšnost</strong>, ale patologické vzory
+    (náhodné skoky) bolí. U superskalárních CPU je penalizace za mispredikci mnohem citelnější.</p>
+  </div>
+
+  <h3>Superskalární CPU</h3>
+  <p>CPU má <strong>více ALU</strong> a snaží se vykonat několik instrukcí <strong>v jednom taktu</strong>.
+  Z proudu instrukcí zabalí ty nezávislé do stejného taktu (závislé musí čekat):</p>
+  <p>Proud instrukcí: <code>r=a+b</code>, <code>s=c+d</code>, <code>t=e+f</code>, <code>u=g+h</code>, <code>v=u+i</code>.
+  Superskalární vykonání (3 ALU):</p>
+  <table>
+    <thead><tr><th>Takt</th><th>Vykonané instrukce</th><th>Poznámka</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>r=a+b</code> ; <code>s=c+d</code> ; <code>t=e+f</code></td><td>nezávislé → 3 najednou</td></tr>
+      <tr><td>2</td><td><code>u=g+h</code></td><td></td></tr>
+      <tr><td>3</td><td><code>v=u+i</code></td><td>v musí čekat na u</td></tr>
+    </tbody>
+  </table>
+  <p>Cíl efektivního SW: uspořádat instrukce tak, aby se využily všechny výpočetní jednotky. To je
+  hlavně <strong>úkol kompilátoru</strong> – a komplikuje to čtení assembleru a ladění.</p>
+
+  <h3>Out-of-order (mimopořadové) vykonávání</h3>
+  <p>Když nějaký operand zrovna není v cache, CPU může spustit <strong>jiné, již připravené</strong>
+  instrukce dřív, místo aby čekal. Příklad – pokud <code>a</code> a <code>c</code> nejsou v cache:</p>
+  <p>Platné OoO pořadí:</p>
+  <table>
+    <thead><tr><th>Takt</th><th>Vykonané instrukce</th><th>Poznámka</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>t=e+f</code> ; <code>u=g+h</code></td><td>jejich operandy jsou hotové</td></tr>
+      <tr><td>2</td><td><code>r=a+b</code> ; <code>s=c+d</code> ; <code>v=u+i</code></td><td>r, s čekaly na pomalé a, c; v čeká na u</td></tr>
+    </tbody>
+  </table>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Když na pořadí záleží</p>
+    <p>Z pohledu jednoho CPU je vše korektní. <strong>Ale</strong>: jiná jádra mohou vidět výsledky
+    v <em>jiném pořadí</em>. Tento kód proto pravděpodobně nebude fungovat bez atomik/bariér – přístupy
+    k <code>lock</code> mohou být přeházeny:</p>
+    <pre><code>lock = 1
+r = a + b
+s = a - b
+lock = 0     // proměnná „lock“ jako obyčejná proměnná → NEFUNGUJE</code></pre>
+    <p>Synchronizaci a paměťové bariéry řeší přednáška <a href="04-skalovatelna-synchronizace.html">P4</a>.</p>
+  </div>
+
+  <h2 id="task">Paralelismus úloh (vícejádro, SMT, NUMA)</h2>
+
+  <h3>Více CPU</h3>
+  <p>Více programů můžeme spustit současně na více procesorech. Ty mohou být na jednom čipu
+  (<strong>multi-core</strong>), nebo na různých čipech (<strong>multi-processor</strong>). Sdílejí paměť
+  přes paměťový interconnect/arbitr.</p>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Problém synchronizace</p>
+    <p>Komunikace mezi jádry (přes sdílenou cache nebo interconnect) je <strong>pomalá</strong>. Sdílená
+    data = režie koordinace: <strong>mutex</strong>, klíčové slovo <code>synchronized</code> v Javě,
+    <strong>atomiky</strong> (lock-free, ale stále potřebují provoz cache koherence). Detailně v P4.</p>
+  </div>
+
+  <h3>Simultánní multithreading (SMT / Hyper-threading)</h3>
+  <p>Levnější varianta paralelismu: <strong>zdvojí se jen registry, ne výpočetní jednotky (ALU)</strong>.
+  Když jedno HW vlákno čeká na paměť, druhé může počítat. Ze strany SW vypadá SMT jako vícejádrový CPU.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Bilance SMT</p>
+    <p>~<strong>20–30 % vyšší propustnost</strong> za ~5 % více tranzistorů. Nevýhoda: sdílené výpočetní
+    jednotky umožňují <strong>side-channel útoky</strong> (třída Spectre).</p>
+  </div>
+
+  <h3>NUMA (Non-Uniform Memory Access)</h3>
+  <p>Víceslotový systém – <strong>každý socket má vlastní lokální paměť</strong>. Přístup do vzdálené
+  paměti (přes interconnect) je <strong>~15 % pomalejší</strong>. Software vidí veškerou paměť, ale
+  <strong>umístění rozhoduje</strong>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Klíčový poznatek</p>
+    <p>OS alokuje paměť lokálně k běžícímu vláknu (politika <strong>first-touch</strong>). Migrace vlákna
+    způsobí, že se paměť stane vzdálenou, což vede k propadu výkonu. Nástroje pro připnutí: <code>numactl</code>,
+    <code>taskset</code>.</p>
+  </div>
+
+  <h3>Heterogenní systémy (SoC)</h3>
+  <p>Na jednom čipu bývají CPU, GPU, DSP, neuronový akcelerátor i modem. U <strong>heterogenních jader</strong>
+  (big.LITTLE / P-cores + E-cores) vybírá vhodné jádro pro danou zátěž <strong>plánovač OS</strong>. Heterogenní jádra
+  už dávno nejsou jen v telefonech, ale i v desktopech a noteboocích (Intel Alder Lake+, Apple M-series, Qualcomm X Elite). Vysoké
+  počty jader (až 96) se dnes skládají z mnoha malých <strong>chipletů</strong> propojených interconnectem.</p>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Klíčové pojmy</p>
+    <dl class="pojmy-list">
+      <dt>Latence vs propustnost</dt><dd>Doba odezvy jedné operace vs množství práce za čas.</dd>
+      <dt>Prostorová / časová lokalita</dt><dd>Brzy sáhnu na blízkou adresu / na stejnou adresu znovu – princip, na němž stojí cache.</dd>
+      <dt>Cache line</dt><dd>Nejmenší přenášená jednotka cache, typicky <strong>64 B</strong>; sekvenční přístup ji využije celou.</dd>
+      <dt>Pipelining</dt><dd>Překrývání fází vykonání více instrukcí pro vyšší propustnost.</dd>
+      <dt>Branch predictor / branch penalty</dt><dd>Predikce směru skoku; při chybě flush pipeline a restart.</dd>
+      <dt>Superskalár</dt><dd>Více ALU → více instrukcí za takt (úkol kompilátoru je seřadit nezávislé instrukce).</dd>
+      <dt>Out-of-order</dt><dd>Vykonání připravených instrukcí dřív; jiná jádra mohou vidět zápisy v jiném pořadí.</dd>
+      <dt>SMT / Hyper-threading</dt><dd>Zdvojené registry (ne ALU); ~20–30 % propustnosti navíc, riziko side-channelů.</dd>
+      <dt>NUMA / first-touch</dt><dd>Lokální vs vzdálená paměť (~15 % pomalejší); OS alokuje k vláknu, které paměť poprvé použije.</dd>
+    </dl>
+  </div>
+
+  <h2 id="bentley">Náhled: Bentleyho pravidla</h2>
+  <p><em>Writing Efficient Programs</em> (Jon L. Bentley, 1982) je katalog <strong>opakujících se
+  optimalizačních vzorů</strong> – žádná magie, spíš „selský rozum“, ale vidět je pohromadě je silné.
+  MIT (kurz 6.172) je zaktualizoval jako „New Bentley Rules“. Myšlenka: ještě než sáhnete po profileru,
+  mějte v hlavě <strong>slovník transformací</strong>, které kód zrychlují. Čtyři kategorie:</p>
+  <table>
+    <thead><tr><th>Datové struktury</th><th>Logika</th><th>Smyčky</th><th>Funkce</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>packing/encoding, augmentace, precomputace, init v době překladu, caching, líné vyhodnocení, řídkost</td>
+        <td>constant folding, eliminace společných podvýrazů, algebraické identity, short-circuit, řazení testů, rychlá cesta, slučování testů</td>
+        <td>hoisting, sentinely, unrolling, fúze smyček, eliminace zbytečných iterací</td>
+        <td>inlining, eliminace koncové rekurze, zhrubnutí rekurze, odstranění zbytečné abstrakce na hot path</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Podrobně se jim věnuje přednáška <a href="02-bentley-kompilator-profiling.html">P2</a>.</p>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P1</span> Co je efektivní software a podle čeho se posuzuje?</summary>
+    <div class="odpoved">
+      <p>Software, který dobře využívá dostupné prostředky (CPU, paměť, energie, síť). Posuzuje se podle
+      <strong>rychlosti</strong> (latence + propustnost), <strong>ceny</strong> a schopnosti vejít se do
+      <strong>omezení</strong> (embedded, real-time). Výkon ale bývá až za korektností, udržovatelností
+      a cenou vývoje – pozor na předčasnou optimalizaci.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P1</span> Popiš optimalizační smyčku.</summary>
+    <div class="odpoved">
+      <p><strong>Změř → Pochop → Změň (jednu věc) → Ověř → opakuj.</strong> Měřit první (ne hádat) a měnit
+      po jednom, jinak nepoznáš, co zabralo.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P1</span> Jak je organizovaná paměťová hierarchie a proč existuje? Jak velký je rozdíl latencí?</summary>
+    <div class="odpoved">
+      <p>Od nejrychlejší/nejmenší: registry → L1 → L2 → L3 → hlavní paměť (DRAM) → disk. Existuje, protože
+      paměť je <strong>pomalá oproti CPU</strong>; cache využívá <strong>prostorovou a časovou lokalitu</strong>.
+      Rozdíl: L1 ~1 ns vs DRAM ~120 ns, tj. <strong>~400×</strong>. Cache přenáší <strong>64B řádky</strong>,
+      takže sekvenční přístup (struct-of-arrays) může být řádově rychlejší než rozházený.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P1</span> Vysvětli pipelining a predikci skoků. Co je branch penalty?</summary>
+    <div class="odpoved">
+      <p>Vykonání instrukce se rozdělí do fází (fetch, decode, …, writeback) a instrukce jimi protékají
+      paralelně. U podmíněných skoků CPU neví směr → <strong>prediktor</strong> hádá. Při chybné predikci
+      se spekulativně načtené instrukce zahodí (flush) a pipeline restartuje = <strong>branch penalty</strong>.
+      Prediktory bývají 95 %+ přesné; u superskalárů je penalizace citelnější.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P1</span> Vysvětli superskalární a out-of-order vykonávání. Jak souvisí se synchronizací?</summary>
+    <div class="odpoved">
+      <p><strong>Superskalár:</strong> více ALU → více nezávislých instrukcí za takt. <strong>Out-of-order:</strong>
+      vykoná připravené instrukce dřív, zatímco čeká na pomalé (cache miss). Z pohledu jednoho jádra je vše
+      korektní, ale <strong>jiná jádra mohou vidět zápisy v jiném pořadí</strong> – proto obyčejná proměnná
+      jako zámek bez atomik/bariér nefunguje.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P1</span> Co je SMT (Hyper-threading)? Jaká je jeho bilance?</summary>
+    <div class="odpoved">
+      <p>Zdvojí se <strong>jen registry, ne ALU</strong>; když jedno HW vlákno čeká na paměť, druhé počítá.
+      Pro SW vypadá jako další jádro. Přínos ~<strong>20–30 % propustnosti</strong> za ~5 % tranzistorů,
+      ale sdílené jednotky umožňují side-channel útoky (Spectre).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P1</span> Co je NUMA a proč na ní záleží?</summary>
+    <div class="odpoved">
+      <p>Každý socket má lokální paměť; vzdálený přístup přes interconnect je ~15 % pomalejší. OS alokuje
+      paměť politikou <strong>first-touch</strong> (lokálně k vláknu). Migrace vlákna učiní paměť vzdálenou →
+      propad výkonu; vlákna/paměť se připínají přes <code>numactl</code>/<code>taskset</code>. (NUMA + TLAB
+      se objevuje i v Java části – viz <a href="11-jvm-alokace-objektu.html">P11</a>.)</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li>Efektivní SW dobře využívá CPU/paměť/energii/síť; výkon je málokdy priorita č. 1 – pozor na předčasnou optimalizaci.</li>
+      <li>Optimalizuj smyčkou <strong>Změř → Pochop → Změň → Ověř</strong>.</li>
+      <li>Paměť je hlavní brzda: L1 ~1 ns vs DRAM ~120 ns (~400×); cache těží z lokality a načítá <strong>64B řádky</strong> → sekvenční přístup je řádově rychlejší.</li>
+      <li>HW je optimalizován pro <strong>běžný případ</strong>: pipelining + predikce skoků, superskalár, out-of-order.</li>
+      <li>Out-of-order/superskalár → jiná jádra vidí zápisy v jiném pořadí → bez atomik/bariér zámky nefungují.</li>
+      <li>SMT zdvojí registry (~20–30 % navíc), NUMA = lokální vs vzdálená paměť (first-touch), moderní čipy = chiplety a heterogenní SoC.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="index.html">← Zpět na obsah</a></span>
+    <span><a href="02-bentley-kompilator-profiling.html">Další: Bentleyho pravidla, kompilátor, profiling →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

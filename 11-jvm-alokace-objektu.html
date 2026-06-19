@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P11 – JVM: alokace objektů, reference · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="10-jvm-analyza-pameti.html">← předchozí: Analýza paměti</a>
+    <a class="nav-link" href="12-virtualizace.html">další: Virtualizace →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 11 · <span class="badge badge-java">Java/JVM část</span></div>
+    <h1>JVM: alokace objektů, bloom filtry, reference, caching</h1>
+    <p class="perex">Jak HotSpot JVM alokuje objekty levně pomocí techniky bump-the-pointer
+    a thread-local allocation bufferů (TLAB), jak escape analysis v JIT kompilátoru dokáže
+    alokaci na haldě úplně vynechat (scalar replacement, lock elision), co jsou bloom filtry
+    a jejich counting varianta, jaké typy referencí Java nabízí (strong, soft, weak, final,
+    phantom) a jak z nich postavit efektivní cache.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#alokace">Rychlá alokace objektů</a></li>
+      <li><a href="#tlab">TLAB a NUMA</a></li>
+      <li><a href="#header">Hlavička objektu a příklad</a></li>
+      <li><a href="#chovani">Pochop chování své aplikace</a></li>
+      <li><a href="#escape">Escape analysis</a></li>
+      <li><a href="#scalar">Scalar replacement a lock elision</a></li>
+      <li><a href="#bloom">Bloom filtry</a></li>
+      <li><a href="#counting">Counting a bitwise bloom filtr</a></li>
+      <li><a href="#reference">Typy referencí</a></li>
+      <li><a href="#reachability">Dosažitelnost objektu</a></li>
+      <li><a href="#weak">Weak reference</a></li>
+      <li><a href="#soft">Soft reference a cache</a></li>
+      <li><a href="#final-phantom">Final a phantom reference</a></li>
+      <li><a href="#zivotnicyklus">Životní cyklus a cena referencí</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="alokace">Rychlá alokace objektů</h2>
+  <p>HotSpot alokuje nové objekty v mladé generaci (edenu) extrémně levně pomocí techniky
+  <strong>bump-the-pointer</strong>: JVM si udržuje ukazatel na konec naposledy alokovaného
+  objektu a nový objekt prostě umístí do volného místa za ním – jen <strong>posune (bumpne)
+  ukazatel</strong> o velikost objektu. Není potřeba žádný správce volných bloků; alokace
+  je tak otázkou několika strojových instrukcí.</p>
+
+  <h2 id="tlab">TLAB a NUMA</h2>
+  <div class="box pisnicka" id="pisen-numa-a-tlab">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>NUMA a TLAB</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s18">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p>Kdyby všechna vlákna posouvala jeden sdílený ukazatel, musela by se synchronizovat
+  (atomické operace), což by se stalo úzkým hrdlem. Řešením jsou
+  <strong>thread-local allocation buffers (TLAB)</strong>: každé vlákno dostane vlastní
+  výhradní oblast (dohromady jen pár procent edenu), <strong>zarovnanou na NUMA</strong>.</p>
+  <ul>
+    <li>Odstraňuje souběhové úzké hrdlo – mezi vlákny <strong>není potřeba žádná
+      synchronizace</strong> (odpadají pomalejší atomické operace).</li>
+    <li>Eliminuje <strong>false sharing</strong> – každý cache řádek používá jen jedno
+      CPU jádro.</li>
+    <li>Výhradní alokace stojí jen <strong>pár nativních instrukcí</strong>.</li>
+    <li>Synchronizace je nutná jen při <strong>občasném doplnění (refill) TLABu</strong>
+      (založeno na instrukci <code>lock inc</code>).</li>
+    <li>TLABy se <strong>adaptivně přizpůsobují</strong> podle vlákna.</li>
+    <li><strong>Nefunguje</strong> dobře pro thread pooly s proměnlivým tlakem na alokaci.</li>
+  </ul>
+  <p>Objekty alokované v TLABu navíc těží z <strong>cache lokality</strong> a NUMA
+  zarovnání. Možnosti ladění:</p>
+  <pre><code>-XX:+UseTLAB ; -XX:AllocatePrefetchStyle=1 ; -XX:+PrintTLAB
+-XX:AllocateInstancePrefetchLines=1 ; -XX:AllocatePrefetchLines=3
+-XX:+ResizeTLAB ; -XX:TLABSize=10k ; -XX:MinTLABSize=2k</code></pre>
+
+  <div class="box poznamka">
+    <p class="box-title">💬 TLAB v praxi (Flight Recorder)</p>
+    <p>Při milionu alokací objektu <code>Structure</code> (s compressed OOPs) prošlo
+    prakticky vše přes TLABy: <strong>65 TLABů</strong>, průměrná velikost
+    <strong>718,96 kB</strong>, celkem <strong>45,44 MB</strong>, rychlost alokace
+    <strong>439,59 MB/s</strong>; mimo TLABy <strong>0 objektů</strong>. Allocation
+    pressure: třída <code>Structure</code> (80 B/instanci) tvořila <strong>98,46 %</strong>,
+    pomocné pole <code>java.lang.Object[]</code> zbylých <strong>1,54 %</strong>.</p>
+  </div>
+
+  <h2 id="header">Hlavička objektu a příklad alokace</h2>
+  <p>Každý objekt na haldě má hlavičku:</p>
+  <table>
+    <thead><tr><th>Část hlavičky</th><th>Velikost</th><th>Poznámka</th></tr></thead>
+    <tbody>
+      <tr><td>mark word</td><td>8 B</td><td>identifikace stavu, zámek, hash…</td></tr>
+      <tr><td>Klass ref.</td><td>4 B / 8 B</td><td>4 B s compressed OOPs, 8 B se standard OOPs</td></tr>
+      <tr><td>data objektu</td><td>—</td><td>vlastní pole objektu</td></tr>
+    </tbody>
+  </table>
+  <p>Tatáž třída <code>Structure</code> má <strong>80 B</strong> s compressed OOPs vs.
+  <strong>96 B</strong> se standard OOPs (rozdíl je právě 8 B vs. 4 B v Klass referenci).</p>
+  <p>Vygenerovaný strojový kód (C2, standard OOPs, objekt 96 B; 64bit JVM 8, syntaxe AT&amp;T)
+  pro <code>new Structure(...)</code>:</p>
+  <pre><code>; --- alokace v TLABu ---
+mov    0x60(%r15),%r11          ; přečti alokační ukazatel TLABu
+mov    %r11,%r10
+add    $0x60,%r10               ; bumpni ukazatel (0x60 = 96 bajtů)
+cmp    0x70(%r15),%r10          ; vejde se objekt do TLABu?
+mov    %r10,0x60(%r15)          ; ulož alokační ukazatel TLABu
+prefetchnta 0xc0(%r10)          ; prefetch tři cache řádky dopředu
+; --- příprava nulové inicializace ---
+mov    %r11,%rdi                ; RDI = data objektu
+mov    $0x10,%rdi
+mov    $0xa,%ecx                ; ECX = 10 qwordů
+; --- vyplnění hlavičky objektu ---
+movabs $0x220558080,%r10        ; {metadata('Structure')}
+mov    0xa8(%r10),%r8
+mov    %r8,(%r11)
+mov    %r10,0x8(%r11)
+; --- nulová inicializace instance ---
+; (rep stos %rax přes data objektu)</code></pre>
+  <p>Kroky: přečti alokační ukazatel TLABu → bumpni ukazatel → zkontroluj, zda se objekt
+  vejde → ulož ukazatel → <strong>prefetch</strong> tří cache řádků dopředu → příprava
+  <strong>nulové inicializace</strong> (RDI = data, ECX = 10 qwordů) → vyplnění
+  <strong>hlavičky</strong> → <strong>vynulování</strong> instance.</p>
+
+  <h2 id="chovani">Pochop chování své aplikace</h2>
+  <p>Triviálně vypadající kód může být velmi neefektivní. Alokačně náročná stream pipeline,
+  která ponechá jen řetězce bez číslic (regex <code>[^0-9]+</code>), seřadí je case-insensitive
+  pozpátku a vrátí jako <code>String[]</code>, alokovala pro 40 prvků (27 bez číslic)
+  <strong>1 486 objektů / 101 944 B</strong> (≈ 99 % vzorku) – regex <code>Pattern</code>/
+  <code>Matcher</code>, interní ASM struktury, boxované a dočasné pole. Ekvivalentní ručně
+  napsaná smyčka (bez streamu, regexu a mezikolekcí, s předpočítaným komparátorem) alokovala
+  pro stejný vstup jen <strong>2 objekty / 304 B</strong>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Klíčový poznatek</p>
+    <p>Velké množství malých, krátce žijících objektů aplikaci zpomaluje, i když je alokace
+    v TLABu rychlá – <strong>nealokovat je pořád rychlejší</strong>. Zvyšuje to tlak na mladou
+    generaci a tím na <strong>minor GC</strong>; ostatní objekty se dříve promují do staré
+    generace, což znamená víc <strong>major GC</strong>. Velké množství dlouho žijících objektů
+    je ještě horší: při každém sběru se musí projít všechny živé objekty a kompaktující GC je
+    musí kopírovat (rozbití lokality, riziko false sharingu). Vždy zkontroluj, zda se uplatní
+    <strong>escape analysis</strong>, nebo uprav kód.</p>
+  </div>
+
+  <h2 id="escape">Escape analysis – ne každý objekt potřebuje haldu</h2>
+  <div class="box pisnicka" id="pisen-unikne-nebo-ne">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Unikne nebo ne (escape-analysis)</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s08">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p><strong>Escape analysis</strong> je analýza, kterou provádí <strong>C2 kompilátor</strong>
+  nad nově vytvářenými objekty <strong>až po inliningu horkých metod</strong>. Zjišťuje, zda
+  objekt „unikne“ (escape) z metody/vlákna, ve kterém vznikl. Pro programátora je důležitá
+  proto, že rozhoduje, zda se objekt vůbec bude alokovat na haldě – pokud ne, mizí veškerá
+  zátěž GC. Protože probíhá <strong>až po inliningu</strong>, JIT inlining přímo
+  <strong>mění rozsah escape analysis</strong>: díky inliningu vidí kompilátor celý strom volání
+  uvnitř jedné metody, takže objekty, které by „unikly“ přes volání metody, se po vložení těla
+  stávají lokálními a mohou být klasifikovány jako NoEscape.</p>
+  <p>Každá alokace se klasifikuje do jedné ze tří kategorií:</p>
+  <div class="box pojmy">
+    <p class="box-title">🔑 Tři klasifikace escape analysis</p>
+    <dl class="pojmy-list">
+      <dt>NoEscape</dt><dd>Objekt <strong>neunikne z metody</strong>, ve které vznikl. Všechna
+      jeho použití jsou inlinovaná, nikdy se nepřiřadí do statického ani objektového pole, jen
+      do lokálních proměnných. Každé použití musí být určitelné v době JIT překladu a nesmí
+      záviset na nepředvídatelném řízení toku; je-li objekt <strong>pole</strong>, indexace
+      do něj musí být <strong>konstanta v době JIT</strong>.</dd>
+      <dt>ArgEscape</dt><dd>Objekt je <strong>předán jako argument</strong> do metody (nebo z ní
+      odkazován), ale <strong>neunikne z aktuálního vlákna</strong>.</dd>
+      <dt>GlobalEscape</dt><dd>Objekt je <strong>přístupný z jiné metody nebo vlákna</strong>
+      (globálně viditelný).</dd>
+    </dl>
+  </div>
+
+  <h2 id="scalar">Scalar replacement, stack allocation, lock elision</h2>
+  <ul>
+    <li><strong>NoEscape</strong> objekty se <strong>nealokují na haldě</strong>; JIT provede
+      <strong>scalar replacement</strong>: objekt rozloží na jednotlivá pole uložená
+      <strong>na zásobníku nebo v registrech</strong> (de facto stack allocation). Hodnoty
+      automaticky zmizí, jakmile se <strong>uvolní rámec zásobníku</strong> (návrat z metody).
+      <strong>Nulový dopad na GC</strong> a reference se nemusí sledovat přes
+      <strong>write barriers</strong>.</li>
+    <li><strong>ArgEscape</strong> objekty se alokují na haldě, ale lze
+      <strong>vyřadit operace se zámkem (lock elision)</strong> – odebrání zbytečné
+      synchronizace.</li>
+  </ul>
+  <p>Příklad: třída <code>Vector</code> s dvěma <code>int</code> poli a metodou
+  <code>compute</code>:</p>
+  <pre><code>public static class Vector {
+    private final int a1, a2;
+    public Vector(int a1, int a2) { this.a1 = a1; this.a2 = a2; }
+    public Vector add(Vector v) {
+        return new Vector(a1 + v.getA1(), a2 + v.getA2());
+    }
+    public int mul(Vector v) {
+        return v.getA1() * a1 + v.getA2() * a2;
+    }
+    public int getA1() { return a1; }
+    public int getA2() { return a2; }
+}
+
+public int compute(int val) {
+    Vector v = new Vector(val + 1, val * 2);
+    synchronized (v) {
+        return v.add(v).mul(v);
+    }
+}</code></pre>
+  <p>C2 vloží celý strom volání do <code>compute</code> (konstruktor, <code>add</code>,
+  <code>mul</code>, akcesory) a výsledný strojový kód neobsahuje <strong>žádnou alokaci,
+  žádnou synchronizaci</strong> – celý výpočet probíhá jen v registrech:</p>
+  <pre><code>sub    $0x18,%rsp
+mov    %rbp,0x10(%rsp)
+mov    %edx,%r11d
+mov    %edx,%r11d
+add    %edx,%r10d
+shl    %r10d
+add    %r10d,%r8d
+add    %r10d,%r8d
+imul   %r10d,%r8d
+add    $0x2,%r11d
+inc    %edx
+imul   %r11d,%edx
+mov    %edx,%eax
+add    %r8d,%eax
+add    $0x10,%rsp
+pop    %rbp
+test   %eax,-0x21742ec(%rip)   ; safepoint poll
+retq</code></pre>
+  <p>Tři objekty <code>Vector</code> jsou scalar-replaced a zámek <code>synchronized (v)</code>
+  je elidován.</p>
+
+  <h2 id="bloom">Bloom filtry</h2>
+  <div class="box pisnicka" id="pisen-blum-filter">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Blum Filter</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s19">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p><strong>Bloom filtr</strong> je paměťově úsporná pravděpodobnostní množina. Operace:</p>
+  <ul>
+    <li><strong>add</strong> – přidání objektu do množiny,</li>
+    <li><strong>test</strong> – test, zda je objekt prvkem množiny,</li>
+    <li><strong>mazání není podporováno</strong>.</li>
+  </ul>
+  <p>Výhodou jsou <strong>výrazné úspory paměti</strong> (jednotky bitů na prvek) oproti běžným
+  kolekcím – za cenu malé pravděpodobnosti <strong>false positive</strong> (typicky kolem
+  <strong>1 %</strong>), se <strong>zaručenou nepřítomností false negatives</strong>. Prvky se
+  <strong>neukládají explicitně</strong>. Operace add i query mají <strong>konstantní
+  složitost</strong> i při kolizích. Hodí se na <strong>big-data</strong> zpracování: testuje
+  se, zda objekt <strong>určitě není přítomen</strong> – tím lze ušetřit mnoho
+  <strong>I/O operací</strong> (vyloučit čtení celé kolekce ze souboru, když filtr v RAM rovnou
+  řekne „není tam“).</p>
+
+  <h3>Mechanismus</h3>
+  <ul>
+    <li>použij <strong>bitové pole</strong> s <strong>m</strong> bity,</li>
+    <li>použij <strong>k</strong> nezávislých <strong>hashovacích funkcí</strong>,</li>
+    <li><strong>add – O(k)</strong>: zahashuj prvek všemi k funkcemi a nastav příslušné bity na 1,</li>
+    <li><strong>query</strong>: zahashuj dotazovaný prvek stejnými k funkcemi a zkontroluj bity –
+      je-li <strong>kterýkoli 0</strong>, prvek <strong>určitě chybí</strong>; jsou-li
+      <strong>všechny 1</strong>, je <strong>pravděpodobně přítomen</strong> (možný false
+      positive).</li>
+  </ul>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-green"><span class="dn-ico">➕</span><span class="dn-title">add: prvek x</span><span class="dn-sub">g(x), f(x), h(x) → nastav bity na 1</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">bitové pole (m bitů)</span><span class="dn-sub">indexy 0 .. m-1</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-ico">🔍</span><span class="dn-title">query: prvek y</span><span class="dn-sub">g(y), f(y), h(y) → stačí jediný 0 a y určitě chybí</span></div>
+    </div>
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+    </div>
+    <div class="diag-cap">k hashovacích funkcí (g, f, h) mapuje prvek na bity pole; query: kterýkoli 0 → určitě chybí, všechny 1 → pravděpodobně přítomen</div>
+  </div>
+
+  <h3>Dimenzování</h3>
+  <p>Počet bitů filtru <strong>m</strong> pro <code>n</code> prvků a cílovou pravděpodobnost
+  false positive <code>p</code>, a počet hashovacích funkcí <strong>k</strong>:</p>
+  <pre><code>m = ceil( n · ln(p) / ln(1 / 2^(ln 2)) )
+k = round( ln(2) · m/n )</code></pre>
+  <p>Křivky závislosti <code>p</code> na počtu prvků <code>n</code> (pro pevné velikosti pole
+  <code>log2(m) = 8,12,…,36</code>) zůstávají nízko, dokud se <code>n</code> nepřiblíží kapacitě
+  filtru, pak <code>p</code> prudce stoupá k 1; větší <code>m</code> posouvá „koleno“ k větším
+  <code>n</code>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Příklad úspory</p>
+    <p>Uložit <strong>1 milion řetězců</strong> o celkové velikosti 25 MB: <code>Set&lt;String&gt;</code>
+    si vyžádá <strong>&gt; 50 MB</strong> retained size. Bloom filtr s <strong>1% FP</strong>
+    potřebuje jen <strong>1,13 MB</strong> a <strong>7 hashovacích funkcí</strong> – to je více
+    než <strong>44× méně</strong> a <strong>99 % negativních dotazů je skutečně negativních</strong>.</p>
+  </div>
+
+  <h2 id="counting">Counting a bitwise bloom filtr</h2>
+  <div class="box pojmy">
+    <p class="box-title">🔑 Rozšíření bloom filtru</p>
+    <dl class="pojmy-list">
+      <dt>Counting bloom filter</dt><dd>Podporuje <strong>delete</strong> a odhad počtu. Každá
+      pozice je <strong>bucket</strong> (např. <strong>3 bity</strong>) fungující jako čítač:
+      <strong>add</strong> = inkrement, <strong>delete</strong> = dekrement (odhadovaný počet je
+      <strong>minimum z čítačů</strong>), <strong>query</strong> = test na nenulové čítače.
+      Problém <strong>přetečení bucketu</strong>: po dosažení max. hodnoty už nelze inkrementovat
+      a mazání může <strong>zvyšovat míru false negatives</strong>.</dd>
+      <dt>Bitwise bloom filter</dt><dd>Používá <strong>více counting filtrů přidávaných
+      dynamicky</strong>, čímž řeší problémy s přetékáním a mazáním.</dd>
+    </dl>
+  </div>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-green"><span class="dn-ico">➕</span><span class="dn-title">add: prvek x</span><span class="dn-sub">g(x), f(x), h(x) → inkrement čítačů</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">pole bucketů</span><span class="dn-sub">např. 3 bity každý = čítač</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-ico">🔍</span><span class="dn-title">query: prvek y</span><span class="dn-sub">test na nenulové čítače</span></div>
+    </div>
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box accent"><span class="db-title">2</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+      <div class="diag-box"><span class="db-title">0</span></div>
+      <div class="diag-box accent"><span class="db-title">1</span></div>
+    </div>
+    <div class="diag-cap">každá buňka je čítač: add = inkrement, delete = dekrement, query = test na nenulové čítače</div>
+  </div>
+
+  <h2 id="reference">Typy referencí v Javě</h2>
+  <div class="box pisnicka" id="pisen-ctyri-typy-referenci">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Čtyři typy referencí</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s01">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p>Reference umožňují pre- i post-mortem hooky a jsou pružnější než finalizace. Seřazeno od
+  nejsilnější po nejslabší:</p>
+  <table>
+    <thead><tr><th>Typ</th><th>API</th><th>Reference queue</th><th>get()</th></tr></thead>
+    <tbody>
+      <tr><td><strong>strong</strong></td><td>běžná jazyková reference</td><td>—</td><td>—</td></tr>
+      <tr><td><strong>soft</strong></td><td><code>SoftReference</code></td><td>volitelná</td><td>referent / null</td></tr>
+      <tr><td><strong>weak</strong></td><td><code>WeakReference</code></td><td>volitelná</td><td>referent / null</td></tr>
+      <tr><td><strong>final</strong></td><td>interní, package-private</td><td>povinná (interní)</td><td>—</td></tr>
+      <tr><td><strong>phantom</strong></td><td><code>PhantomReference</code></td><td>povinná</td><td>vždy null</td></tr>
+    </tbody>
+  </table>
+  <p>Objekt <code>Reference</code> drží referenta, kterého může GC vyčistit:</p>
+  <pre><code>ref = new WeakReference(foo, rq);</code></pre>
+  <p>Reference se <strong>zařadí (enqueue) do určené <code>ReferenceQueue</code></strong>, když
+  GC zjistí, že referent se stal méně dosažitelným; referent se pak uvolní. Zařazení proběhne,
+  <strong>jen pokud držíte silnou referenci na samotný objekt reference</strong>. Nejprve musí
+  proběhnout <strong>GC</strong>, pak je do fronty vloží vlákno <strong>Reference Handler</strong>.
+  Sama <code>Reference</code> je jen další objekt na haldě – <strong>48 B</strong> v 64bit JVM
+  se standard OOPs. Strong a final reference jsou v API „neviditelné“ (strong je obyčejná
+  jazyková reference, final je interní package-private třída).</p>
+
+  <h2 id="reachability">Dosažitelnost objektu</h2>
+  <p>Dosažitelnost objektu je <strong>nejsilnější</strong> typ reference na <strong>libovolné</strong>
+  cestě od GC rootu – silnější reference kdekoli na cestě přebije slabší. Úrovně (nejsilnější →
+  nejslabší):</p>
+  <dl class="pojmy-list">
+    <dt>strongly reachable</dt><dd>dosažitelný z <strong>GC rootů</strong>.</dd>
+    <dt>softly reachable</dt><dd>není strongly, ale dosažitelný přes <strong>soft referenci</strong>.</dd>
+    <dt>weakly reachable</dt><dd>není strongly ani softly, ale dosažitelný přes
+      <strong>weak referenci</strong>; odkaz na referenta se <strong>vyčistí</strong> a objekt
+      je <strong>způsobilý k finalizaci</strong>.</dd>
+    <dt>eligible for finalization</dt><dd>není strongly/softly/weakly a má netriviální metodu
+      <code>finalize</code>.</dd>
+    <dt>phantom reachable</dt><dd>není strongly/softly/weakly, je <strong>již finalizovaný</strong>
+      (nebo nemá <code>finalize</code>), ale stále dosažitelný přes <strong>phantom referenci</strong>.</dd>
+    <dt>unreachable</dt><dd>žádné z výše uvedeného – <strong>způsobilý k uvolnění</strong> GC.</dd>
+  </dl>
+
+  <h2 id="weak">Weak reference</h2>
+  <p>Slouží k <strong>pre-finalizačnímu zpracování</strong>. Typická použití:</p>
+  <ul>
+    <li><strong>nedrž objekt naživu jen kvůli této referenci</strong>;</li>
+    <li>objekt cíl „nevlastníme“, např. <strong>listenery</strong>;</li>
+    <li><strong>kanonizující mapy</strong> – např. <code>ObjectOutputStream</code>;</li>
+    <li>pružnější forma finalizace (priorita úklidu, rozhodnutí kdy úklid spustit).</li>
+  </ul>
+  <p><code>get()</code> vrací referenta, pokud nebyl vyčištěn, jinak <strong>null</strong>.
+  Referenta čistí GC (při předání Reference Handleru). <strong>Před použitím zkopíruj referenta
+  do silné reference a ověř, že není null.</strong> <code>WeakHashMap&lt;K,V&gt;</code> používá
+  <strong>slabé klíče</strong>; úklid probíhá při běžných operacích. Pro úklid externích zdrojů
+  lze použít vyhrazené vlákno, které čte z <code>ReferenceQueue</code> (<code>remove()</code> blokuje,
+  <code>poll()</code> ne):</p>
+  <pre><code>ReferenceQueue&lt;Image3&gt; refQueue = NativeImage3.referenceQueue();
+while (true) {
+    NativeImage3 nativeImg = (NativeImage3) refQueue.remove();
+    nativeImg.dispose();
+}</code></pre>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Implicitní silná reference na this</p>
+    <p>Vlastní finalizér postavený nad <code>WeakReference</code> a vyhrazeným daemon vláknem
+    funguje jen tehdy, pokud nedrží objekt silně. Vytvoříte-li ho uvnitř <strong>instanční</strong>
+    metody, anonymní podtřída zachytí <strong>implicitní silnou referenci na obklopující
+    <code>this</code></strong>, čímž udrží sledovaný objekt strongly reachable a celý
+    weak-reference úklid zhatí.</p>
+  </div>
+
+  <h2 id="soft">Soft reference a efektivní cache</h2>
+  <p>Také <strong>pre-finalizační</strong>. Typická použití: <strong>chci referenta podržet,
+  ale mohu ho ztratit</strong> – ideální pro <strong>cache</strong> (objekty s drahou
+  inicializací, často používané informace). Uvolní se jen pod <strong>tlakem na paměť</strong>
+  podle využití haldy:</p>
+  <pre><code>now − timestamp &gt; (SoftRefLRUPolicyMSPerMB * amountOfFreeMemoryInMB)</code></pre>
+  <pre><code>-XX:SoftRefLRUPolicyMSPerMB=N   # výchozí 1000</code></pre>
+  <p><strong>Všechny soft reference se vyčistí, než se vyhodí <code>OutOfMemoryError</code>.</strong>
+  <code>get()</code> vrací referenta (jinak null) a <strong>aktualizuje timestamp posledního
+  použití</strong> – nedávno použité objekty tak mohou zůstat naživu déle.</p>
+  <div class="box poznamka">
+    <p class="box-title">💬 Efektivní cache</p>
+    <p>Efektivní LRU evidence kombinovaná s reakcí na tlak na paměť skládá dvě struktury:
+    <strong><code>WeakHashMap</code></strong> mapuje <code>key → Value</code>; nejnověji použitý
+    záznam (<code>key1</code>) je držen <strong>silnou</strong> referencí a svá data obaluje do
+    <strong><code>SoftReference</code></strong> (přežije běžné GC, ale lze ho zahodit pod tlakem).
+    <strong><code>SoftCache</code></strong> nad polem <code>ValueHolder[]</code> funguje jako
+    „hard cache“ – drží <strong>silné</strong> reference na nedávno použité držitele řazené podle
+    čerstvosti (nejnovější nahoře, nejstarší dole); pod tlakem se nejdřív uvolní nejstarší.</p>
+  </div>
+
+  <h2 id="final-phantom">Final a phantom reference</h2>
+  <h3>Final reference – objekty s netriviálním <code>finalize()</code></h3>
+  <p>Final hook nelze použít přímo (třída je package-private). Alokace instance s netriviálním
+  <code>finalize()</code> je <strong>pomalejší</strong>: runtime volá <code>Finalizer.register</code>
+  (s možným globálním safepointem, není inlinováno, všechny reference se ukládají na zásobník do
+  OopMap), alokuje <code>FinalReference</code> a synchronizovaně ho eviduje. Referent
+  <strong>není vyčištěn ani uvolněn před finalizací</strong> (a s ním ani objekty, na které
+  odkazuje).</p>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Úskalí finalizace</p>
+    <p>Pro všechny <code>FinalReference</code> existuje jen <strong>jediné vlákno
+    <code>Finalizer</code></strong>: zavolá <code>finalize()</code> a pak vyčistí referenta.
+    Problémy: <strong>vzkříšení objektu</strong> (když <code>finalize()</code> obnoví silnou
+    referenci), <strong>žádné řízení priority</strong>, dlouho běžící <code>finalize()</code>
+    zdrží veškerou ostatní finalizaci, a protože jde o <strong>daemon vlákno</strong>, JVM se
+    může ukončit dříve, než finalizace doběhne. Finalizované objekty se uvolní až při
+    <strong>následujícím GC cyklu</strong>.</p>
+  </div>
+
+  <h3>Phantom reference</h3>
+  <p><strong>Post-finalizační zpracování; pre-mortem hook.</strong> Typická použití: signál,
+  že objekt už <strong>není používán, ještě před jeho uvolněním</strong>, a zejména garance
+  <strong>pořadí finalizace</strong> objektů (s weak referencí nelze). <code>get()</code>
+  vrací <strong>vždy null</strong> (referenta lze přečíst jen reflexí – tím se zabrání obnovení
+  silné reference). <strong>Reference queue je v konstruktoru povinná.</strong> Referent
+  <strong>není vyčištěn ani uvolněn</strong>, dokud se všechny phantom reference nestanou
+  nedosažitelnými nebo se ručně nezavolá <strong><code>clear()</code></strong>; ani objekty,
+  na které odkazuje, nelze uvolnit.</p>
+
+  <h2 id="zivotnicyklus">Životní cyklus a cena referencí</h2>
+  <ul>
+    <li>Jsou-li na objekt jen <strong>soft nebo weak</strong> reference, stačí k uvolnění
+      referenta <strong>jeden GC cyklus</strong>.</li>
+    <li>Má-li objekt aspoň jednu <strong>final nebo phantom</strong> referenci, je potřeba
+      <strong>více GC cyklů</strong> (finalize → enqueue phantomu → <code>clear()</code> →
+      uvolnění).</li>
+  </ul>
+  <p>Vlákno <strong>Reference Handler</strong> zařadí příslušné reference do jejich
+  <code>ReferenceQueue</code>, jsou-li definovány. Cena referencí se sčítá:</p>
+  <ul>
+    <li><strong>vytvoření</strong>: alokace instance + synchronizace pro sledování,</li>
+    <li><strong>GC</strong>: sledování živých referencí bez následování referentů, sestavení
+      seznamu živých <code>Reference</code> přes pole <strong><code>discovered</code></strong>,
+      režie na referenci bez ohledu na to, zda se referent sebere (pozorovatelné přes
+      <code>-XX:+PrintReferenceGC -XX:+PrintGCDetails</code>),</li>
+    <li><strong>enqueue</strong>: operace Reference Handleru vyžadují synchronizaci,</li>
+    <li><strong>zpracování fronty</strong>: synchronizovaná konzumace.</li>
+  </ul>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">7 b</span> Co je escape analysis v JVM a proč je důležitá pro programátora? V jaké fázi se aplikuje? Mění inline optimalizace v JIT rozsah escape analysis? Vyjmenuj a popiš tři klasifikace. (7 b)</summary>
+    <div class="odpoved">
+      <p>Escape analysis je analýza C2 kompilátoru, která u nově vytvářených objektů zjišťuje,
+      zda „uniknou“ z metody/vlákna. Pro programátora je důležitá, protože rozhoduje, jestli se
+      objekt vůbec alokuje na haldě – NoEscape objekty se nealokují (scalar replacement) a mizí
+      tak zátěž GC. Aplikuje se <strong>až po inliningu horkých metod</strong>. JIT inlining
+      <strong>mění rozsah escape analysis</strong>: vložením těl volaných metod do jedné metody
+      vidí kompilátor celý strom volání, takže objekty, které by jinak unikly přes volání, se
+      stanou lokálními a mohou být NoEscape.</p>
+      <p>Tři klasifikace: <strong>NoEscape</strong> – objekt neunikne z metody, všechna použití
+      inlinovaná, jen lokální proměnné → scalar replacement (pole/registry, žádný GC, žádné write
+      barriers). <strong>ArgEscape</strong> – předán jako argument, ale neunikne z vlákna →
+      alokace na haldě, ale lze odebrat zámky (lock elision). <strong>GlobalEscape</strong> –
+      přístupný z jiné metody/vlákna.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> 4 typy non-strong referencí: vyjmenuj a popiš jejich využití.</summary>
+    <div class="odpoved">
+      <p><strong>Soft</strong> – paměťově citlivá <strong>cache</strong>; čistí se až pod tlakem
+      na paměť (<code>-XX:SoftRefLRUPolicyMSPerMB</code>, výchozí 1000) a všechny před
+      <code>OutOfMemoryError</code>; <code>get()</code> aktualizuje timestamp.</p>
+      <p><strong>Weak</strong> – nedrží objekt naživu jen kvůli sobě; listenery, cíle, které nevlastníme,
+      <strong>kanonizující mapy</strong>, základ <code>WeakHashMap</code> (slabé klíče); čistí se
+      už při následujícím GC.</p>
+      <p><strong>Final</strong> – interní package-private mechanismus pro netriviální
+      <code>finalize()</code>; pomalá alokace, jediné <code>Finalizer</code> vlákno, riziko
+      vzkříšení a žádné pořadí – vyhýbat se.</p>
+      <p><strong>Phantom</strong> – post-finalizační <strong>úklid</strong> / hook před
+      uvolněním; <code>get()</code> vždy null, povinná reference queue, umožňuje vynutit
+      <strong>pořadí finalizace</strong>.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Bloom filter – princip a použití.</summary>
+    <div class="odpoved">
+      <p>Paměťově úsporná pravděpodobnostní množina: <strong>bitové pole m bitů</strong> a
+      <strong>k nezávislých hashů</strong>. <strong>add</strong> (O(k)) nastaví bity na pozicích
+      všech k hashů na 1; <strong>query</strong> testuje stejné pozice – je-li kterýkoli 0, prvek
+      <strong>určitě chybí</strong>, jsou-li všechny 1, je <strong>pravděpodobně přítomen</strong>.
+      Připouští <strong>false positive</strong> (~1 %), ale <strong>nikdy false negative</strong>;
+      <strong>nepodporuje mazání</strong>, prvky neukládá explicitně. Použití: big-data, vyloučení
+      zbytečných <strong>I/O</strong> (1M řetězců → 1,13 MB + 7 hashů vs. <code>Set</code> &gt; 50 MB,
+      44× méně). Counting varianta (3bitové čítače) umožní delete za cenu přetečení bucketu.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Alokace paměti: TLAB, escape analysis, eden.</summary>
+    <div class="odpoved">
+      <p>Objekty se alokují v <strong>edenu</strong> mladé generace technikou
+      <strong>bump-the-pointer</strong> (jen posun ukazatele, pár instrukcí). Aby se vlákna
+      nemusela synchronizovat, má každé vlákno vlastní <strong>TLAB</strong> – výhradní,
+      NUMA-zarovnanou část edenu; odpadají atomické operace i false sharing, synchronizace je jen
+      při občasném refillu (<code>lock inc</code>). <strong>Escape analysis</strong> (C2, po
+      inliningu) navíc u NoEscape objektů alokaci vynechá úplně (scalar replacement na
+      zásobník/registry), takže nezatíží ani eden, ani GC.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P11</span> Jak funguje rychlá alokace přes TLAB a proč je tak levná?</summary>
+    <div class="odpoved">
+      <p>Bump-the-pointer: nový objekt se vloží za naposledy alokovaný a posune se ukazatel.
+      Každé vlákno má vlastní TLAB (pár procent edenu, NUMA-zarovnaný), takže
+      <strong>nepotřebuje synchronizaci</strong> mezi vlákny (žádné atomiky), nevzniká
+      <strong>false sharing</strong> a alokace stojí jen pár nativních instrukcí. Synchronizace
+      (<code>lock inc</code>) je nutná jen při občasném doplnění TLABu. TLAB se adaptivně mění,
+      ale špatně snáší thread pooly s nerovnoměrným tlakem.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P11</span> Jak souvisí dosažitelnost objektu s počtem GC cyklů potřebných k uvolnění?</summary>
+    <div class="odpoved">
+      <p>Dosažitelnost je nejsilnější reference na libovolné cestě od GC rootu. Pokud jsou na
+      objekt jen <strong>soft/weak</strong> reference, uvolní se v <strong>jednom</strong> GC
+      cyklu (Reference Handler vyčistí a zařadí, Finalizer případně spustí <code>finalize()</code>).
+      Má-li objekt <strong>final/phantom</strong> referenci, je potřeba <strong>více</strong>
+      cyklů: nejdřív finalizace, pak se objekt stane phantom reachable, a teprve po vyčištění
+      phantom referencí (<code>clear()</code> / nedosažitelnost) ho další GC uvolní.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li><strong>Bump-the-pointer + TLAB</strong> dělají alokaci extrémně levnou: každé vlákno
+        bumpne ukazatel ve vlastním NUMA-zarovnaném bufferu – bez synchronizace, atomik a false
+        sharingu; synchronizuje jen občasný refill (<code>lock inc</code>).</li>
+      <li>Hlavička objektu = <strong>8 B mark word + 4 B/8 B Klass ref.</strong>; <code>Structure</code>
+        má 80 B (compressed) vs. 96 B (standard OOPs).</li>
+      <li><strong>Escape analysis</strong> (C2, po inliningu) klasifikuje na
+        <strong>NoEscape / ArgEscape / GlobalEscape</strong>: NoEscape → scalar replacement
+        (registry/zásobník, žádný GC, žádné write barriers), ArgEscape → lock elision.</li>
+      <li><strong>Bloom filtr</strong>: m bitů, k hashů, O(k) add/query, ~1 % false positive,
+        <strong>žádné false negatives</strong>, bez mazání; 44× menší než <code>Set</code>.
+        Counting filtr (3bitové čítače) umí delete, ale přetéká.</li>
+      <li>Síla referencí: <strong>strong &gt; soft &gt; weak &gt; final &gt; phantom</strong>;
+        soft = cache (memory pressure), weak = listenery/kanonizace/<code>WeakHashMap</code>,
+        phantom = post-finalizační úklid a pořadí finalizace, final = pomalá finalizace – vyhýbat se.</li>
+      <li>Soft/weak-only → uvolnění v <strong>1 GC cyklu</strong>; final/phantom → <strong>více
+        cyklů</strong>. Cena referencí (vytvoření, GC přes <code>discovered</code>, enqueue,
+        fronta) se sčítá.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="10-jvm-analyza-pameti.html">← Analýza paměti</a></span>
+    <span><a href="12-virtualizace.html">Další: Virtualizace →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

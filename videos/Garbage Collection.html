@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Umírají mladí (generační GC) — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#1a1208; --bg-bot:#0a0a12; --panel:#12101c; --text:#f5ecd8; --muted:#b39a78;
+    --accent:#FFCE54; --accent2:#FF9E3D; --young:#8fe3ff; --halo:#5be08a; --old:#c9a26b;
+    --garbage:#7a6a4a; --danger:#FF5A5A; --ink:#1a1208; --border:#2a2418;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(255,206,84,.16);border:1px solid rgba(255,206,84,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#06040a;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.78),rgba(0,0,0,.34) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(255,206,84,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 16px rgba(255,206,84,.95)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#f0dcb0;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(40,28,10,.85),rgba(6,4,10,.94));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#FFCE54,#FF9E3D);color:#1a1208;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(255,158,61,.5)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#f0e4cc} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#3a3020 var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">Umírají mladí — generační GC</span>
+    <span class="badge">IMMERSIVE VIDEO 🕯️</span>
+    <span class="hints">space = play/pauza · ←/→ = ±5s · R = restart</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">Umírají mladí (generační GC) — výuková lyric-video k B4M36ESW. Gospelový sál duší: objekty se rodí v edenu, většina umírá mladá, pár přeživších stoupá do staré generace. Minor vs major GC, promotion, Parallel vs G1.<small>~4 min 13 s · zpívaná videolekce · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="252.864" step="0.01" value="0">
+    <span class="time" id="tDur">4:13</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-garbage-collection.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){showErr('pixi-filters not loaded after pixi');}
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/Garbage Collection.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:248080,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=252.864;            // MP3 / stage length (fallback when audio.duration unavailable)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (§2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};            // quadratic out
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // Beat (gospel groove 96 BPM)
+  const BPM=96;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  // GLOBAL beat gates (default 1.0; S30 ramps both to 0 over 248.08->250.5; S24 freeze handled separately)
+  function beatAmp(t){
+    if(t>=169.64 && t<173.33) return 0;              // S20 stop-the-world freeze
+    return 1-easeInOut(ph(t,248.08,250.5));          // S30 end-card settle
+  }
+  function pulseAmp(t){
+    if(t>=169.64 && t<173.33) return 0;              // S20 freeze
+    return 1-easeInOut(ph(t,248.08,250.5));          // S30 end-card settle
+  }
+
+  // ============================================================
+  //  2) PALETTE
+  // ============================================================
+  const C={
+    bgTop:0x1a1208, bgBot:0x0a0a12, bgTopCold:0x141018, bgBotCold:0x05050a,
+    bgTopWarm:0x16140c, bgBotWarm:0x0a0a12,
+    panel:0x12101c, accent:0xFFCE54, accent2:0xFF9E3D, young:0x8fe3ff,
+    halo:0x5be08a, old:0xc9a26b, garbage:0x7a6a4a, danger:0xff5a5a,
+    text:0xf5ecd8, muted:0xb39a78, ink:0x1a1208, white:0xffffff
+  };
+  // Canonical world coords
+  const W=1280,H=720;
+  const EDEN=[640,470];
+  const SURV0=[300,430], SURV1=[980,430];
+  const BALCONY_Y=130, BALCONY_X0=180, BALCONY_X1=1100;
+  const ORGAN=[1090,470];
+  const COST_X0=1060, COST_X1=1210, COST_Y=92, COST_H=14;
+  const LEDGER=[90,110];
+  // cardinality model (storyboard §1)
+  const EDEN_CAP=120, LIVE_FRAC=0.07, AGE_MAX=4, N_REGIONS=20, N_GC_THREADS=8;
+  const N_SURVIVORS=Math.round(EDEN_CAP*LIVE_FRAC);   // 8 copied
+  const N_DISCARD=EDEN_CAP-N_SURVIVORS;               // 112 binned
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list (add/removeOverlayFx only, never reassigned)
+  const _ofx=[]; // {name, filter}
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §7)
+  //  Optional keyed PNGs would layer ON TOP of always-drawn vector actors. We ship PURE
+  //  VECTOR — no assets-garbage-collection.js tag — so window.ASSETS is undefined and the
+  //  loader resolves null for every slug: the video is a complete vector masterpiece with
+  //  ZERO images. The loader is kept (null-safe, fire-and-forget) so dropping an assets file
+  //  later would just enrich it; it never blocks or crashes.
+  // ============================================================
+  const IMG={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,contain){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1;
+    let sc=targetW/tw;
+    if(contain){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc);
+    s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s);
+    return s;
+  }
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    const SLUGS=['eden-font','soul-mote','gospel-hall-bg','hammond-organ','survivor-soul','region-tile'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{
+      if(!tex) return; IMG[slug]=tex;
+      try{
+        if(slug==='gospel-hall-bg'){
+          const s=heroSprite(bgLayer,'gospel-hall-bg',W/2,H/2,W,0.25,true);
+          if(s){ bgLayer.setChildIndex(s,0); }
+        } else if(slug==='eden-font'){
+          const s=heroSprite(edenFontC,'eden-font',0,0,200,0.95,false); if(s) s.zIndex=2;
+        } else if(slug==='hammond-organ'){
+          const s=heroSprite(organC,'hammond-organ',0,0,200,0.95,false); if(s) s.zIndex=2;
+        }
+      }catch(e){ showErr('img '+slug+': '+e.message); }
+    }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={gold:radialTex(0xFFE9A8),amber:radialTex(0xFFB85C),young:radialTex(0x9af0fb),halo:radialTex(0x7fe6a6),white:radialTex(0xffffff),red:radialTex(0xff8a8a),old:radialTex(0xd9b888),garb:radialTex(0x7a6a4a)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  // thin gradient line tex for SimpleRope trails
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={young:lineTex(0x9af0fb),halo:lineTex(0x7fe6a6),gold:lineTex(0xFFE9A8),amber:lineTex(0xFFB85C)};
+  // baked dot for particle swarms
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  // baked rounded region tile
+  const _tileG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,16,16,4).endFill();
+  const TILE_TEX=app.renderer.generateTexture(_tileG,{resolution:2}); _tileG.destroy();
+  // baked radial-noise sprite for DisplacementFilter fallback
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const img=g.createImageData(256,256);for(let i=0;i<img.data.length;i+=4){const v=Math.random()*255;img.data[i]=v;img.data[i+1]=Math.random()*255;img.data[i+2]=128;img.data[i+3]=255;}
+    g.putImageData(img,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  // attach persistent Outline+DropShadow to a text (legibility, §2 typography)
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.3));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (room gradient + arches/pipes + smoke + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:false,kawase:false};
+
+  // static arch + organ-pipe silhouette (cacheAsBitmap)
+  const arches=new PIXI.Graphics();
+  arches.lineStyle(2.5,0x12101c,0.55);
+  // three tall arches across the nave
+  for(let a=0;a<3;a++){ const cx=300+a*340; const w=150;
+    arches.moveTo(cx-w,520);
+    arches.bezierCurveTo(cx-w,180, cx+w,180, cx+w,520);
+  }
+  // pipe bank at right
+  for(let p=0;p<9;p++){ const px=1000+p*20; const ph0=200+(p%3)*30;
+    arches.lineStyle(8,0x1a1610,0.5).moveTo(px,470).lineTo(px,ph0);
+  }
+  // old-gen balcony ledge rim (faint)
+  arches.lineStyle(2,0x2a2014,0.4).moveTo(BALCONY_X0,170).lineTo(BALCONY_X1,170);
+  bgLayer.addChild(arches); arches.cacheAsBitmap=true;
+
+  // tiling candle-smoke / dust band (slow upward drift)
+  const smokeTile=new PIXI.TilingSprite(GLOW.amber,W,H);
+  smokeTile.alpha=0.045; smokeTile.blendMode=PIXI.BLEND_MODES.ADD; smokeTile.tint=0xFFB85C;
+  smokeTile.tileScale.set(2.4,2.4);
+  bgLayer.addChild(smokeTile);
+
+  // reflection band (bottom polished stone floor)
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x1a1208,0.20).drawRect(0,648,W,72).endFill();
+  bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,4],waveLength:[40,120],alpha:[0.3,0.3],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,648,W,72); }
+
+  // ============================================================
+  //  6) AMBIENT SOUL-MOTES (persistent ParticleContainer = eden pool + tenured)
+  // ============================================================
+  const MOTE_COUNT=EDEN_CAP+80;   // 120 eden + ~80 tenured/drift
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:true},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const s=new PIXI.Sprite(GLOW.gold);s.anchor.set(0.5);s.tint=0xFFE9A8;s.blendMode=PIXI.BLEND_MODES.ADD;
+    // eden motes cluster near the nave; tenured drift higher/wider
+    const eden=i<EDEN_CAP;
+    s.x= eden? (EDEN[0]+(Math.random()-0.5)*420) : (Math.random()*W);
+    s.y= eden? (EDEN[1]-Math.random()*260) : (Math.random()*H);
+    s.scale.set(0.06+Math.random()*0.14);s.alpha=0;motePC.addChild(s);
+    motes.push({s,eden,vx:(Math.random()-.5)*8,vy:-(5+Math.random()*16),phs:Math.random()*TAU,sp:0.5+Math.random(),baseScale:s.scale.x,bx:s.x});}
+  let RT=0;             // current audio time (s)
+  let moteEnvelope=0;   // 0..1 global mote brightness
+  let moteVisibleRatio=1; // S30 thinning
+  let dieWave=0;        // 0..1 die-off intensity (set per frame by hypothesis scenes)
+
+  // spark bursts (recycled pool)
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:-Math.abs(Math.sin(a)*v)-v*0.4,life:0,max:0.8+Math.random()*1.0});}
+  }
+
+  // ============================================================
+  //  7) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  // eden font: arched basin + upward gold glow column
+  function buildEdenFont(){
+    const c=new PIXI.Container(); c.position.set(EDEN[0],EDEN[1]); c.sortableChildren=true;
+    const col=glow('gold',0,-90,2.0,0.55,0xFFE9A8); col.scale.set(1.6,2.6); col.zIndex=0; c.addChild(col);
+    const g=new PIXI.Graphics(); g.zIndex=1; c.addChild(g);
+    // basin
+    g.beginFill(0x2a2014,0.95).lineStyle(3,C.accent,0.9);
+    g.moveTo(-58,0); g.quadraticCurveTo(0,30,58,0); g.lineTo(44,28); g.lineTo(-44,28); g.closePath(); g.endFill();
+    // pedestal
+    g.beginFill(0x1a1208,0.9).lineStyle(2,C.old,0.7).drawRect(-14,28,28,40).endFill();
+    g.beginFill(0x2a2014,0.9).drawRoundedRect(-30,66,60,12,4).endFill();
+    // inner glow rim
+    g.lineStyle(2,C.accent,0.8); g.moveTo(-48,2); g.quadraticCurveTo(0,22,48,2);
+    const core=glow('gold',0,-2,0.8,1.0,0xFFF1B8); core.zIndex=2; c.addChild(core);
+    c._col=col; c._core=core;
+    return c;
+  }
+  // alcove recess (arched) at given pos
+  function buildAlcove(pos,rim){
+    const g=new PIXI.Graphics(); g.position.set(pos[0],pos[1]);
+    g.lineStyle(2.5,rim,0.85).beginFill(0x14100a,0.55);
+    g.moveTo(-66,52); g.bezierCurveTo(-66,-48,66,-48,66,52); g.lineTo(66,56); g.lineTo(-66,56); g.closePath(); g.endFill();
+    return g;
+  }
+  // hammond organ console + pipe bank
+  function buildOrgan(){
+    const c=new PIXI.Container(); c.position.set(ORGAN[0],ORGAN[1]);
+    const g=new PIXI.Graphics(); c.addChild(g);
+    // console body
+    g.beginFill(0x241a0c,0.95).lineStyle(2,C.old,0.8).drawRoundedRect(-60,-10,120,70,8).endFill();
+    // keys
+    g.lineStyle(0);
+    for(let k=0;k<9;k++){ g.beginFill(k%2?0x1a140a:0xe8dcc0,0.9).drawRect(-54+k*12,6,10,18).endFill(); }
+    // pipe bank above (glows on minor GC)
+    const pipes=new PIXI.Graphics(); c.addChild(pipes);
+    c._pipes=pipes; c._g=g;
+    return c;
+  }
+  function drawPipes(pipes,litFrac,col){
+    pipes.clear();
+    for(let p=0;p<7;p++){ const px=-48+p*16; const h=70+(p%3)*22;
+      const lit=litFrac>(p/7);
+      pipes.lineStyle(0).beginFill(lit?col:0x3a2c14, lit?0.95:0.6).drawRoundedRect(px-5,-10-h,10,h,3).endFill();
+      if(lit){ pipes.lineStyle(2,C.accent,0.5).moveTo(px,-10-h).lineTo(px,-10); }
+    }
+  }
+  // soul-mote vector (for hero motes drawn in scene): core + optional age-halo
+  function drawSoulMote(g,tone,age,sc){
+    g.clear();
+    sc=sc||1;
+    if(age>0){ g.lineStyle(2,C.halo,0.4+age*0.15).drawCircle(0,0,(10+age*3)*sc); }
+    g.lineStyle(0).beginFill(tone,0.95).drawCircle(0,0,7*sc).endFill();
+    g.beginFill(0xffffff,0.6).drawCircle(0,0,3*sc).endFill();
+  }
+  // age-halo ring only
+  function drawAgeHalo(g,age,sc){
+    g.clear(); sc=sc||1;
+    g.lineStyle(2.5,C.halo,clamp01(0.4+age*0.15)).drawCircle(0,0,(10+age*3)*sc);
+  }
+  // SimpleRope copy-arc trail
+  function makeTrail(tint,n){
+    const tex= (tint===0x7fe6a6?TRAIL.halo: tint===0xFFE9A8?TRAIL.gold: tint===0xFFB85C?TRAIL.amber:TRAIL.young);
+    const pts=[]; for(let i=0;i<(n||12);i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(tex,pts); r.blendMode=PIXI.BLEND_MODES.ADD; r.tint=tint; r.alpha=0;
+    r._pts=pts; return r;
+  }
+  function setRopeAlongPath(rope,path){
+    const p=rope._pts; const segs=path.length-1;
+    for(let i=0;i<p.length;i++){
+      const f=i/(p.length-1)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si;
+      p[i].x=lerp(path[si][0],path[si+1][0],lf); p[i].y=lerp(path[si][1],path[si+1][1],lf);
+    }
+  }
+  function pathPos(path,frac){ const segs=path.length-1; const f=clamp01(frac)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si; return [lerp(path[si][0],path[si+1][0],lf),lerp(path[si][1],path[si+1][1],lf)]; }
+  // gauge arc (dial) drawing
+  function drawGauge(g,cx,cy,r,frac,col,bgCol){
+    g.clear();
+    g.lineStyle(10,bgCol||0x2a2014,0.6).arc(cx,cy,r,Math.PI*0.75,Math.PI*0.75+Math.PI*1.5);
+    g.lineStyle(10,col,0.95).arc(cx,cy,r,Math.PI*0.75,Math.PI*0.75+Math.PI*1.5*clamp01(frac));
+    // needle
+    const a=Math.PI*0.75+Math.PI*1.5*clamp01(frac);
+    g.lineStyle(3,C.white,0.9).moveTo(cx,cy).lineTo(cx+Math.cos(a)*(r-6),cy+Math.sin(a)*(r-6));
+    g.lineStyle(0).beginFill(C.white,0.9).drawCircle(cx,cy,4).endFill();
+  }
+
+  // ============================================================
+  //  8) PERSISTENT HALL (bgLayer-of-scene group below scene actors)
+  // ============================================================
+  const hallRoot=new PIXI.Container(); sceneLayer.addChild(hallRoot);
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot); // per-scene actors host
+
+  // eden font
+  const edenFontC=buildEdenFont(); hallRoot.addChild(edenFontC);
+  if(hasF('GlowFilter')){ edenFontC._glow=new F.GlowFilter({distance:18,outerStrength:1.5,innerStrength:0,color:C.accent,quality:0.3}); edenFontC.filters=[edenFontC._glow]; }
+
+  // two survivor alcoves
+  const alcove0=buildAlcove(SURV0,C.young); hallRoot.addChild(alcove0);
+  const alcove1=buildAlcove(SURV1,C.young); hallRoot.addChild(alcove1);
+  const alcLbl0=txt('S0',16,C.young,'800'); alcLbl0.position.set(SURV0[0],SURV0[1]-30); legible(alcLbl0); alcLbl0.alpha=0; hallRoot.addChild(alcLbl0);
+  const alcLbl1=txt('S1',16,C.young,'800'); alcLbl1.position.set(SURV1[0],SURV1[1]-30); legible(alcLbl1); alcLbl1.alpha=0; hallRoot.addChild(alcLbl1);
+
+  // old-gen balcony ledge
+  const balcony=new PIXI.Graphics(); hallRoot.addChild(balcony);
+  function drawBalcony(alpha,rim){
+    balcony.clear();
+    balcony.lineStyle(2.5,rim||C.old,alpha*0.85).beginFill(0x140e06,alpha*0.4);
+    balcony.drawRoundedRect(BALCONY_X0,BALCONY_Y-22,BALCONY_X1-BALCONY_X0,44,8).endFill();
+  }
+  drawBalcony(0.5);
+  // tenured motes resting on balcony (persistent vector dots)
+  const balconyMotes=new PIXI.Graphics(); hallRoot.addChild(balconyMotes);
+
+  // hammond organ
+  const organC=buildOrgan(); hallRoot.addChild(organC);
+  if(hasF('AdvancedBloomFilter')){ organC._bloom=new F.AdvancedBloomFilter({threshold:0.45,bloomScale:1.0,brightness:1.0,blur:6,quality:4}); organC.filters=[organC._bloom]; }
+
+  // candle glows along the pews (persistent additive sprites)
+  const candles=[];
+  const CANDLE_X=[180,360,540,720,900,1080,1180];
+  for(let i=0;i<CANDLE_X.length;i++){ const cg=glow('amber',CANDLE_X[i],560,0.5,0.5,0xFFB85C); fxLayer.addChild(cg); candles.push(cg); }
+
+  // godray (persistent, intent-flag controlled)
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:32,gain:0.4,lacunarity:2.2,time:0,parallel:true,center:[640,0]}); }
+
+  // ============================================================
+  //  9) HUD (cost meter + ledger) — persistent in hallRoot
+  // ============================================================
+  const hud=new PIXI.Container(); hallRoot.addChild(hud);
+  const costFrame=new PIXI.Graphics(); hud.addChild(costFrame);
+  const costFill=new PIXI.Graphics(); hud.addChild(costFill);
+  const costLbl=txt('cost',14,C.muted,'700'); costLbl.anchor.set(0,0.5); costLbl.position.set(COST_X0,COST_Y-12); legible(costLbl); hud.addChild(costLbl);
+  const ledgerMinor=txt('minor ×0',18,C.muted,'800'); ledgerMinor.anchor.set(0,0.5); ledgerMinor.position.set(LEDGER[0],LEDGER[1]); legible(ledgerMinor); hud.addChild(ledgerMinor);
+  const ledgerMajor=txt('major ×0',18,C.accent2,'800'); ledgerMajor.anchor.set(0,0.5); ledgerMajor.position.set(LEDGER[0],LEDGER[1]+26); legible(ledgerMajor); hud.addChild(ledgerMajor);
+  let hudAlpha=0;
+  // cost model: minor stabs add a sliver; major spikes hard. Pure function of t via event lists.
+  // minor-GC event times (each adds COST_MINOR) ; major-GC spike windows
+  const MINOR_TIMES=[46.04, 53.12,53.72,54.32, 55.86, /*S7*/ 84.76,85.5,86.2, /*S11 ticks*/ 95.94,96.6,97.3,98.0, /*S12*/ 120.30,120.9,121.5, 123.12, /*S16*/ 153.62,154.3,155.0, /*S18 L4*/ 214.38,215.0,215.7, /*S27 L2 stab*/ 229.97,230.6,231.3 /*S27 L4*/];
+  const COST_MINOR=0.012;
+  // major spike windows: {t0,t1,peak} — cost ramps to peak over window then decays slowly
+  const MAJOR_SPIKES=[{t0:81.28,t1:83.31,peak:0.85},{t0:148.60,t1:150.46,peak:0.9},{t0:224.60,t1:226.30,peak:0.95}];
+  function ledgerMinorCount(t){ let n=0; for(const mt of MINOR_TIMES){ if(t>=mt) n++; } return n; }
+  function ledgerMajorCount(t){ let n=0; for(const ms of MAJOR_SPIKES){ if(t>=ms.t0) n++; } return n; }
+  function costValue(t){
+    let base=0;
+    for(const mt of MINOR_TIMES){ if(t>=mt) base+=COST_MINOR; }
+    // major spikes add on top with slow decay
+    let spike=0;
+    for(const ms of MAJOR_SPIKES){
+      if(t>=ms.t0){
+        const up=easeOut(ph(t,ms.t0,ms.t1));
+        const down=1-easeInOut(ph(t,ms.t1,ms.t1+4.5));
+        spike=Math.max(spike, ms.peak*up*Math.max(0.18,down));
+      }
+    }
+    return clamp01(base+spike);
+  }
+  function drawCostMeter(t){
+    const v=costValue(t);
+    costFrame.clear();
+    costFrame.lineStyle(1.5,C.muted,0.6).beginFill(C.ink,0.5).drawRoundedRect(COST_X0,COST_Y,COST_X1-COST_X0,COST_H,4).endFill();
+    costFill.clear();
+    const w=v*(COST_X1-COST_X0);
+    const col= v>0.55?C.danger : v>0.25?C.accent2 : C.accent;
+    if(w>1) costFill.beginFill(col,0.92).drawRoundedRect(COST_X0+1,COST_Y+1,Math.max(2,w-2),COST_H-2,3).endFill();
+    ledgerMinor.text='minor ×'+ledgerMinorCount(t);
+    ledgerMajor.text='major ×'+ledgerMajorCount(t);
+  }
+
+  // ============================================================
+  //  10) CAMERA RIG (GOLDEN RULE: all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  function shakeAmp(t){
+    let a=0;
+    a+=shakeEnv(t,32.53,2.5);    // S4 hero birth
+    a+=shakeEnv(t,81.28,6);      // S10 major bell
+    a+=shakeEnv(t,148.60,7);     // S18 major bell
+    a+=shakeEnv(t,224.60,8);     // S27 major bell
+    a+=shakeEnv(t,169.64,5);     // S20 freeze onset
+    a+=shakeEnv(t,191.37,3);     // S24 name reveal
+    return a<0.05?0:a;
+  }
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function updateCamera(t){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.012*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  11) SHARED FILTER INSTANCES (built once; mutate, never reallocate)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:24,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flash=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashWarm=new F.ColorOverlayFilter(C.accent2,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashGreen=new F.ColorOverlayFilter(C.halo,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashRed=new F.ColorOverlayFilter(C.danger,0);
+  if(hasF('ColorOverlayFilter')) FILT.dim=new F.ColorOverlayFilter(0x000000,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,470],innerRadius:0});
+  if(hasF('ZoomBlurFilter')) FILT.zoomHeld=new F.ZoomBlurFilter({strength:0,center:[640,130],innerRadius:60});
+  if(hasF('BulgePinchFilter')) FILT.bulge=new F.BulgePinchFilter({center:[640/1280,300/720],radius:220,strength:0});
+  else FILT.bulgeDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('TwistFilter')) FILT.twist=new F.TwistFilter({radius:600,angle:0,offset:[640,360],padding:20});
+  else FILT.twistDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('CRTFilter')) FILT.crt=new F.CRTFilter({curvature:1.2,lineWidth:1.2,lineContrast:0.3,vignetting:0.4,noise:0.15,time:0});
+  if(hasF('GlitchFilter')) FILT.glitch=new F.GlitchFilter({slices:8,offset:14,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('TiltShiftFilter')) FILT.tilt=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,470),end:new PIXI.Point(W,470)});
+
+  // sceneRoot transient flash helper
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0)return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);}
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+
+  // ============================================================
+  //  12) HALL PERSISTENCE RENDER (eden font / organ / candles / alcoves / balcony / HUD)
+  // ============================================================
+  let activeSurvGlobal=0;  // which alcove holds survivors this cycle (set by scenes); other is empty target
+  // minor-GC pipe-flash envelope (pure f(t)): bright on each MINOR_TIMES, decays ~0.3s
+  function organLitFrac(t){
+    let lit=0;
+    for(const mt of MINOR_TIMES){ if(t>=mt){ lit=Math.max(lit, 1-ph(t,mt,mt+0.3)); } }
+    return lit;
+  }
+  // major-GC organ toll envelope
+  function organToll(t){
+    let v=0;
+    for(const ms of MAJOR_SPIKES){ if(t>=ms.t0){ v=Math.max(v, 1-ph(t,ms.t0,ms.t1+0.8)); } }
+    return v;
+  }
+  function renderHall(t,sec){
+    const pAmp=pulseAmp(t);
+    // eden font glow pulse
+    if(edenFontC._glow){ edenFontC._glow.outerStrength=1.5+pAmp*1.0*beat(t); }
+    edenFontC._core.scale.set(0.8+pAmp*0.18*beat(t));
+    edenFontC._col.alpha=0.45+pAmp*0.18*beat(t);
+    // organ pipe flash (minor) / toll (major)
+    const lit=organLitFrac(t), toll=organToll(t);
+    drawPipes(organC._pipes, Math.max(lit, toll), toll>0.05?C.accent2:C.accent);
+    if(organC._bloom){ organC._bloom.bloomScale=1.0+0.3*beat(t)+toll*1.2; }
+    // candles wave down the pews
+    for(let i=0;i<candles.length;i++){ candles[i].alpha=(0.4+pAmp*0.35*beat(t-i*0.08))*(sec==='freeze'?0.4:1); candles[i].scale.set(0.45+pAmp*0.12*beat(t-i*0.08)); }
+    // balcony tenured motes (rest), dimmed during major sweep
+    const majSweep=organToll(t);
+    balconyMotes.clear();
+    for(let i=0;i<12;i++){ const bx=BALCONY_X0+60+i*((BALCONY_X1-BALCONY_X0-120)/11); const a=(0.7-majSweep*0.5);
+      balconyMotes.beginFill(C.old,clamp01(a)).drawCircle(bx,BALCONY_Y,4).endFill();
+      balconyMotes.beginFill(0xffffff,clamp01(a*0.5)).drawCircle(bx,BALCONY_Y,1.8).endFill();
+    }
+    // alcove labels visible once introduced (S5+)
+    const lblA=easeOut(ph(t,42.17,43.0));
+    alcLbl0.alpha=Math.max(alcLbl0.alpha*0, lblA*0.9);
+    alcLbl1.alpha=lblA*0.9;
+    // active vs empty alcove tint (which holds survivors alternates per minor GC)
+    alcove0.alpha=1; alcove1.alpha=1;
+    // HUD
+    hud.alpha=hudAlpha;
+    drawCostMeter(t);
+  }
+
+  // ============================================================
+  //  13) SCENE MANAGER
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy)prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c);prev.inst.c.destroy({children:true});}catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ---- shared minor-GC stab kit (organ flash handled globally; this adds the zoom micro-punch) ----
+  function minorStab(t,t0,S,key){
+    if(t>=t0 && !S.fired.has(key)){ S.fired.add(key);
+      if(FILT.zoom){ FILT.zoom.center=[ORGAN[0],ORGAN[1]]; FILT.zoom.strength=0.16; addOverlayFx('stab',FILT.zoom); }
+    }
+    if(FILT.zoom && hasOverlayFx('stab')){ FILT.zoom.strength=0.16*(1-ph(t,t0,t0+0.18)); if(t>t0+0.2) removeOverlayFx('stab'); }
+  }
+
+  // ============================================================
+  //  REUSABLE CHORUS (storyboard §4) — built once per occurrence
+  // ============================================================
+  function buildChorus(occ,S){
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const bloomGain={1:0.5,2:0.7,3:0.9}[occ];
+    const occFactor={1:1.0,2:1.2,3:1.6}[occ];
+    const recycleDensity={1:1,2:1.5,3:2}[occ];
+    let bloomF=null;
+    if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // survival-curve overlay (left HUD)
+    const curve=new PIXI.Graphics(); c.addChild(curve);
+    const curveLblD=txt('umírá mladá',16,C.garbage,'800'); curveLblD.position.set(200,150); curveLblD.alpha=0; legible(curveLblD); c.addChild(curveLblD);
+    const curveLblA=txt('dožije se stáří',16,C.halo,'800'); curveLblA.position.set(500,250); curveLblA.alpha=0; legible(curveLblA); c.addChild(curveLblA);
+    const curveAxis=txt('věk objektu →',14,C.muted,'700'); curveAxis.position.set(330,318); curveAxis.alpha=0; legible(curveAxis); c.addChild(curveAxis);
+    // causal arrow (proto)
+    const arrow=new PIXI.Graphics(); c.addChild(arrow);
+    const levneLbl=txt('levně',22,C.halo,'800'); levneLbl.position.set(1135,COST_Y+30); levneLbl.alpha=0; legible(levneLbl); c.addChild(levneLbl);
+    // major bell label
+    const majorLbl=txt('major: vzácný & drahý',20,C.accent2,'900'); majorLbl.position.set(640,200); majorLbl.alpha=0; legible(majorLbl); c.addChild(majorLbl);
+    const sweepBar=new PIXI.Graphics(); c.addChild(sweepBar);
+    // promotion / ascension
+    const hero=new PIXI.Container(); c.addChild(hero); hero.position.set(640,420);
+    const heroG=new PIXI.Graphics(); hero.addChild(heroG);
+    const heroTrail=makeTrail(0x7fe6a6,12); c.addChild(heroTrail);
+    const promoLbl=txt('promotion → old gen',20,C.halo,'800'); promoLbl.position.set(640,200); promoLbl.alpha=0; legible(promoLbl); c.addChild(promoLbl);
+    if(hasF('GlowFilter')){ hero._g=new F.GlowFilter({distance:14,outerStrength:1.5,color:C.halo,quality:0.3}); hero.filters=[hero._g]; }
+    c._chorus={occ,bloomGain,occFactor,recycleDensity,bloomF,curve,curveLblD,curveLblA,curveAxis,arrow,levneLbl,majorLbl,sweepBar,hero,heroG,heroTrail,promoLbl};
+    return c;
+  }
+  function updateChorus(c,t,LS,occ,S){
+    camDollyScale=1;
+    const X=c._chorus;
+    const {bloomF,curve,curveLblD,curveLblA,curveAxis,arrow,levneLbl,majorLbl,sweepBar,hero,heroG,heroTrail,promoLbl}=X;
+    const L1=LS.L1,L2=LS.L2,L3=LS.L3,L4=LS.L4;
+    if(bloomF) bloomF.bloomScale=1.0+X.bloomGain*beat(t);
+
+    // ----- L1: chorus DROP + survival-curve signature -----
+    if(t>=L1 && !S.fired.has('drop'+occ)){ S.fired.add('drop'+occ);
+      if(FILT.zoom){ FILT.zoom.center=EDEN; FILT.zoom.strength=0.26; addOverlayFx('chDrop',FILT.zoom); }
+    }
+    if(FILT.zoom && hasOverlayFx('chDrop')){ FILT.zoom.strength=0.26*(1-ph(t,L1,L1+0.25)); if(t>L1+0.26) removeOverlayFx('chDrop'); }
+    // survival curve
+    const cv=easeOut(ph(t,L1,L1+5.5));
+    curve.clear();
+    if(cv>0.01){
+      curve.lineStyle(2,C.muted,0.5).moveTo(110,300).lineTo(560,300); curve.moveTo(110,300).lineTo(110,120);
+      curve.lineStyle(4,C.accent,0.95);
+      curve.moveTo(110,300-180*cv);
+      for(let i=1;i<=40;i++){ const f=i/40; const x=110+f*450; const y=300-180*cv*Math.exp(-f*5); curve.lineTo(x,y); }
+    }
+    curveLblD.alpha=cv*(1-ph(t,L2,L2+0.5)); curveLblA.alpha=curveLblD.alpha; curveAxis.alpha=curveLblD.alpha*0.8;
+    // die-off wave on "mladí," then continued churn (drives global motes)
+    dieWave=Math.max(dieWave, easeOut(ph(t,L1+1.1,L1+3.0))*(1-ph(t,L2,L2+1.0)));
+
+    // ----- L2: causal arrow + cheap -----
+    arrow.clear();
+    if(t>=L2 && t<L3){
+      const ap=easeOut(ph(t,L2,L2+1.0));
+      if(ap>0.01){
+        // from survival curve tail (560,250) -> cost meter (COST_X0, COST_Y+7)
+        const ex=lerp(560,COST_X0,ap), ey=lerp(250,COST_Y+7,ap);
+        arrow.lineStyle(4,C.accent,0.9*ap).moveTo(560,250).lineTo(ex,ey);
+        if(ap>0.9){ arrow.beginFill(C.accent,0.9).drawCircle(COST_X0,COST_Y+7,5).endFill(); }
+      }
+    }
+    const levT={L2:L2}.L2; // cheap resolves at "levně."
+    levneLbl.alpha=(t>=L2+5 && t<L3)? easeOut(ph(t,L2+5,L2+5.4))*(1-ph(t,L3-0.2,L3)) : 0;
+
+    // ----- L3: major bell-toll -----
+    sweepBar.clear();
+    if(t>=L3 && t<L4){
+      // slow sweep over balcony
+      const sw=easeInOut(ph(t,L3,L3+4.5));
+      sweepBar.beginFill(C.accent2,0.18*(1-ph(t,L3+4.0,L4))).drawRoundedRect(BALCONY_X0, BALCONY_Y-22, (BALCONY_X1-BALCONY_X0)*sw, 44, 8).endFill();
+    }
+    // bell on "major" — find occurrence's major time
+    const majT={1:81.28,2:148.60,3:224.60}[occ];
+    if(t>=majT && !S.fired.has('bell'+occ)){ S.fired.add('bell'+occ);
+      if(FILT.shock){ FILT.shock.center=[640,BALCONY_Y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('bell',FILT.shock); }
+      if(FILT.dim){ FILT.dim.alpha=0.2; addOverlayFx('bellDim',FILT.dim); }
+    }
+    if(FILT.shock && hasOverlayFx('bell')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('bell'); }
+    if(FILT.dim && hasOverlayFx('bellDim')){ FILT.dim.alpha=0.2*(1-ph(t,majT,majT+0.4)); if(t>majT+0.42) removeOverlayFx('bellDim'); }
+    majorLbl.alpha=(t>=majT-0.2 && t<L4)? easeOut(ph(t,majT-0.2,majT+0.3))*(1-ph(t,L4-0.4,L4)) : 0;
+
+    // ----- L4: promotion / ascension -----
+    const heroAge=Math.min(AGE_MAX, Math.floor(ph(t,L4,L4+3.0)*AGE_MAX+ (t>=L4?2:0)));
+    const asc=easeOutBack(ph(t,L4+3.4,L4+5.8));   // ascension rise
+    if(t>=L4 && t<L4+8){
+      hero.visible=true;
+      const hx=640, hy=lerp(420,BALCONY_Y,clamp01(asc));
+      hero.position.set(hx,hy);
+      const tone=lerpColor(C.young,C.old,clamp01(asc));
+      drawSoulMote(heroG, tone, Math.min(AGE_MAX,heroAge), 1.4);
+      if(hero._g){ hero._g.outerStrength=1.0+1.5*beat(t)+ (asc>0.05?1.5:0); }
+      // ascent trail
+      if(asc>0.02 && asc<0.98){ setRopeAlongPath(heroTrail,[[640,420],[640,lerp(420,BALCONY_Y,asc)]]); heroTrail.alpha=0.6; }
+      else heroTrail.alpha=0;
+      promoLbl.alpha=easeOut(ph(t,L4+3.4,L4+4.0))*(1-ph(t,L4+6.5,L4+7.5));
+      // a few minor stabs as age ticks (cost handled globally)
+    } else { hero.visible=false; heroTrail.alpha=0; promoLbl.alpha=0; }
+
+    // ----- held final word lamp/halo swell + S27→S28 carried zoom pull -----
+    if(occ===3){
+      const heldStart=233.57, heldEnd=234.80;
+      if(t>=232.20 && !hasOverlayFx('zoomHeld')){ if(FILT.zoomHeld){ FILT.zoomHeld.center=[640,BALCONY_Y]; addOverlayFx('zoomHeld',FILT.zoomHeld); } }
+      if(FILT.zoomHeld && hasOverlayFx('zoomHeld')){
+        let st; if(t<heldStart) st=0.22*easeInOut(ph(t,232.20,heldStart)); else st=0.22*(1-ph(t,heldStart,heldEnd));
+        FILT.zoomHeld.strength=clamp01(st);
+        if(t>=heldEnd) removeOverlayFx('zoomHeld');
+      }
+    }
+  }
+  function chorusScene(occ,LS){
+    return (S)=>{
+      const c=buildChorus(occ,S);
+      return {c,update(lt,t){ updateChorus(c,t,LS,occ,S); }};
+    };
+  }
+
+  // ============================================================
+  //  SCENES S0 .. S30
+  // ============================================================
+
+  // ---------- S0 : COLD OPEN 0.000-2.000 ----------
+  scene(0,2.0,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      const a=easeOutCubic(ph(t,0,2.0));
+      edenFontC.alpha=a; organC.alpha=a;
+      moteEnvelope=0.35*a;
+      hudAlpha=0;
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+    }};
+  });
+
+  // ---------- S1 : INTRO 2.000-19.000 — "Vezmi v ruku haldu... ten ruch" ----------
+  scene(2.0,19.0,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    edenFontC.alpha=1; organC.alpha=1;
+    const title=txt('UMÍRAJÍ MLADÍ',62,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('generační GC · ESW',26,C.muted,'700'); sub.position.set(640,384); legible(sub);
+    c.addChild(title,sub);
+    let spawnAcc=0, lastT=2.0;
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      const tin=easeOut(ph(t,2.0,4.0));
+      title.alpha=tin*(1-ph(t,15.5,18.5)); title.y=342-tin*12; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // hud fade in
+      hudAlpha=easeOut(ph(t,11.0,16.0))*0.6;
+      moteEnvelope=0.35+0.05*beat(t);
+      // ruch: births ramp on "haldu," @11.18
+      dieWave=0.25*ph(t,12.0,16.0); // gentle churn (full hypothesis lands S2)
+      // ruch camera push on "ruch" @18.34
+      camDollyScale=1+0.02*easeInOut(triWave(t,17.5,19.0));
+      if(godrayF) godrayF.gain=0.4;
+    }};
+  });
+
+  // ---------- S2 : INTRO 19.000-25.760 — hypothesis FACT1 ----------
+  scene(19.0,25.76,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    const curve=new PIXI.Graphics(); c.addChild(curve);
+    const lblD=txt('umírá mladá',16,C.garbage,'800'); lblD.position.set(200,150); lblD.alpha=0; legible(lblD); c.addChild(lblD);
+    const lblA=txt('dožije se stáří',16,C.halo,'800'); lblA.position.set(500,250); lblA.alpha=0; legible(lblA); c.addChild(lblA);
+    const axis=txt('věk objektu →',14,C.muted,'700'); axis.position.set(330,318); axis.alpha=0; legible(axis); c.addChild(axis);
+    let bgGradeLocal=null;
+    return {c,update(lt,t){
+      camDollyScale=1;
+      hudAlpha=0.6;
+      // mass die-off on umírá@21.06 / mladá@21.91 ; survivor trickle persists
+      dieWave=easeOut(ph(t,21.06,22.95))*(1) ; // big die-off wave
+      moteEnvelope=0.36+0.04*beat(t);
+      // survival curve grows
+      const cv=easeOut(ph(t,19.0,25.0));
+      curve.clear();
+      if(cv>0.01){
+        curve.lineStyle(2,C.muted,0.5).moveTo(110,300).lineTo(560,300); curve.moveTo(110,300).lineTo(110,120);
+        curve.lineStyle(4,C.accent,0.95).moveTo(110,300-180*cv);
+        for(let i=1;i<=40;i++){ const f=i/40; const x=110+f*450; const y=300-180*cv*Math.exp(-f*5); curve.lineTo(x,y); }
+      }
+      lblD.alpha=cv*(1-ph(t,25.2,25.76)); lblA.alpha=easeOut(ph(t,23.75,24.8))*(1-ph(t,25.4,25.76)); axis.alpha=cv*0.8;
+    }};
+  });
+
+  // ---------- S3 : VERSE1 25.760-31.800 — heap split FACT2 ----------
+  scene(25.76,31.8,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const young=new PIXI.Graphics(); c.addChild(young);
+    const old=new PIXI.Graphics(); c.addChild(old);
+    const arch=new PIXI.Graphics(); c.addChild(arch);
+    const yLbl=txt('young',18,C.young,'800'); yLbl.position.set(640,395); yLbl.alpha=0; legible(yLbl); c.addChild(yLbl);
+    const oLbl=txt('old',18,C.old,'800'); oLbl.position.set(640,125); oLbl.alpha=0; legible(oLbl); c.addChild(oLbl);
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; dieWave=0.2; moteEnvelope=0.36;
+      // young frame snaps on mladou@26.61
+      young.clear();
+      const yp=easeOutBack(ph(t,26.61,27.6));
+      if(yp>0.01){ young.lineStyle(3,C.young,0.8*clamp01(yp)).drawRoundedRect(200,380,880,180,14); }
+      yLbl.alpha=easeOut(ph(t,26.61,27.4))*(1-ph(t,31.2,31.8));
+      // old docks above on starou@29.21 (slides from y=-40 -> 130)
+      old.clear();
+      const op=easeOut(ph(t,29.21,30.6));
+      if(t>=29.21){ const oy=lerp(-40,BALCONY_Y,op);
+        old.lineStyle(3,C.old,0.85*clamp01(op)).drawRoundedRect(BALCONY_X0,oy-30,BALCONY_X1-BALCONY_X0,60,10);
+      }
+      oLbl.alpha=op*(1-ph(t,31.4,31.8)); oLbl.y=lerp(90,125,op);
+      // faint one-way arch foreshadow
+      arch.clear();
+      if(op>0.3){ arch.lineStyle(2,C.halo,0.25*op); arch.moveTo(640,330); arch.bezierCurveTo(640,230,640,200,640,160); }
+    }};
+  });
+
+  // ---------- S4 : VERSE1 31.800-38.500 — born in eden FACT2 ----------
+  scene(31.8,38.5,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const allocLbl=txt('alloc →',14,C.muted,'700'); allocLbl.position.set(720,520); allocLbl.alpha=0; legible(allocLbl); c.addChild(allocLbl);
+    const cap=txt('každá alokace začíná v edenu',20,C.muted,'800'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    const hero=new PIXI.Container(); c.addChild(hero); const hg=new PIXI.Graphics(); hero.addChild(hg); hero.position.set(EDEN[0],EDEN[1]); hero.alpha=0;
+    if(hasF('GlowFilter')){ hero._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.3}); hero.filters=[hero._g]; }
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.38; dieWave=0.25;
+      // tilt-shift birth focus
+      if(FILT.tilt){ const band=easeOut(ph(t,31.8,33.0)); FILT.tilt.blur=80*band;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(FILT.tilt)<0)){ sceneRoot.filters=[FILT.tilt]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H); } }
+      // hero newborn @33.54 with shockwave micro-ring
+      if(t>=33.54 && !S.fired.has('birth')){ S.fired.add('birth');
+        if(FILT.shock){ const gp=hero.toGlobal(new PIXI.Point(0,0)); FILT.shock.center=[gp.x,gp.y]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s4shock',FILT.shock); }
+        burst(EDEN[0],EDEN[1],C.accent,16,3,0.2);
+      }
+      if(FILT.shock && hasOverlayFx('s4shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s4shock'); }
+      const hp=easeOut(ph(t,33.54,34.8));
+      hero.alpha=hp*(1-ph(t,37.5,38.5));
+      hero.position.set(EDEN[0],lerp(EDEN[1],EDEN[1]-120,hp));
+      drawSoulMote(hg,C.accent,0,1.6);
+      if(hero._g) hero._g.outerStrength=2+1.5*beat(t);
+      allocLbl.alpha=easeOut(ph(t,33.54,34.2))*(1-ph(t,37.5,38.2)); allocLbl.x=720+18*easeOut(ph(t,33.54,36.45));
+      // burst of ~12 newborns from font on alokace@36.45
+      if(t>=36.45 && !S.fired.has('alloc')){ S.fired.add('alloc'); burst(EDEN[0],EDEN[1],C.accent,12,2.4,0.16); }
+      cap.alpha=easeOut(ph(t,34.41,35.0))*(1-ph(t,38.0,38.5));
+    },destroy(){ if(sceneRoot.filters) sceneRoot.filters=null; }};
+  });
+
+  // ---------- S5 : VERSE1 38.500-44.600 — eden + 2 survivors FACT2 ----------
+  scene(38.5,44.6,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const edenLbl=txt('eden',18,C.accent,'800'); edenLbl.position.set(640,500); edenLbl.alpha=0; legible(edenLbl); c.addChild(edenLbl);
+    const s0pop=new PIXI.Graphics(); c.addChild(s0pop);
+    const s1pop=new PIXI.Graphics(); c.addChild(s1pop);
+    const bracket=txt('young = eden + 2× survivor',18,C.young,'800'); bracket.position.set(640,560); bracket.alpha=0; legible(bracket); c.addChild(bracket);
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.37; dieWave=0.22;
+      edenLbl.alpha=easeOut(ph(t,40.85,41.4))*(1-ph(t,44.2,44.6));
+      // two alcoves snap on dva@42.17
+      const pp=easeOutBack(ph(t,42.17,43.1));
+      s0pop.clear(); s1pop.clear();
+      if(pp>0.01){
+        s0pop.lineStyle(3,C.young,0.9*clamp01(pp)).drawRoundedRect(SURV0[0]-72,SURV0[1]-54,144,108,12);
+        // S1 drawn DARK/empty (copy target this cycle)
+        s1pop.lineStyle(3,lerpColor(C.young,C.garbage,0.6),0.7*clamp01(pp)).drawRoundedRect(SURV1[0]-72,SURV1[1]-54,144,108,12);
+      }
+      bracket.alpha=easeOut(ph(t,42.54,43.2))*(1-ph(t,44.2,44.6));
+    }};
+  });
+
+  // ---------- S6 : VERSE1 44.600-50.900 — minor GC copy to OTHER survivor FACT3 ----------
+  scene(44.6,50.9,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1; activeSurvGlobal=0;
+    // 8 survivor copy-arc trails (eden+S0 -> empty S1)
+    const arcs=[]; for(let j=0;j<N_SURVIVORS;j++){ const tr=makeTrail(0x9af0fb,12); c.addChild(tr); const hd=new PIXI.Graphics(); hd.blendMode=PIXI.BLEND_MODES.ADD; c.addChild(hd); arcs.push({tr,hd,trig:47.17+j*0.15}); }
+    const wipe=new PIXI.Graphics(); c.addChild(wipe);
+    const cap=txt('kopírují přeživší do druhého survivoru',20,C.muted,'800'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36; dieWave=0.25;
+      // minor stab @46.04
+      minorStab(t,46.04,S,'stab1');
+      // copy arcs @47.17 -> @49.57
+      arcs.forEach((o,j)=>{
+        const src = (j%2===0)? EDEN : SURV0;
+        const p=ph(t,o.trig,o.trig+1.0);
+        const path=[src,[640,330],SURV1];
+        setRopeAlongPath(o.tr,[src,pathPos(path,Math.min(1,p)), pathPos(path,Math.min(1,p))]);
+        // build trail from src to current
+        for(let i=0;i<o.tr._pts.length;i++){ const fr=i/(o.tr._pts.length-1)*p; const pp=pathPos(path,fr); o.tr._pts[i].x=pp[0]; o.tr._pts[i].y=pp[1]; }
+        const on=(p>0.02&&p<0.98)?0.7:0; o.tr.alpha=on;
+        const cur=pathPos(path,p);
+        o.hd.clear(); drawSoulMote(o.hd,C.young,1,0.9); o.hd.position.set(cur[0],cur[1]); o.hd.alpha=on?1:(p>=0.98?(1-ph(t,49.8,50.6)):0);
+      });
+      // eden+S0 wipe dark once arc completes ~49.8
+      wipe.clear();
+      const wp=ph(t,49.8,50.6);
+      if(wp>0.01){ wipe.beginFill(C.garbage,0.4*wp).drawRoundedRect(SURV0[0]-72,SURV0[1]-54,144,108,12).endFill();
+        wipe.beginFill(C.garbage,0.3*wp).drawCircle(EDEN[0],EDEN[1]-40,90).endFill(); }
+      cap.alpha=easeOut(ph(t,47.17,47.8))*(1-ph(t,50.4,50.9));
+    }};
+  });
+
+  // ---------- S7 : PRE-CHORUS 50.900-57.520 — minor often/cheap/instant FACT3 ----------
+  scene(50.9,57.52,'PRE-CHORUS','prechorus',(S)=>{
+    const c=new PIXI.Container();
+    const levny=txt('levný',22,C.halo,'800'); levny.position.set(1135,COST_Y+30); levny.alpha=0; legible(levny); c.addChild(levny);
+    const bars=new PIXI.Graphics(); c.addChild(bars);
+    const cap=txt('často · levný · hned hotový',20,C.muted,'800'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36; dieWave=0.25;
+      // 3 rapid stabs @53.12,53.72,54.32
+      minorStab(t,53.12,S,'s1'); minorStab(t,53.72,S,'s2'); minorStab(t,54.32,S,'s3');
+      // cheap stamp @54.81
+      levny.alpha=easeOut(ph(t,54.81,55.3))*(1-ph(t,57.0,57.52));
+      // contrast bars: short minor vs ghost tall major
+      bars.clear();
+      const ba=easeOut(ph(t,54.81,55.6));
+      if(ba>0.01){
+        bars.beginFill(C.accent,0.85*ba).drawRoundedRect(1080,300,30,40,4).endFill();
+        bars.beginFill(C.accent2,0.25*ba).drawRoundedRect(1130,200,30,140,4).endFill();
+        bars.lineStyle(1,C.muted,0.5*ba).drawRoundedRect(1130,200,30,140,4);
+      }
+      // instant snap @55.86
+      if(t>=55.86 && !S.fired.has('snap')){ S.fired.add('snap'); if(FILT.flash){ FILT.flash.color=0xFFCE54; FILT.flash.alpha=0.4; sceneFlash(FILT.flash,true);} }
+      if(FILT.flash && S.fired.has('snap')){ FILT.flash.alpha=0.4*(1-ph(t,55.86,56.0)); if(t>56.01) sceneFlash(FILT.flash,false); }
+      cap.alpha=easeOut(ph(t,53.12,53.7))*(1-ph(t,57.0,57.52));
+    },destroy(){ if(FILT.flash) sceneFlash(FILT.flash,false); }};
+  });
+
+  // ---------- S8 : PRE-CHORUS 57.520-65.600 — discard most, copy few FACTS3,6 ----------
+  scene(57.52,65.6,'PRE-CHORUS','prechorus',(S)=>{
+    const c=new PIXI.Container();
+    const d93=txt('~93% zahozeno',22,C.garbage,'800'); d93.position.set(430,300); d93.alpha=0; legible(d93); c.addChild(d93);
+    const a7=txt('~7% přežije',22,C.young,'800'); a7.position.set(820,300); a7.alpha=0; legible(a7); c.addChild(a7);
+    const scale=new PIXI.Graphics(); c.addChild(scale);
+    const arcs=[]; for(let j=0;j<N_SURVIVORS;j++){ const tr=makeTrail(0x9af0fb,12); c.addChild(tr); arcs.push({tr,trig:60.9+j*0.12}); }
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36;
+      // mass discard sweep @57.52-60.90
+      dieWave=easeOut(ph(t,57.52,60.9))*(1-0.3*ph(t,62.0,65.6));
+      d93.alpha=easeOut(ph(t,58.43,59.2))*(1-ph(t,64.5,65.6));
+      a7.alpha=easeOut(ph(t,59.1,59.8))*(1-ph(t,64.5,65.6));
+      // copy arcs @60.90
+      arcs.forEach(o=>{ const p=ph(t,o.trig,o.trig+1.0); const path=[EDEN,[640,330],SURV1];
+        for(let i=0;i<o.tr._pts.length;i++){ const fr=i/(o.tr._pts.length-1)*p; const pp=pathPos(path,fr); o.tr._pts[i].x=pp[0]; o.tr._pts[i].y=pp[1]; }
+        o.tr.alpha=(p>0.02&&p<0.98)?0.7:0; });
+      // balance scale: copy pan holds 8 survivors, barely tips
+      scale.clear();
+      const sa=easeOut(ph(t,60.9,62.0));
+      if(sa>0.01){
+        const tip=0.08*sa; // barely tips
+        scale.lineStyle(3,C.muted,0.7*sa).moveTo(540,420).lineTo(740,420);
+        scale.moveTo(640,400).lineTo(640,420);
+        // left pan (copy = light)
+        scale.lineStyle(2,C.young,0.8*sa).moveTo(560,420+tip*60).lineTo(560,440+tip*60); scale.drawCircle(560,452+tip*60,18);
+        // right pan (dead = free to discard)
+        scale.lineStyle(2,C.garbage,0.8*sa).moveTo(720,420-tip*60).lineTo(720,440-tip*60); scale.drawCircle(720,452-tip*60,18);
+      }
+    }};
+  });
+
+  // ---------- S9 : CHORUS#1 L1-L2  65.600-77.040 ----------
+  scene(65.6,77.04,'CHORUS','chorus',chorusScene(1,{L1:65.600,L2:70.720,L3:77.040,L4:84.160}));
+  // ---------- S10 : CHORUS#1 L3  77.040-84.160 (major bell) ----------
+  scene(77.04,84.16,'CHORUS','chorus',chorusScene(1,{L1:65.600,L2:70.720,L3:77.040,L4:84.160}));
+  // ---------- S11 : CHORUS#1 L4  84.160-91.320 (promotion) ----------
+  scene(84.16,91.32,'CHORUS','chorus',chorusScene(1,{L1:65.600,L2:70.720,L3:77.040,L4:84.160}));
+
+  // ---------- S12 : VERSE2 91.320-98.940 — promotion defined FACT5 ----------
+  scene(91.32,98.94,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const title=txt('Promotion = povýšení',24,C.accent,'900'); title.position.set(640,260); title.alpha=0; legible(title); c.addChild(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:14,outerStrength:1.5,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const icon=new PIXI.Graphics(); c.addChild(icon);
+    const hero=new PIXI.Container(); c.addChild(hero); const hg=new PIXI.Graphics(); hero.addChild(hg); hero.position.set(640,420);
+    if(hasF('GlowFilter')){ hero._g=new F.GlowFilter({distance:12,outerStrength:1.5,color:C.halo,quality:0.3}); hero.filters=[hero._g]; }
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36; dieWave=0.22;
+      title.alpha=easeOut(ph(t,91.32,92.3))*(1-ph(t,98.0,98.94)); if(title._g) title._g.outerStrength=1.5+1.0*beat(t);
+      // up-arrow icon through arch
+      icon.clear();
+      if(title.alpha>0.01){ icon.lineStyle(3,C.halo,0.8*title.alpha).moveTo(900,270).lineTo(900,230); icon.moveTo(900,230).lineTo(892,240); icon.moveTo(900,230).lineTo(908,240); }
+      // age ticks across several stabs @95.94..98.0
+      minorStab(t,95.94,S,'p1'); minorStab(t,96.6,S,'p2'); minorStab(t,97.3,S,'p3'); minorStab(t,98.0,S,'p4');
+      const age=Math.min(3, Math.floor(ph(t,95.94,98.3)*4));
+      hero.alpha=easeOut(ph(t,95.94,96.4))*(1-ph(t,98.6,98.94));
+      drawSoulMote(hg,C.young,age,1.3);
+      if(hero._g) hero._g.outerStrength=1.5+1.0*beat(t);
+    }};
+  });
+
+  // ---------- S13 : VERSE2 98.940-105.440 — move up young->old FACT5 ----------
+  scene(98.94,105.44,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const arch=new PIXI.Graphics(); c.addChild(arch);
+    const hero=new PIXI.Container(); c.addChild(hero); const hg=new PIXI.Graphics(); hero.addChild(hg);
+    const trail=makeTrail(0x7fe6a6,12); c.addChild(trail);
+    const yLbl=txt('young',16,C.young,'800'); yLbl.position.set(640,470); yLbl.alpha=0; legible(yLbl); c.addChild(yLbl);
+    const oLbl=txt('old',16,C.old,'800'); oLbl.position.set(640,100); oLbl.alpha=0; legible(oLbl); c.addChild(oLbl);
+    if(hasF('GlowFilter')){ hero._g=new F.GlowFilter({distance:14,outerStrength:1.5,color:C.halo,quality:0.3}); hero.filters=[hero._g]; }
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36; dieWave=0.2;
+      // ascent on posuneš@99.06 -> nahoru@102.22 crest -> lands do staré@103.37
+      const p=easeOut(ph(t,99.06,103.37));
+      const path=[[640,420],[640,300],[640,BALCONY_Y]];
+      const cur=pathPos(path,p);
+      hero.position.set(cur[0],cur[1]);
+      const tone=lerpColor(C.young,C.old,clamp01(ph(t,103.37,105.0)));
+      drawSoulMote(hg,tone,4,1.3);
+      hero.alpha=easeOut(ph(t,99.06,99.6));
+      // trail + arch glow
+      for(let i=0;i<trail._pts.length;i++){ const fr=i/(trail._pts.length-1)*p; const pp=pathPos(path,fr); trail._pts[i].x=pp[0]; trail._pts[i].y=pp[1]; }
+      trail.alpha=(p>0.02&&p<0.98)?0.6:0;
+      arch.clear();
+      arch.lineStyle(3,C.halo,0.3+0.4*p).moveTo(640,420); arch.bezierCurveTo(640,300,640,220,640,BALCONY_Y);
+      if(hero._g) hero._g.outerStrength=1.5+1.0*beat(t);
+      yLbl.alpha=easeOut(ph(t,99.06,99.8))*(1-ph(t,104.8,105.44));
+      oLbl.alpha=easeOut(ph(t,102.22,103.0))*(1-ph(t,104.8,105.44));
+    }};
+  });
+
+  // ---------- S14 : VERSE2 105.440-110.900 — tenuring threshold FACT5 ----------
+  scene(105.44,110.9,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const gate=new PIXI.Graphics(); c.addChild(gate);
+    const gLbl=txt('tenuring threshold / věkový práh = věk ≥ 4',18,C.halo,'800'); gLbl.position.set(640,200); gLbl.alpha=0; legible(gLbl); c.addChild(gLbl);
+    const passer=new PIXI.Container(); c.addChild(passer); const pg=new PIXI.Graphics(); passer.addChild(pg); passer.position.set(640,300);
+    const badge=txt('age 4 ✓',14,C.halo,'800'); badge.position.set(675,300); badge.alpha=0; legible(badge); c.addChild(badge);
+    const younger=new PIXI.Container(); c.addChild(younger); const yg=new PIXI.Graphics(); younger.addChild(yg); younger.position.set(560,320);
+    if(hasF('GlowFilter')){ passer._g=new F.GlowFilter({distance:12,outerStrength:1.5,color:C.halo,quality:0.3}); passer.filters=[passer._g]; }
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36; dieWave=0.2;
+      // gate line on věkový práh@106.98
+      gate.clear();
+      const ga=easeOut(ph(t,106.98,107.6));
+      if(ga>0.01){ gate.lineStyle(3,C.halo,0.7*ga*(0.7+0.3*beat(t))).moveTo(BALCONY_X0+40,180).lineTo(BALCONY_X1-40,180); }
+      gLbl.alpha=ga*(1-ph(t,110.2,110.9));
+      // qualifying mote passes @108.22, younger bumps and stays
+      const pass=easeOutBack(ph(t,108.22,110.0));
+      passer.position.set(640,lerp(300,BALCONY_Y,clamp01(pass)));
+      drawSoulMote(pg,lerpColor(C.young,C.old,clamp01(pass)),4,1.3);
+      passer.alpha=easeOut(ph(t,106.98,107.6));
+      badge.alpha=passer.alpha*(1-ph(t,109.5,110.5)); badge.position.set(675,passer.position.y);
+      if(passer._g) passer._g.outerStrength=1.5+1.0*beat(t);
+      // younger mote bumps gate (age<4)
+      const bump=Math.sin(ph(t,108.22,110.0)*TAU*2)*6*easeOut(ph(t,108.22,109.0));
+      younger.position.set(560,lerp(320,200,easeOut(ph(t,108.22,108.8)))+bump);
+      drawSoulMote(yg,C.young,2,1.1); younger.alpha=easeOut(ph(t,107.0,107.6))*(1-ph(t,110.2,110.9));
+    }};
+  });
+
+  // ---------- S15 : VERSE2 110.900-118.040 — permanent move FACT5 ----------
+  scene(110.9,118.04,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const door=new PIXI.Graphics(); c.addChild(door);
+    const hero=new PIXI.Container(); c.addChild(hero); const hg=new PIXI.Graphics(); hero.addChild(hg); hero.position.set(640,420);
+    const stamp=txt('natrvalo — no return',20,C.old,'900'); stamp.position.set(640,200); stamp.alpha=0; legible(stamp); c.addChild(stamp);
+    if(hasF('GlowFilter')){ hero._g=new F.GlowFilter({distance:12,outerStrength:1.5,color:C.old,quality:0.3}); hero.filters=[hero._g]; }
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36; dieWave=0.2;
+      // one-way door + chevron on přesunou@113.83
+      door.clear();
+      const da=easeOut(ph(t,113.83,114.6));
+      if(da>0.01){
+        door.lineStyle(3,C.old,0.8*da).drawRoundedRect(600,150,80,40,6);
+        // chevron up
+        door.lineStyle(3,C.halo,0.8*da).moveTo(625,175).lineTo(640,160).lineTo(655,175);
+      }
+      // mote crosses
+      const cp=easeOut(ph(t,113.83,116.0));
+      hero.position.set(640,lerp(420,BALCONY_Y,cp));
+      drawSoulMote(hg,lerpColor(C.young,C.old,cp),4,1.3);
+      hero.alpha=easeOut(ph(t,111.0,111.6));
+      if(hero._g) hero._g.outerStrength=1.5+1.0*beat(t);
+      // latch shut + seal flash on natrvalo@116.14
+      if(t>=116.14 && !S.fired.has('seal')){ S.fired.add('seal'); if(FILT.flashWarm){ FILT.flashWarm.alpha=0.35; sceneFlash(FILT.flashWarm,true);} }
+      if(FILT.flashWarm && S.fired.has('seal')){ FILT.flashWarm.alpha=0.35*(1-ph(t,116.14,116.34)); if(t>116.35) sceneFlash(FILT.flashWarm,false); }
+      if(da>0.01 && t>=116.14){ door.lineStyle(4,C.old,0.9).moveTo(600,170).lineTo(680,170); }
+      stamp.alpha=easeOut(ph(t,116.14,116.7))*(1-ph(t,117.5,118.04));
+    },destroy(){ if(FILT.flashWarm) sceneFlash(FILT.flashWarm,false); }};
+  });
+
+  // ---------- S16 : PRE-CHORUS#2 118.040-124.760 — minor reprise FACT3 ----------
+  scene(118.04,124.76,'PRE-CHORUS','prechorus',(S)=>{
+    const c=new PIXI.Container();
+    const levny=txt('levný',22,C.halo,'800'); levny.position.set(1135,COST_Y+30); levny.alpha=0; legible(levny); c.addChild(levny);
+    const cap=txt('často · levný · hned hotový',20,C.muted,'800'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36; dieWave=0.25;
+      minorStab(t,120.30,S,'s1'); minorStab(t,120.9,S,'s2'); minorStab(t,121.5,S,'s3');
+      levny.alpha=easeOut(ph(t,122.03,122.5))*(1-ph(t,124.2,124.76));
+      if(t>=123.12 && !S.fired.has('snap')){ S.fired.add('snap'); if(FILT.flash){ FILT.flash.color=0xFFCE54; FILT.flash.alpha=0.4; sceneFlash(FILT.flash,true);} }
+      if(FILT.flash && S.fired.has('snap')){ FILT.flash.alpha=0.4*(1-ph(t,123.12,123.26)); if(t>123.27) sceneFlash(FILT.flash,false); }
+      cap.alpha=easeOut(ph(t,120.30,120.9))*(1-ph(t,124.2,124.76));
+    },destroy(){ if(FILT.flash) sceneFlash(FILT.flash,false); }};
+  });
+
+  // ---------- S17 : PRE-CHORUS#2 124.760-133.080 — discard/copy reprise FACTS3,6 ----------
+  scene(124.76,133.08,'PRE-CHORUS','prechorus',(S)=>{
+    const c=new PIXI.Container();
+    const d93=txt('~93% zahozeno',22,C.garbage,'800'); d93.position.set(430,300); d93.alpha=0; legible(d93); c.addChild(d93);
+    const a7=txt('~7% přežije',22,C.young,'800'); a7.position.set(820,300); a7.alpha=0; legible(a7); c.addChild(a7);
+    const scale=new PIXI.Graphics(); c.addChild(scale);
+    const arcs=[]; for(let j=0;j<N_SURVIVORS;j++){ const tr=makeTrail(0x9af0fb,12); c.addChild(tr); arcs.push({tr,trig:128.39+j*0.12}); }
+    return {c,update(lt,t){
+      camDollyScale=1; hudAlpha=0.6; moteEnvelope=0.36;
+      dieWave=easeOut(ph(t,124.76,128.39))*(1-0.3*ph(t,129.5,133.08));
+      d93.alpha=easeOut(ph(t,125.84,126.6))*(1-ph(t,132.0,133.08));
+      a7.alpha=easeOut(ph(t,126.61,127.3))*(1-ph(t,132.0,133.08));
+      arcs.forEach(o=>{ const p=ph(t,o.trig,o.trig+1.0); const path=[EDEN,[640,330],SURV1];
+        for(let i=0;i<o.tr._pts.length;i++){ const fr=i/(o.tr._pts.length-1)*p; const pp=pathPos(path,fr); o.tr._pts[i].x=pp[0]; o.tr._pts[i].y=pp[1]; }
+        o.tr.alpha=(p>0.02&&p<0.98)?0.7:0; });
+      scale.clear();
+      const sa=easeOut(ph(t,128.39,129.5));
+      if(sa>0.01){ const tip=0.08*sa;
+        scale.lineStyle(3,C.muted,0.7*sa).moveTo(540,420).lineTo(740,420); scale.moveTo(640,400).lineTo(640,420);
+        scale.lineStyle(2,C.young,0.8*sa).drawCircle(560,452+tip*60,18);
+        scale.lineStyle(2,C.garbage,0.8*sa).drawCircle(720,452-tip*60,18);
+      }
+    }};
+  });
+
+  // ---------- S18 : CHORUS#2 133.080-158.820 (full 4 lines) ----------
+  scene(133.08,158.82,'CHORUS','chorus',chorusScene(2,{L1:133.080,L2:139.200,L3:145.040,L4:151.180}));
+
+  // ---------- S19 : BRIDGE 158.820-166.400 — Parallel throughput FACT7 ----------
+  scene(158.82,166.4,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const tpGauge=new PIXI.Graphics(); c.addChild(tpGauge);
+    const tpLbl=txt('throughput',18,C.accent,'800'); tpLbl.position.set(420,440); tpLbl.alpha=0; legible(tpLbl); c.addChild(tpLbl);
+    const latGauge=new PIXI.Graphics(); c.addChild(latGauge);
+    const latLbl=txt('latence',16,C.muted,'700'); latLbl.position.set(560,440); latLbl.alpha=0; legible(latLbl); c.addChild(latLbl);
+    const threads=new PIXI.Graphics(); c.addChild(threads);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.0,1.06,easeInOut(ph(t,158.82,160.5))); camPivotX=640; camPivotY=360;
+      hudAlpha=0.4; moteEnvelope=0.3; dieWave=0.12;
+      // throughput needle sweeps to ~90% on throughput@161.52
+      const tp=easeOut(ph(t,161.52,165.0));
+      drawGauge(tpGauge,420,300,120,tp*0.9,C.accent,0x2a2014);
+      tpLbl.alpha=easeOut(ph(t,161.52,162.2));
+      // small latency gauge low/neutral
+      drawGauge(latGauge,560,340,60,0.2,C.halo,0x2a2014);
+      latLbl.alpha=easeOut(ph(t,161.52,162.2))*0.8;
+      // 8 thread figures line up at stage edge (faint)
+      threads.clear();
+      const ta=easeOut(ph(t,158.82,160.5))*0.5;
+      for(let i=0;i<N_GC_THREADS;i++){ const x=180+i*16; threads.beginFill(C.young,ta).drawCircle(x,650,6).endFill(); }
+    },destroy(){ camDollyScale=1; }};
+  });
+
+  // ---------- S20 : BRIDGE 166.400-173.330 — many threads + STW freeze FACT7 ----------
+  scene(166.4,173.33,'BRIDGE','freeze',(S)=>{
+    const c=new PIXI.Container();
+    const threads=new PIXI.Graphics(); c.addChild(threads);
+    const stwBar=new PIXI.Graphics(); c.addChild(stwBar);
+    const tradeoff=txt('throughput ↑  ·  pauza dlouhá',20,C.danger,'900'); tradeoff.position.set(640,200); tradeoff.alpha=0; legible(tradeoff); c.addChild(tradeoff);
+    return {c,update(lt,t){
+      camPivotX=640; camPivotY=360;
+      hudAlpha=0.4;
+      // 8 threads descend together @167.13
+      threads.clear();
+      const dp=easeOut(ph(t,167.13,169.0));
+      for(let i=0;i<N_GC_THREADS;i++){ const x=300+i*80; const y=lerp(80,420,dp);
+        threads.beginFill(C.young,0.85).drawCircle(x,y,9).endFill();
+        threads.lineStyle(2,C.young,0.5).moveTo(x,y).lineTo(x,y+18); threads.lineStyle(0);
+      }
+      // THE LONG FREEZE @169.64..173.33 — global freeze gate handled by beatAmp/pulseAmp/spawn
+      const frozen=(t>=169.64);
+      moteEnvelope=frozen? 0.25 : 0.3;
+      dieWave=frozen?0:0.12;
+      // long STW bar fills (LENGTH = pause cost)
+      stwBar.clear();
+      const sf=easeIn(ph(t,169.64,173.33));
+      stwBar.lineStyle(2,C.danger,0.5).drawRoundedRect(140,348,1000,24,6);
+      stwBar.beginFill(C.danger,0.85).drawRoundedRect(142,350,Math.max(0,(996)*sf),20,5).endFill();
+      // CRT + glitch + twist owned on overlayFx
+      if(t>=169.64 && !hasOverlayFx('stw')){ if(FILT.crt) addOverlayFx('stw',FILT.crt); if(FILT.glitch) addOverlayFx('stwGlitch',FILT.glitch); }
+      if(FILT.crt && hasOverlayFx('stw')){ FILT.crt.time=t*4; FILT.crt.noise=0.15*ph(t,169.64,170.5); }
+      if(FILT.glitch && hasOverlayFx('stwGlitch')){ FILT.glitch.seed=hash01(Math.floor(t*12)); FILT.glitch.offset=10*ph(t,169.64,170.5)*(1-ph(t,172.5,173.33)); }
+      // twist wring on stop the world@172.19
+      if(t>=172.19 && !hasOverlayFx('stwTwist')){ if(FILT.twist){ FILT.twist.offset=[640,360]; addOverlayFx('stwTwist',FILT.twist);} else if(FILT.twistDisp){ addOverlayFx('stwTwist',FILT.twistDisp);} }
+      if(hasOverlayFx('stwTwist')){ const a=0.5*easeOut(ph(t,172.19,172.9))*(1-ph(t,172.9,173.33)); if(FILT.twist) FILT.twist.angle=a; else if(FILT.twistDisp){FILT.twistDisp.scale.x=FILT.twistDisp.scale.y=a*60;} if(t>=173.33){ removeOverlayFx('stwTwist'); } }
+      // zoom micro on freeze onset
+      if(t>=169.64 && !S.fired.has('fz')){ S.fired.add('fz'); if(FILT.zoom){ FILT.zoom.center=[640,360]; FILT.zoom.strength=0.18; addOverlayFx('fzZoom',FILT.zoom);} }
+      if(FILT.zoom && hasOverlayFx('fzZoom')){ FILT.zoom.strength=0.18*(1-ph(t,169.64,169.9)); if(t>169.92) removeOverlayFx('fzZoom'); }
+      tradeoff.alpha=easeOut(ph(t,169.64,170.3))*(1-ph(t,173.0,173.33));
+    },destroy(){ removeOverlayFx('stw'); removeOverlayFx('stwGlitch'); removeOverlayFx('stwTwist'); }};
+  });
+
+  // ---------- S21 : BRIDGE 173.330-178.940 — batch jobs, long pause OK FACT7 ----------
+  scene(173.33,178.94,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const belt=new PIXI.Graphics(); c.addChild(belt);
+    const crates=new PIXI.Graphics(); c.addChild(crates);
+    const stwBar=new PIXI.Graphics(); c.addChild(stwBar);
+    const nevadi=txt('nevadí ✓',22,C.halo,'900'); nevadi.position.set(640,300); nevadi.alpha=0; legible(nevadi); c.addChild(nevadi);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      hudAlpha=0.4; moteEnvelope=0.3; dieWave=0.12;
+      // conveyor belt
+      belt.clear();
+      belt.lineStyle(3,C.muted,0.5).moveTo(140,560).lineTo(1140,560);
+      // batch crates moving (pure f(t))
+      crates.clear();
+      const ca=easeOut(ph(t,174.15,175.0));
+      for(let i=0;i<6;i++){ const x=140+((i*180 + t*40)%1000); crates.beginFill(C.old,0.7*ca).lineStyle(1.5,C.accent,0.6*ca).drawRoundedRect(x,536,40,24,4).endFill(); }
+      // long STW bar still sits across
+      stwBar.clear();
+      stwBar.beginFill(C.danger,0.5).drawRoundedRect(142,520,996,8,4).endFill();
+      // nevadí stamp @176.38 with shockwave micro-ring
+      if(t>=176.38 && !S.fired.has('nev')){ S.fired.add('nev');
+        if(FILT.shock){ FILT.shock.center=[640,300]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('nevShock',FILT.shock); }
+        if(FILT.flashGreen){ FILT.flashGreen.alpha=0.35; sceneFlash(FILT.flashGreen,true); }
+      }
+      if(FILT.shock && hasOverlayFx('nevShock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('nevShock'); }
+      if(FILT.flashGreen && S.fired.has('nev')){ FILT.flashGreen.alpha=0.35*(1-ph(t,176.38,176.6)); if(t>176.61) sceneFlash(FILT.flashGreen,false); }
+      nevadi.alpha=easeOut(ph(t,176.38,177.0))*(1-ph(t,178.4,178.94));
+    },destroy(){ if(FILT.flashGreen) sceneFlash(FILT.flashGreen,false); }};
+  });
+
+  // ---------- S22 : BRIDGE 178.940-185.120 — G1 shatters into regions FACT8 ----------
+  scene(178.94,185.12,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const grid=new PIXI.Container(); c.addChild(grid);
+    // 5x4 grid of 20 equal tiles
+    const tiles=[];
+    const cols=5,rows=4, tw=200,th=120, gap=8;
+    const gx0=120, gy0=150;
+    for(let r=0;r<rows;r++) for(let cc=0;cc<cols;cc++){
+      const idx=r*cols+cc;
+      const tg=new PIXI.Graphics(); grid.addChild(tg);
+      const x=gx0+cc*(tw+gap), y=gy0+r*(th+gap);
+      tiles.push({tg,x,y,garbage:hash01(idx*13.7+1.3)});
+    }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      hudAlpha=0.4; moteEnvelope=0.3; dieWave=0.1;
+      // warm flash relief on G1@179.06
+      if(t>=179.06 && !S.fired.has('warm')){ S.fired.add('warm'); if(FILT.flashWarm){ FILT.flashWarm.alpha=0.4; sceneFlash(FILT.flashWarm,true);} }
+      if(FILT.flashWarm && S.fired.has('warm')){ FILT.flashWarm.alpha=0.4*(1-ph(t,179.06,179.4)); if(t>179.41) sceneFlash(FILT.flashWarm,false); }
+      // shatter into grid @181.94 -> snaps @183.82
+      const sp=easeOutBack(ph(t,181.94,184.2));
+      tiles.forEach((o,i)=>{
+        o.tg.clear();
+        if(sp<=0.001) return;
+        const a=clamp01(sp);
+        // tiles fly in from center
+        const cx=640,cy=340;
+        const x=lerp(cx,o.x,a), y=lerp(cy,o.y,a);
+        o.tg.lineStyle(2,C.accent,0.7*a).beginFill(0x16140c,0.5*a).drawRoundedRect(x,y,200,120,8).endFill();
+        // garbage-fill gauge
+        o.tg.lineStyle(0).beginFill(lerpColor(C.halo,C.garbage,o.garbage),0.6*a).drawRoundedRect(x+10,y+96,(200-20)*o.garbage,12,3).endFill();
+      });
+    },destroy(){ if(FILT.flashWarm) sceneFlash(FILT.flashWarm,false); }};
+  });
+
+  // ---------- S23 : BRIDGE 185.120-189.780 — garbage-first FACT8 ----------
+  scene(185.12,189.78,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const grid=new PIXI.Container(); c.addChild(grid);
+    const cols=5,rows=4, tw=200,th=120, gap=8, gx0=120, gy0=150;
+    const tiles=[];
+    for(let r=0;r<rows;r++) for(let cc=0;cc<cols;cc++){ const idx=r*cols+cc; const tg=new PIXI.Graphics(); grid.addChild(tg);
+      tiles.push({tg,x:gx0+cc*(tw+gap),y:gy0+r*(th+gap),garbage:hash01(idx*13.7+1.3),idx}); }
+    // ranked by garbage desc
+    const ranked=tiles.slice().sort((a,b)=>b.garbage-a.garbage);
+    const cap=txt('nejvíc smetí → bere první',18,C.accent,'800'); cap.position.set(640,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360; hudAlpha=0.4; moteEnvelope=0.3; dieWave=0.1;
+      // collect dirtiest first @188.16
+      const collected=Math.floor(ph(t,188.16,189.78)*3); // sweep top-3 progressively
+      tiles.forEach(o=>{
+        const rank=ranked.indexOf(o);
+        const isCollected=rank<collected;
+        const dirty=rank<3;
+        o.tg.clear();
+        const pulse=dirty? (0.6+0.4*beat(t)) : 1;
+        if(isCollected){ o.tg.lineStyle(2,C.muted,0.3).beginFill(0x0a0a12,0.3).drawRoundedRect(o.x,o.y,200,120,8).endFill();
+          if(!o._burst){ o._burst=true; burst(o.x+100,o.y+60,C.accent,14,2.4,0.16); } }
+        else { o.tg.lineStyle(2,dirty?C.danger:C.accent,(dirty?0.9:0.6)*pulse).beginFill(0x16140c,0.5).drawRoundedRect(o.x,o.y,200,120,8).endFill();
+          o.tg.lineStyle(0).beginFill(lerpColor(C.halo,C.garbage,o.garbage),0.65).drawRoundedRect(o.x+10,o.y+96,(200-20)*o.garbage,12,3).endFill(); }
+      });
+      cap.alpha=easeOut(ph(t,188.16,188.8))*(1-ph(t,189.3,189.78));
+    }};
+  });
+
+  // ---------- S24 : BRIDGE 189.780-195.100 — name reveal "Garbage First" FACT8 ----------
+  scene(189.78,195.1,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const name=txt('Garbage First',32,C.accent,'900'); name.position.set(640,300); name.alpha=0; legible(name); c.addChild(name);
+    if(hasF('GlowFilter')){ name._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); name.filters=(name.filters||[]).concat([name._g]); }
+    const cpuMeter=new PIXI.Graphics(); c.addChild(cpuMeter);
+    const cpuLbl=txt('šetří procesor',18,C.halo,'800'); cpuLbl.position.set(1100,180); cpuLbl.alpha=0; legible(cpuLbl); c.addChild(cpuLbl);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360; hudAlpha=0.4; moteEnvelope=0.3; dieWave=0.1;
+      // name reveal @191.37 with zoom punch + bulge pop
+      if(t>=191.37 && !S.fired.has('name')){ S.fired.add('name');
+        if(FILT.zoom){ FILT.zoom.center=[640,300]; FILT.zoom.strength=0.26; addOverlayFx('nameZoom',FILT.zoom); }
+        if(FILT.bulge){ FILT.bulge.center=[640/1280,300/720]; FILT.bulge.strength=0.4; addOverlayFx('namePop',FILT.bulge); }
+        else if(FILT.bulgeDisp){ FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=30; addOverlayFx('namePop',FILT.bulgeDisp); }
+      }
+      if(FILT.zoom && hasOverlayFx('nameZoom')){ FILT.zoom.strength=0.26*(1-ph(t,191.37,191.62)); if(t>191.63) removeOverlayFx('nameZoom'); }
+      if(hasOverlayFx('namePop')){ const k=0.4*(1-ph(t,191.37,191.7)); if(FILT.bulge) FILT.bulge.strength=k; else if(FILT.bulgeDisp) FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=k/0.4*30; if(t>=191.72) removeOverlayFx('namePop'); }
+      name.alpha=easeOut(ph(t,191.37,192.0))*(1-ph(t,194.4,195.1));
+      if(name._g) name._g.outerStrength=2+1.5*beat(t);
+      if(bloomF) bloomF.bloomScale=1.0+0.5*beat(t)+0.6*easeOut(ph(t,191.37,191.7))*(1-ph(t,192.2,192.8));
+      // CPU/efficiency meter @192.85
+      cpuMeter.clear();
+      const cm=easeOut(ph(t,192.85,195.0));
+      cpuMeter.lineStyle(1.5,C.muted,0.6).beginFill(C.ink,0.5).drawRoundedRect(1060,200,150,14,4).endFill();
+      cpuMeter.beginFill(C.halo,0.9).drawRoundedRect(1061,201,148*cm,12,3).endFill();
+      cpuLbl.alpha=easeOut(ph(t,192.85,193.5))*(1-ph(t,194.6,195.1));
+    }};
+  });
+
+  // ---------- S25 : BRIDGE 195.100-199.840 — pause target FACT8 ----------
+  scene(195.1,199.84,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const dial=new PIXI.Graphics(); c.addChild(dial);
+    const targetLbl=txt('pause target',16,C.accent,'800'); targetLbl.position.set(640,430); targetLbl.alpha=0; legible(targetLbl); c.addChild(targetLbl);
+    const ghostBar=new PIXI.Graphics(); c.addChild(ghostBar);
+    const shortBars=new PIXI.Graphics(); c.addChild(shortBars);
+    const cap=txt('krátké · předvídatelné · podle cíle',20,C.muted,'800'); cap.position.set(640,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360; hudAlpha=0.4; moteEnvelope=0.3; dieWave=0.1;
+      // pause-budget dial set to ~25% notch
+      dial.clear();
+      drawGauge(dial,640,300,110,0.25,C.accent,0x2a2014);
+      // target notch glows
+      const na=Math.PI*0.75+Math.PI*1.5*0.25;
+      dial.lineStyle(4,C.halo,0.6+0.4*beat(t)).moveTo(640+Math.cos(na)*100,300+Math.sin(na)*100).lineTo(640+Math.cos(na)*120,300+Math.sin(na)*120);
+      targetLbl.alpha=easeOut(ph(t,195.74,196.4))*(1-ph(t,199.2,199.84));
+      // ghost long STW bar (Parallel) vs short G1 collections
+      ghostBar.clear();
+      ghostBar.beginFill(C.danger,0.18).drawRoundedRect(180,470,920,10,4).endFill();
+      // steady even rhythm of short bars @197.10
+      shortBars.clear();
+      const sa=easeOut(ph(t,197.10,198.0));
+      for(let i=0;i<8;i++){ const x=200+i*110; const on=((t*2)%8|0)>=i; shortBars.beginFill(C.halo,(on?0.85:0.4)*sa).drawRoundedRect(x,470,40,10,3).endFill(); }
+      cap.alpha=easeOut(ph(t,197.10,197.7))*(1-ph(t,199.4,199.84));
+    }};
+  });
+
+  // ---------- S26 : BRIDGE 199.840-206.560 — big heaps / low latency FACT8 ----------
+  scene(199.84,206.56,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const grid=new PIXI.Graphics(); c.addChild(grid);
+    const latGauge=new PIXI.Graphics(); c.addChild(latGauge);
+    const latLbl=txt('nízká latence',18,C.halo,'800'); latLbl.position.set(960,460); latLbl.alpha=0; legible(latLbl); c.addChild(latLbl);
+    const chipP=txt('Parallel: throughput, dlouhá pauza',16,C.accent2,'700'); chipP.position.set(640,540); chipP.alpha=0; legible(chipP); c.addChild(chipP);
+    const chipG=txt('G1: regiony, krátké pauzy',16,C.halo,'700'); chipG.position.set(640,566); chipG.alpha=0; legible(chipG); c.addChild(chipG);
+    return {c,update(lt,t){
+      // dolly out on velké haldy@200.90
+      camDollyScale=lerp(1.0,0.92,easeOut(ph(t,200.9,203.0))); camPivotX=640; camPivotY=360;
+      hudAlpha=0.4; moteEnvelope=0.32; dieWave=0.1;
+      // vast region grid
+      grid.clear();
+      const ga=easeOut(ph(t,200.9,202.5));
+      if(ga>0.01){ for(let r=0;r<6;r++) for(let cc=0;cc<10;cc++){ const x=120+cc*104, y=150+r*60;
+        grid.lineStyle(1.5,C.accent,0.4*ga).drawRoundedRect(x,y,96,52,5); } }
+      // latency gauge low/green
+      drawGauge(latGauge,960,360,80,0.18,C.halo,0x2a2014);
+      latLbl.alpha=easeOut(ph(t,202.88,203.6));
+      chipP.alpha=easeOut(ph(t,203.5,204.2))*0.9; chipG.alpha=easeOut(ph(t,204.0,204.7))*0.9;
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t)+0.3*easeOut(ph(t,204.0,206.5));
+    },destroy(){ camDollyScale=1; }};
+  });
+
+  // ---------- S27 : CHORUS#3 206.560-234.800 (climactic) ----------
+  scene(206.56,234.8,'CHORUS','chorus',chorusScene(3,{L1:206.560,L2:213.620,L3:220.100,L4:227.240}));
+
+  // ---------- S28 : OUTRO 234.800-241.660 — Parallel recap FACT7 ----------
+  scene(234.8,241.66,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    const tpGauge=new PIXI.Graphics(); c.addChild(tpGauge);
+    const stwBar=new PIXI.Graphics(); c.addChild(stwBar);
+    const pLbl=txt('Parallel',18,C.accent2,'900'); pLbl.position.set(380,200); pLbl.alpha=0; legible(pLbl); c.addChild(pLbl);
+    const pvX0=camPivotX, pvY0=camPivotY;
+    return {c,update(lt,t){
+      const rc=easeInOut(ph(t,234.8,238.0));
+      camDollyScale=lerp(1.04,1.0,rc); camPivotX=lerp(pvX0,640,rc); camPivotY=lerp(pvY0,360,rc);
+      hudAlpha=0.45; moteEnvelope=0.3; dieWave=0.1;
+      // remove any lingering held zoom (released inside S28 per §2)
+      if(hasOverlayFx('zoomHeld')) removeOverlayFx('zoomHeld');
+      // throughput gauge high on throughput@236.33
+      const tp=easeOut(ph(t,236.33,238.5));
+      drawGauge(tpGauge,380,330,110,tp*0.9,C.accent2,0x2a2014);
+      pLbl.alpha=easeOut(ph(t,236.33,237.0));
+      // long STW bar restated on stop the world@239.73
+      stwBar.clear();
+      const sf=easeIn(ph(t,239.73,241.66));
+      stwBar.lineStyle(2,C.danger,0.5).drawRoundedRect(560,330,560,22,6);
+      stwBar.beginFill(C.danger,0.7).drawRoundedRect(562,332,556*sf,18,5).endFill();
+      // brief danger tint pulse
+      if(t>=239.73 && !S.fired.has('dt')){ S.fired.add('dt'); if(FILT.flashRed){ FILT.flashRed.alpha=0.2; sceneFlash(FILT.flashRed,true);} }
+      if(FILT.flashRed && S.fired.has('dt')){ FILT.flashRed.alpha=0.2*(1-ph(t,239.73,240.1)); if(t>240.11) sceneFlash(FILT.flashRed,false); }
+    },destroy(){ camDollyScale=1; if(FILT.flashRed) sceneFlash(FILT.flashRed,false); }};
+  });
+
+  // ---------- S29 : OUTRO 241.660-248.080 — G1 recap FACT8 ----------
+  scene(241.66,248.08,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const grid=new PIXI.Graphics(); c.addChild(grid);
+    const gLbl=txt('G1',18,C.halo,'900'); gLbl.position.set(900,200); gLbl.alpha=0; legible(gLbl); c.addChild(gLbl);
+    const shortBars=new PIXI.Graphics(); c.addChild(shortBars);
+    const tie=txt('mladá často · stará občas · G1 = regiony',18,C.muted,'800'); tie.position.set(640,560); tie.alpha=0; legible(tie); c.addChild(tie);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360; hudAlpha=0.45; moteEnvelope=0.3; dieWave=0.08;
+      // region grid echo (5x4) lights on regiony@242.73
+      grid.clear();
+      const ga=easeOut(ph(t,242.73,244.0));
+      if(ga>0.01){ for(let r=0;r<4;r++) for(let cc=0;cc<5;cc++){ const x=620+cc*100, y=250+r*60;
+        grid.lineStyle(1.5,C.halo,0.5*ga).drawRoundedRect(x,y,90,52,5); } }
+      gLbl.alpha=easeOut(ph(t,241.66,242.4));
+      // short even pause bars tick predictably @243.66
+      shortBars.clear();
+      const sa=easeOut(ph(t,243.66,244.6));
+      for(let i=0;i<7;i++){ const x=180+i*50; const on=((t*2)%7|0)>=i; shortBars.beginFill(C.halo,(on?0.85:0.4)*sa).drawRoundedRect(x,470,30,10,3).endFill(); }
+      tie.alpha=easeOut(ph(t,243.66,244.4))*(1-ph(t,247.4,248.08));
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t)+0.25*easeOut(ph(t,244.0,247.0));
+    }};
+  });
+
+  // ---------- S30 : END-CARD 248.080-252.864 (instrumental tail) ----------
+  scene(248.08,252.864,'END','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const title=txt('UMÍRAJÍ MLADÍ',54,C.accent,'900'); title.position.set(640,320); legible(title); c.addChild(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:1.5,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('eden → survivor → promotion · Parallel vs G1',22,C.muted,'700'); sub.position.set(640,372); legible(sub); c.addChild(sub);
+    const badge=txt('🕯️  Umírají mladí · generační GC · ESW B4M36ESW',20,C.muted,'700'); badge.position.set(640,560); legible(badge); c.addChild(badge);
+    return {c,update(lt,t){
+      const q=ph(t,248.08,251.5);
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      hudAlpha=lerp(0.45,0.0,easeInOut(q));
+      // motes thin to ~20%
+      moteVisibleRatio=lerp(1.0,0.20,easeInOut(q));
+      moteEnvelope=lerp(0.3,0.12,easeInOut(q));
+      dieWave=0;
+      if(title._g) title._g.outerStrength=lerp(1.5,0.2,easeInOut(q));
+      if(bloomF) bloomF.bloomScale=1.0+0.25*Math.exp(-Math.pow((t-251.0),2)/0.3);
+    },destroy(){ moteVisibleRatio=1; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene (ColorMatrix on bgLayer)
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='freeze'){
+      const cold=ph(t,166.4,169.0);
+      bgGrade.saturate(-0.45*cold,false);
+      bgGrade.brightness(1-0.12*cold,true);
+    } else if(sec==='chorus'){
+      bgGrade.saturate(0.2,false);
+    } else if(sec==='bridge'){
+      // G1 (warm) vs Parallel approach — keep mild warm
+      bgGrade.saturate(0.08,false);
+    } else if(sec==='outro'){
+      bgGrade.saturate(0.1,false);
+    } else {
+      bgGrade.saturate(0.12,false);
+    }
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  // EXACT FINAL ACTIVE-LINE PICKER (storyboard §5) — global gate before any branch; fallback REMOVED.
+  const FIRST_WORD_START=2000;    // line 0 start_ms — S0 fully blank
+  const LAST_WORD_END=248080;     // last word "pauzy." end_ms — S30 fully blank
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; }
+    return null;
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    bgIntent.kawase=false;
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='freeze'){ const cold=ph(t,166.4,169.0); top=lerpColor(C.bgTop,C.bgTopCold,cold); bot=lerpColor(C.bgBot,C.bgBotCold,cold); }
+    else if(sec==='bridge' && t>=178.94){ const warm=ph(t,178.94,180.0); top=lerpColor(C.bgTopCold,C.bgTopWarm,warm); bot=lerpColor(C.bgBotCold,C.bgBotWarm,warm); }
+    else if(sec==='bridge' && t>=173.33){ const warm=ph(t,173.33,176.0); top=lerpColor(C.bgTopCold,C.bgTop,warm); bot=lerpColor(C.bgBotCold,C.bgBot,warm); }
+    if(t>=248.08){ const q=easeInOut(ph(t,248.08,251.5)); top=lerpColor(top,0x120c06,q); bot=lerpColor(bot,0x06060c,q); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // dust drift
+    smokeTile.tilePosition.y=(-(t*16))%256; smokeTile.alpha=0.045*(moteEnvelope/0.3);
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time=t; }
+    bgIntent.godray=(sec==='intro'||sec==='chorus'||sec==='outro');
+
+    // ----- scene manager (with backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.12);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame from intent flags -----
+    { const arr=[bgGrade];
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+
+    // ----- hall persistence -----
+    renderHall(t,sec);
+
+    // ----- camera -----
+    updateCamera(t);
+
+    // ----- karaoke -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — soul-motes + sparks (non-load-bearing)
+  //  Advance ONLY while !player.paused && !player.ended → PAUSE freezes everything.
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    const playing = !player.paused && !player.ended;
+    const t=player.currentTime||0;
+    // freeze gate (S20 stop-the-world): motes hold dead still
+    const frozen=(t>=169.64 && t<173.33);
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing && !frozen){
+        m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y<-20){ // respawn: eden motes from font, tenured anywhere
+          if(m.eden){ m.s.y=EDEN[1]; m.s.x=EDEN[0]+(Math.random()-0.5)*420; }
+          else { m.s.y=H+20; m.s.x=Math.random()*W; }
+        }
+      }
+      const visible=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      // die-off: eden motes tint→garbage + dim as dieWave rises (deterministic by index)
+      let a=moteEnvelope*(0.7+0.5*Math.sin(m.phs));
+      if(m.eden){
+        const dieIdx=(i/EDEN_CAP);                 // 0..1 ; LIVE_FRAC survive
+        const dead=dieIdx>LIVE_FRAC;               // top 93% are the dying pool
+        if(dead){ a*= (1-dieWave*0.92); m.s.tint=lerpColor(0xFFE9A8,0x7a6a4a,dieWave); }
+        else { m.s.tint=lerpColor(0xFFE9A8,0x9af0fb,0.5); a*=1.1; } // survivors cyan, persist
+      }
+      m.s.alpha=visible? clamp01(a) : 0;
+    }
+    if(playing && !frozen){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(t);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>

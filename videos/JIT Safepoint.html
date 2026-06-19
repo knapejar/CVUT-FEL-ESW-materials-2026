@@ -1,0 +1,1596 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>JIT Safepoint — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#0b1020; --bg-bot:#05070d; --panel:#0e1626; --text:#f3eee2; --muted:#9aa4b2;
+    --cold:#3a6ea5; --accent:#ff7a18; --accent2:#ffc83d; --hot:#fff2c2; --native:#ff9e3d;
+    --c1:#5bd0e0; --c2:#ff5a3c; --safe:#5be08a; --danger:#ff4d4d; --ink:#0a1424; --border:#1b2740;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(255,122,24,.16);border:1px solid rgba(255,122,24,.42);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#03040a;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.80),rgba(0,0,0,.36) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(255,122,24,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 16px rgba(255,122,24,.95)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#ffd9b0;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(40,20,8,.85),rgba(3,4,10,.94));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#ff7a18,#ffc83d);color:#05070d;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(255,122,24,.5)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#f0e6d6} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#28344e var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">JIT Safepoint</span>
+    <span class="badge">IMMERSIVE VIDEO 🔥</span>
+    <span class="hints">space = play/pauza · ←/→ = ±5s · R = restart</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">Horká cesta kódu — výuková lyric-video k B4M36ESW. Studený bytecode se v interpretu profiluje, JIT z horkých míst kuje nativní kód (C1 → C2), deoptimalizace bezpečně couvne a safepointy zastaví svět; TTSP = než dorazí všichni.<small>~2 min 50 s · sung video-lesson · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="169.512" step="0.01" value="0">
+    <span class="time" id="tDur">2:50</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-jit-safepoint.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){showErr('pixi-filters not loaded after pixi');}
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/JIT Safepoint.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:169440,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=169.512;            // MP3 / stage length (fallback when audio.duration unavailable)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (storyboard §2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};            // quadratic out
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // Beat (96 BPM, epic progressive build)
+  const BPM=96;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  // GLOBAL beat gates (default 1.0; S15 ramps to 0 over the held "svět" freeze 151.94->156.0)
+  function beatAmp(t){ return 1-easeInOut(ph(t,151.94,156.0)); }
+
+  // ============================================================
+  //  1b) TEMPERATURE SPINE — temp(t) ∈ [0,1] (storyboard §2). The single master heat fn.
+  // ============================================================
+  function temp(t){
+    if(t<4)        return 0.06;
+    if(t<29)       return 0.06 + 0.20*easeOut(ph(t,4,29));
+    if(t<68.48)    return 0.26 + 0.34*easeInOut(ph(t,29,68.48));
+    if(t<98.60)    return 0.60 + 0.38*easeInOut(ph(t,68.48,98.60));
+    if(t<104.10)   return 0.98*(1 - 0.78*easeIn(ph(t,98.60,104.10)));
+    if(t<115.90)   return 0.22 + 0.10*easeOut(ph(t,104.10,115.90));
+    if(t<150)      return 0.32 - 0.20*easeInOut(ph(t,115.90,150));
+    return 0.12 - 0.12*easeInOut(ph(t,150,169.44));
+  }
+
+  // ============================================================
+  //  2) PALETTE
+  // ============================================================
+  const C={
+    bgTop:0x0b1020, bgBot:0x05070d, bgTopWarm:0x2a1208, bgBotWarm:0x100604,
+    panel:0x0e1626, cold:0x3a6ea5, accent:0xff7a18, accent2:0xffc83d, hot:0xfff2c2,
+    native:0xff9e3d, c1:0x5bd0e0, c2:0xff5a3c, safe:0x5be08a, danger:0xff4d4d,
+    text:0xf3eee2, muted:0x9aa4b2, ink:0x0a1424, white:0xffffff
+  };
+  // Canonical world coords
+  const W=1280,H=720;
+  const GAUGE=[640,90];           // central temperature gauge ring
+  const TTSP_HUD=[1140,90];       // ttsp stopwatch hud
+  const SCROLL=[160,360];         // bytecode scroll desk
+  const FORGE=[595,300];          // forge hub
+  const INGOT=[700,300];          // native ingot
+  const LADX=900;                 // ladder track x
+  const N_THREADS=6, N_METHODS=5, N_RUNGS=3;
+  const HOT=2;                    // hottest method index (the hero token)
+  const STRAGGLER=3;              // lazy thread lane index
+  // method block layout
+  const methodPos=m=>[300,200+m*70];
+  const rungY=lv=>(lv===0?470:lv===3?320:180);
+  const RUNG_LEVELS=[0,3,4];
+  // thread lanes
+  const laneY=j=>200+j*60;
+  const STATIONS=[260,460,660,860];
+  function nearestStation(x){ let best=STATIONS[0],bd=1e9; for(const s of STATIONS){const d=Math.abs(s-x); if(d<bd){bd=d;best=s;}} return best; }
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const hudLayer=new PIXI.Container();      // persistent gauge + TTSP stopwatch (never cross-fades)
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,sceneLayer,hudLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list (addOverlayFx / removeOverlayFx, spliced by name)
+  const _ofx=[]; // {name, filter}
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §7 / §6.23)
+  //  Optional keyed PNGs in videos/assets/img/<slug>.png layer low-alpha ON TOP of the
+  //  always-drawn vector actors. With NO images present the video is a COMPLETE vector
+  //  masterpiece. The loader uses window.ASSETS (base64 data URIs); if no assets-*.js tag
+  //  is present, window.ASSETS is undefined → loader resolves null → PURE VECTOR. The
+  //  sprites are STATIC decoration so __seek / the GOLDEN RULE are unaffected.
+  // ============================================================
+  const IMG={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha,contain){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1, th=tex.height||1;
+    let sc=targetW/tw;
+    if(contain){ const targetH=targetW*9/16; sc=Math.max(targetW/tw,targetH/th); }
+    s.scale.set(sc);
+    s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s);
+    return s;
+  }
+  // Fire-and-forget loader for the 6 optional hero slugs (storyboard §7). On resolve, attach persistents.
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    const SLUGS=['cold-clerk','forge-anvil','native-ingot','temperature-gauge','conductor','foundry-bg'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{
+      if(!tex) return; IMG[slug]=tex;
+      try{
+        if(slug==='foundry-bg'){
+          const s=heroSprite(bgLayer,'foundry-bg',W/2,H/2,W,0.22,true);
+          if(s) bgLayer.setChildIndex(s,0);
+        } else if(slug==='temperature-gauge'){
+          const s=heroSprite(gaugeC,'temperature-gauge',0,0,110,0.30,false);
+          if(s) gaugeC.setChildIndex(s,0);
+        }
+        // forge-anvil / native-ingot / cold-clerk / conductor attach inside the scene builders that draw them.
+      }catch(e){ showErr('img '+slug+': '+e.message); }
+    }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={ember:radialTex(0xff7a18),amber:radialTex(0xffc83d),hot:radialTex(0xfff2c2),cold:radialTex(0x6fa6d8),
+    cyan:radialTex(0x5bd0e0),red:radialTex(0xff7a7a),green:radialTex(0x7fe6a6),white:radialTex(0xffffff),native:radialTex(0xff9e3d)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  // thin gradient line tex for SimpleRope trails
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={amber:lineTex(0xffc83d),cyan:lineTex(0x5bd0e0),red:lineTex(0xff6a6a),ember:lineTex(0xff7a18),c2:lineTex(0xff5a3c),accent:lineTex(0xff7a18)};
+  // baked dot + ember + cell for particle swarms (generateTexture reuse, REFERENCE §2.11)
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  const _emberG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,6).endFill();
+  const EMBER_TEX=app.renderer.generateTexture(_emberG,{resolution:2}); _emberG.destroy();
+  const _cellG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,12,12,3).endFill();
+  const CELL_TEX=app.renderer.generateTexture(_cellG,{resolution:2}); _cellG.destroy();
+  // baked radial-noise sprite for DisplacementFilter fallback (warp F-guard)
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const im=g.createImageData(256,256);for(let i=0;i<im.data.length;i+=4){im.data[i]=Math.random()*255;im.data[i+1]=Math.random()*255;im.data[i+2]=128;im.data[i+3]=255;}
+    g.putImageData(im,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  // attach persistent Outline+DropShadow to a text (legibility, §2 typography)
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (foundry gradient + arches + ember tiling + reflection + godray)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  // ColorMatrix grade on bgLayer (per-section / temp)
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:true,kawase:false,hsl:false};
+
+  // static vaulted-arch + furnace silhouette (cacheAsBitmap)
+  const arches=new PIXI.Graphics();
+  arches.lineStyle(2,0x16213a,0.55);
+  for(let ax=120;ax<=1160;ax+=170){
+    arches.moveTo(ax,300); arches.lineTo(ax,120);
+    arches.arc(ax+85,120,85,Math.PI,0,false);
+    arches.moveTo(ax+170,120); arches.lineTo(ax+170,300);
+  }
+  // furnace mouths along the floor
+  arches.lineStyle(0);
+  for(let fx=180;fx<=1100;fx+=230){ arches.beginFill(0x1a1108,0.5).drawRoundedRect(fx-40,560,80,60,8).endFill(); }
+  arches.lineStyle(0).beginFill(0x10182b,0.14).drawRect(100,110,1080,210).endFill();
+  bgLayer.addChild(arches); arches.cacheAsBitmap=true;
+
+  // tiling ember/heat-haze band (slow upward drift; denser as temp rises)
+  const emberTile=new PIXI.TilingSprite(GLOW.ember,W,H);
+  emberTile.alpha=0.05; emberTile.blendMode=PIXI.BLEND_MODES.ADD; emberTile.tint=0xff9e3d;
+  emberTile.tileScale.set(2.4,2.4);
+  bgLayer.addChild(emberTile);
+
+  // molten-floor reflection band (bottom)
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x2a1208,0.20).drawRect(0,640,W,80).endFill();
+  bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,5],waveLength:[40,120],alpha:[0.35,0.35],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,640,W,80); }
+
+  // persistent godray (furnace shafts from top-center)
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:30,gain:0.3,lacunarity:2.4,time:0,parallel:true,center:[640,0]}); }
+
+  // ============================================================
+  //  6) AMBIENT EMBERS (persistent ParticleContainer; density = 120 + 360*temp)
+  // ============================================================
+  const MOTE_COUNT=480;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:true},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const s=new PIXI.Sprite(EMBER_TEX);s.anchor.set(0.5);s.tint=0xff9e3d;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.05+Math.random()*0.16);s.alpha=0;motePC.addChild(s);
+    motes.push({s,vx:(Math.random()-.5)*7,vy:-(8+Math.random()*22),phs:Math.random()*TAU,sp:0.5+Math.random(),baseScale:s.scale.x});}
+  let RT=0;             // current audio time (s)
+  let moteEnvelope=0;   // 0..1 global mote brightness
+  let moteDensity=0.25; // 0..1 fraction of motes visible (= temp-driven)
+  let emberFreeze=false;// S15: stop ember drift
+
+  // spark bursts (recycled pool)
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:-Math.abs(Math.sin(a)*v)-v*0.4,life:0,max:0.7+Math.random()*1.0});}
+  }
+
+  // ============================================================
+  //  7) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  // a reader / clerk figure (head + shoulders) at local 0,0
+  function drawFigure(g,tone){
+    g.clear();
+    g.beginFill(tone,1).drawCircle(0,-14,10).endFill();      // head
+    g.beginFill(tone,0.92).lineStyle(0);
+    g.moveTo(-16,8); g.quadraticCurveTo(0,-8,16,8); g.lineTo(14,16); g.lineTo(-14,16); g.closePath(); g.endFill();
+  }
+  // native ingot vector with engraved circuit grooves (grooves count drives "refined" look)
+  function drawIngot(g,tone,grooves,bright){
+    g.clear();
+    g.beginFill(tone,0.96).lineStyle(2.4,C.hot,0.6).drawRoundedRect(-46,-22,92,44,7).endFill();
+    // top molten sheen
+    g.beginFill(C.hot,0.18*bright).drawRoundedRect(-42,-19,84,12,5).endFill();
+    // engraved grooves (beginHole for the engraving feel)
+    g.lineStyle(1.4,C.ink,0.55);
+    const n=Math.max(3,grooves|0);
+    for(let i=0;i<n;i++){ const yy=-14+i*(28/(n-1)); g.moveTo(-38,yy); g.lineTo(38,yy); }
+    g.lineStyle(1.2,C.hot,0.35*bright);
+    for(let i=0;i<3;i++){ const xx=-26+i*26; g.moveTo(xx,-16); g.lineTo(xx,16); }
+  }
+  // bytecode scroll (vertical strip of instruction rows + decode head)
+  function buildScroll(){
+    const c=new PIXI.Container(); c.position.set(SCROLL[0],SCROLL[1]);
+    const paper=new PIXI.Graphics();
+    paper.beginFill(0x0e1b30,0.9).lineStyle(2,C.muted,0.4).drawRoundedRect(-58,-150,116,300,8).endFill();
+    c.addChild(paper);
+    const rows=new PIXI.Graphics(); c.addChild(rows);
+    for(let i=0;i<9;i++){ const ry=-130+i*30; rows.beginFill(C.cold,0.55).drawRoundedRect(-46,ry,92,16,4).endFill();
+      rows.beginFill(C.cold,0.85).drawRoundedRect(-46,ry,40+(i*7%50),16,4).endFill(); }
+    const head=new PIXI.Graphics(); c.addChild(head);
+    const headGlow=glow('cold',0,0,0.9,0.0,0x7fbfff); c.addChild(headGlow);
+    c._rows=rows; c._head=head; c._headGlow=headGlow;
+    return c;
+  }
+  // re-draw the decode head at a y (re-passing rows). hp 0..1 over the strip; touched row highlights.
+  function drawDecodeHead(c,hp,hotTone){
+    const head=c._head, hg=c._headGlow;
+    const y=-130+hp*240;
+    head.clear();
+    head.lineStyle(2.5,hotTone,0.95).moveTo(-50,y).lineTo(50,y);
+    head.beginFill(hotTone,0.85).drawPolygon([-54,y,-50,y-4,-50,y+4]).endFill();
+    hg.position.set(0,y); hg.alpha=0.5; hg.tint=hotTone;
+  }
+  // the central temperature gauge (ring + arc + needle)
+  function buildGauge(){
+    const c=new PIXI.Container(); c.position.set(GAUGE[0],GAUGE[1]);
+    const ring=new PIXI.Graphics(); c.addChild(ring);
+    const arc=new PIXI.Graphics(); c.addChild(arc);
+    const needle=new PIXI.Graphics(); c.addChild(needle);
+    c._ring=ring; c._arc=arc; c._needle=needle;
+    if(hasF('GlowFilter')){ c._g=new F.GlowFilter({distance:12,outerStrength:1.4,color:C.accent,quality:0.3}); c.filters=[c._g]; }
+    return c;
+  }
+  function drawGauge(c,tp,t){
+    const r=48, ring=c._ring, arc=c._arc, needle=c._needle;
+    ring.clear();
+    const a0=Math.PI*0.78, a1=Math.PI*(0.78+1.44); // sweep ~260deg clockwise
+    ring.lineStyle(5,C.ink,0.9); ring.moveTo(Math.cos(a0)*r,Math.sin(a0)*r); ring.arc(0,0,r,a0,a1,false);
+    ring.lineStyle(2,0x24304a,0.8).drawCircle(0,0,r+6);
+    // colored arc cold->hot, lit up to tp (each segment its own subpath via moveTo so no chord links)
+    arc.clear();
+    const steps=26;
+    for(let i=0;i<steps;i++){ const f=i/steps; if(f>tp)break;
+      const aa=a0+(a1-a0)*f, ab=a0+(a1-a0)*(f+1/steps);
+      const cc=lerpColor(lerpColor(C.cold,C.accent,clamp01(f*1.6)),C.hot,clamp01((f-0.6)/0.4));
+      arc.lineStyle(5,cc,0.95); arc.moveTo(Math.cos(aa)*r,Math.sin(aa)*r); arc.arc(0,0,r,aa,ab,false);
+    }
+    // needle
+    const na=lerp(-2.2,-0.9,tp);
+    needle.clear();
+    needle.lineStyle(3,C.accent2,1).moveTo(0,0).lineTo(Math.cos(na)*40,Math.sin(na)*40);
+    needle.beginFill(C.accent,1).drawCircle(0,0,5).endFill();
+    if(c._g) c._g.outerStrength=1.2+1.0*tp + 0.5*beat(t);
+  }
+  // TTSP stopwatch HUD (ring + sweep hand)
+  function buildStopwatch(){
+    const c=new PIXI.Container(); c.position.set(TTSP_HUD[0],TTSP_HUD[1]);
+    const ring=new PIXI.Graphics(); c.addChild(ring);
+    const hand=new PIXI.Graphics(); c.addChild(hand);
+    c._ring=ring; c._hand=hand; c.alpha=0;
+    return c;
+  }
+  function drawStopwatch(c,running,frac,overrun){
+    const r=30, ring=c._ring, hand=c._hand;
+    ring.clear();
+    const col=overrun?C.danger:C.muted;
+    ring.lineStyle(3,col,0.9).drawCircle(0,0,r);
+    ring.beginFill(C.ink,0.5).drawCircle(0,0,r-3).endFill();
+    ring.lineStyle(2,col,0.8).moveTo(0,-r).lineTo(0,-r-6); // crown
+    // sweep arc (own subpath via moveTo so no chord from the crown)
+    const swEnd=-Math.PI/2+TAU*clamp01(frac);
+    ring.lineStyle(4,overrun?C.danger:C.accent2,0.95); ring.moveTo(0,-(r-7)); ring.arc(0,0,r-7,-Math.PI/2,swEnd,false);
+    hand.clear();
+    const a=-Math.PI/2 + TAU*clamp01(frac);
+    hand.lineStyle(2.5,overrun?C.danger:C.accent,1).moveTo(0,0).lineTo(Math.cos(a)*(r-9),Math.sin(a)*(r-9));
+    hand.beginFill(overrun?C.danger:C.accent,1).drawCircle(0,0,3).endFill();
+  }
+  // a tier ladder rung platform + label (reusable, storyboard §4)
+  function buildRung(level){
+    const c=new PIXI.Container(); c.position.set(LADX,rungY(level));
+    const plat=new PIXI.Graphics(); c.addChild(plat);
+    const labels={0:'L0 interpret',3:'L3 C1+čítače',4:'L4 C2'};
+    const tones={0:C.cold,3:C.c1,4:C.c2};
+    const lbl=txt(labels[level],16,tones[level],'800'); lbl.position.set(0,-26); legible(lbl); c.addChild(lbl);
+    c._plat=plat; c._tone=tones[level]; c._level=level; c._lbl=lbl;
+    if(hasF('GlowFilter')){ c._g=new F.GlowFilter({distance:12,outerStrength:0,color:tones[level],quality:0.3}); plat.filters=[c._g]; }
+    return c;
+  }
+  function drawRung(c,lit){
+    const plat=c._plat;
+    plat.clear();
+    plat.beginFill(C.ink,0.55).lineStyle(2,c._tone,0.5+0.5*lit).drawRoundedRect(-60,-12,120,24,7).endFill();
+    if(lit>0.01){ plat.beginFill(c._tone,0.25*lit).drawRoundedRect(-58,-10,116,20,6).endFill(); }
+    if(c._g) c._g.outerStrength=(2+2*beat(RT))*lit;
+    c.alpha=0.35+0.65*lit;
+  }
+  // method-token (copy of m=2) small rounded block, heat tinted
+  function buildToken(){
+    const g=new PIXI.Graphics();
+    return g;
+  }
+  function drawToken(g,tone){
+    g.clear();
+    g.beginFill(tone,0.95).lineStyle(2,C.hot,0.5).drawRoundedRect(-22,-14,44,28,6).endFill();
+    g.beginFill(C.hot,0.2).drawRoundedRect(-18,-11,36,7,4).endFill();
+  }
+  // thread runner station platform
+  function drawStation(g,x,y,glowOn){
+    g.beginFill(C.ink,0.7).lineStyle(2,C.safe,0.6+0.4*glowOn).drawRoundedRect(x-22,y-6,44,12,5).endFill();
+    if(glowOn>0.01){ g.beginFill(C.safe,0.3*glowOn).drawRoundedRect(x-20,y-4,40,8,4).endFill(); }
+  }
+  // SimpleRope trail with N control points
+  function makeTrail(tex,tint,n){
+    const pts=[]; for(let i=0;i<(n||10);i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(tex,pts); r.blendMode=PIXI.BLEND_MODES.ADD; r.tint=tint; r.alpha=0;
+    r._pts=pts; return r;
+  }
+  function setRopeAlongPath(rope,path){
+    const p=rope._pts; const segs=path.length-1;
+    for(let i=0;i<p.length;i++){
+      const f=i/(p.length-1)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si;
+      p[i].x=lerp(path[si][0],path[si+1][0],lf); p[i].y=lerp(path[si][1],path[si+1][1],lf);
+    }
+  }
+  function pathPosOf(path,frac){ const segs=path.length-1; const f=clamp01(frac)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si; return [lerp(path[si][0],path[si+1][0],lf),lerp(path[si][1],path[si+1][1],lf)]; }
+
+  // ============================================================
+  //  8) PERSISTENT FOUNDRY SET (bgLayer-of-scene + hudLayer)
+  // ============================================================
+  const foundryRoot=new PIXI.Container(); sceneLayer.addChild(foundryRoot);   // persistent actors
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot);       // per-scene actors host
+
+  // persistent central gauge + caption (hudLayer — never cross-fades)
+  const gaugeC=buildGauge(); hudLayer.addChild(gaugeC);
+  const gaugeLbl=txt('teplota kódu',13,C.muted,'700'); gaugeLbl.position.set(GAUGE[0],GAUGE[1]+58); legible(gaugeLbl); hudLayer.addChild(gaugeLbl);
+  // persistent TTSP stopwatch (hudLayer; hidden until S14)
+  const stopwatchC=buildStopwatch(); hudLayer.addChild(stopwatchC);
+  const ttspLbl=txt('TTSP',13,C.muted,'700'); ttspLbl.position.set(TTSP_HUD[0],TTSP_HUD[1]+50); legible(ttspLbl); ttspLbl.alpha=0; hudLayer.addChild(ttspLbl);
+
+  // persistent bytecode scroll + clerk + candle (foundryRoot)
+  const scrollC=buildScroll(); foundryRoot.addChild(scrollC);
+  const clerk=new PIXI.Container(); foundryRoot.addChild(clerk); clerk.position.set(96,430);
+  const clerkG=new PIXI.Graphics(); drawFigure(clerkG,C.cold); clerk.addChild(clerkG);
+  const candle=glow('amber',34,2,0.5,0.7,0xffc070); clerk.addChild(candle);
+  if(IMG['cold-clerk']) heroSprite(clerk,'cold-clerk',0,0,70,0.85,false);
+  const clerkLbl=txt('interpret',13,C.cold,'700'); clerkLbl.position.set(110,470); legible(clerkLbl); foundryRoot.addChild(clerkLbl);
+
+  // persistent 5 method blocks (foundryRoot) — block + call-counter + heat glow
+  const METHODS=[];
+  for(let m=0;m<N_METHODS;m++){
+    const cont=new PIXI.Container(); foundryRoot.addChild(cont);
+    const mp=methodPos(m); cont.position.set(mp[0],mp[1]);
+    const block=new PIXI.Graphics(); cont.addChild(block);
+    const counter=new PIXI.Graphics(); cont.addChild(counter);
+    const heat=glow('cold',0,0,0.7,0.0,0x6fa6d8); cont.addChild(heat);
+    let gf=null; if(hasF('GlowFilter')){ gf=new F.GlowFilter({distance:10,outerStrength:0,color:C.accent2,quality:0.3}); block.filters=[gf]; }
+    METHODS.push({m,cont,block,counter,heat,gf,rate:[0.55,0.30,0.85,0.22,0.42][m]});
+  }
+  // methodHeat(m,t) — counter-driven blue->amber climb; hottest is m=2
+  function methodHeat(m,t){
+    const R=METHODS[m].rate;
+    let h=0.06;
+    if(t>=24.06){ h=0.06+ (0.7*R)*easeOut(ph(t,24.06,29.0)); }
+    if(m===HOT && t>=28.30){ h=Math.max(h,0.85); }       // hot-spot reveal
+    if(m===HOT && t>=30.79) h=Math.min(1,h+0.1*ph(t,30.79,33.0));
+    return clamp01(h);
+  }
+  function drawMethodBlock(M,t){
+    const h=methodHeat(M.m,t);
+    const tone=lerpColor(C.cold,C.accent2,h);
+    M.block.clear();
+    M.block.beginFill(C.ink,0.85).lineStyle(2,tone,0.85).drawRoundedRect(-34,-16,68,32,6).endFill();
+    M.block.beginFill(tone,0.22+0.5*h).drawRoundedRect(-30,-12,60,9,4).endFill();
+    M.counter.clear();
+    const cf=clamp01(t>=24.06? (M.rate)*easeOut(ph(t,24.06,33.0)) + (M.m===HOT&&t>=28.3?0.2:0) : 0.02);
+    M.counter.beginFill(C.ink,0.6).drawRoundedRect(40,-8,46,16,4).endFill();
+    M.counter.beginFill(tone,0.95).drawRoundedRect(40,-8,46*clamp01(cf),16,4).endFill();
+    M.heat.tint=tone; M.heat.alpha=0.25+0.55*h; M.heat.scale.set(0.6+0.5*h);
+    if(M.gf){ M.gf.color=tone; M.gf.outerStrength=(M.m===HOT&&t>=28.3&&t<31.5)? 2.2+1.5*beat(t) : 0.4*h; }
+  }
+  function methodHomeVisible(m,t){
+    if(m===HOT && t>=30.79 && t<110.34) return false;  // hot block lives at forge/ladder/bridge while compiled
+    return true;
+  }
+
+  // persistent heat-ladder rungs (foundryRoot) — appear from S6
+  const RUNGS={};
+  RUNG_LEVELS.forEach(lv=>{ const r=buildRung(lv); foundryRoot.addChild(r); r.visible=false; RUNGS[lv]=r; });
+  const ladderTrack=new PIXI.Graphics(); foundryRoot.addChild(ladderTrack); ladderTrack.visible=false;
+  const ladderToken=buildToken(); foundryRoot.addChild(ladderToken); ladderToken.visible=false;
+  const ladderTrail=makeTrail(TRAIL.amber,0xffc83d,10); foundryRoot.addChild(ladderTrail);
+  const profMeter=new PIXI.Graphics(); foundryRoot.addChild(profMeter); profMeter.visible=false;
+  const l4gate=new PIXI.Graphics(); foundryRoot.addChild(l4gate); l4gate.visible=false;
+  let ladderState={visible:false, lit:{0:0,3:0,4:0}, tokenY:rungY(0), meter:0, gateOpen:0, bloom:0.5};
+
+  function updateLadder(t){
+    const L=ladderState;
+    RUNG_LEVELS.forEach(lv=>{ const r=RUNGS[lv]; r.visible=L.visible; if(L.visible) drawRung(r,L.lit[lv]); });
+    ladderTrack.visible=L.visible; ladderToken.visible=L.visible;
+    if(!L.visible){ profMeter.visible=false; l4gate.visible=false; ladderTrail.alpha=0; return; }
+    ladderTrack.clear();
+    ladderTrack.lineStyle(3,0x24304a,0.8).moveTo(LADX,160).lineTo(LADX,490);
+    drawToken(ladderToken, lerpColor(C.cold,C.hot,temp(t)));
+    ladderToken.position.set(LADX, L.tokenY);
+    profMeter.visible=(L.meter>0.001);
+    profMeter.clear();
+    if(L.meter>0.001){
+      profMeter.beginFill(C.ink,0.6).drawRoundedRect(972,300,12,40,4).endFill();
+      profMeter.beginFill(C.c1,0.95).drawRoundedRect(972,340-40*clamp01(L.meter),12,40*clamp01(L.meter),4).endFill();
+      profMeter.lineStyle(1.5,C.accent,0.8).moveTo(968,312).lineTo(988,312);
+    }
+    l4gate.visible=(L.lit[4]>0.05);
+    l4gate.clear();
+    if(l4gate.visible){
+      const off=18*clamp01(L.gateOpen);
+      l4gate.beginFill(C.c2,0.5*(1-clamp01(L.gateOpen))).drawRoundedRect(LADX-62,168-off,8,24,3).endFill();
+      l4gate.beginFill(C.c2,0.5*(1-clamp01(L.gateOpen))).drawRoundedRect(LADX+54,168-off,8,24,3).endFill();
+    }
+  }
+
+  // persistent thread lanes (foundryRoot) — appear from S13
+  const THREADS=[];
+  const threadsRoot=new PIXI.Container(); foundryRoot.addChild(threadsRoot); threadsRoot.visible=false;
+  for(let j=0;j<N_THREADS;j++){
+    const lane=new PIXI.Graphics(); threadsRoot.addChild(lane);
+    const trail=makeTrail(TRAIL.cyan,0x8fd6ff,10); threadsRoot.addChild(trail);
+    const runner=new PIXI.Graphics(); threadsRoot.addChild(runner);
+    THREADS.push({j,lane,trail,runner});
+  }
+
+  // ============================================================
+  //  9) CAMERA RIG (GOLDEN RULE: all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  function shakeAmp(t){
+    let a=0;
+    a+=shakeEnv(t,33.97,4);     // S3 forge stamp
+    a+=shakeEnv(t,78.20,4);     // S8 C2 payoff
+    a+=shakeEnv(t,102.84,10);   // S11 deopt collapse
+    if(t>=139.44 && t<147.0){ a=Math.max(a,2*(1-ph(t,145.0,147.0))); }  // S14 TTSP unease
+    return a<0.05?0:a;
+  }
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function camPush(t){
+    let p=0;
+    p+=0.020*easeInOut(triWave(t,27.19,29.0));   // S2 hot-spot reveal push
+    p+=0.026*easeInOut(triWave(t,63.18,68.48));  // S7 heat hinge push
+    p+=0.030*easeInOut(triWave(t,74.30,79.40));  // S8 crescendo swell
+    return p;
+  }
+  function updateCamera(t,dt){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.010*beat(t)+camPush(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  10) SCENE MANAGER (pick by t; destroy+init on change; backward-jump reset; cross-fade)
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy)prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c); prev.inst.c.destroy({children:true}); }catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ============================================================
+  //  11) SHARED FILTER INSTANCES (built once; mutated per frame)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:24,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flash=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashGreen=new F.ColorOverlayFilter(C.safe,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashRed=new F.ColorOverlayFilter(C.danger,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,360],innerRadius:0});
+  if(hasF('ZoomBlurFilter')) FILT.forgeZoom=new F.ZoomBlurFilter({strength:0,center:[FORGE[0],FORGE[1]],innerRadius:40});
+  if(hasF('ZoomBlurFilter')) FILT.codaZoom=new F.ZoomBlurFilter({strength:0,center:[640,260],innerRadius:60});
+  if(hasF('BulgePinchFilter')) FILT.bulge=new F.BulgePinchFilter({center:[FORGE[0]/W,FORGE[1]/H],radius:200,strength:0});
+  else FILT.bulgeDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('TwistFilter')) FILT.twist=new F.TwistFilter({radius:600,angle:0,offset:[640,300],padding:20});
+  else FILT.twistDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('GlitchFilter')) FILT.glitch=new F.GlitchFilter({slices:8,offset:0,direction:0,fillMode:0,seed:0,average:false,red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('RGBSplitFilter')) FILT.rgb=new F.RGBSplitFilter({red:[0,0],green:[0,0],blue:[0,0]});
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('HslAdjustmentFilter')) FILT.hsl=new F.HslAdjustmentFilter({hue:0,saturation:0,lightness:0,colorize:false,alpha:1});
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0)return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);}
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+
+  // ============================================================
+  //  RENDER HELPERS for persistent foundry elements
+  // ============================================================
+  function renderFoundry(t,sec){
+    const tp=temp(t);
+    // gauge + stopwatch
+    drawGauge(gaugeC,tp,t);
+    // scroll decode head — re-passes the SAME rows (re-read). Slows during "táhne se jak smola" (38.32..40.72)
+    let headRate=0.18;
+    if(t>=38.32 && t<46.18) headRate=lerp(0.18,0.05,easeInOut(ph(t,38.32,40.72)));
+    let hp=(t*headRate)%1;
+    // step-cadence stutter @16.03/16.48/16.71/17.39 (krok za krokem pomalu) — snap one row per word
+    if(t>=16.03 && t<18.12){
+      const steps=[16.03,16.48,16.71,17.39]; let si=0; for(let i=0;i<steps.length;i++){ if(t>=steps[i]) si=i+1; }
+      hp=clamp01(si/5 + 0.04*easeOutBack(ph(t,steps[Math.max(0,si-1)],steps[Math.max(0,si-1)]+0.12)));
+    }
+    const hotTone=lerpColor(C.cold,C.accent2, (t>=24.06? methodHeat(HOT,t)*0.5:0.05));
+    drawDecodeHead(scrollC,hp,hotTone);
+    // clerk candle flicker
+    candle.alpha=0.6+0.2*Math.sin(t*5)+0.1*beat(t);
+    // method blocks
+    for(const M of METHODS){ M.cont.visible=methodHomeVisible(M.m,t); if(M.cont.visible) drawMethodBlock(M,t); }
+    // ember tiling density + drift
+    emberTile.tilePosition.y= emberFreeze? emberTile.tilePosition.y : (-(t*26))%256;
+    emberTile.alpha=0.03+0.10*tp;
+    emberTile.tint=lerpColor(0x6fa6d8,0xff7a18,tp);
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time= emberFreeze? godrayF.time : t; godrayF.gain=0.25+0.35*tp; }
+  }
+
+  // ============================================================
+  //  SCENES S0 .. S15
+  // ============================================================
+
+  // ---------- S0 : COLD OPEN (zero-length conceptual boot) ----------
+  // line0 starts at ms=0 → no pre-roll gap. Set as part of S1's t0=0.
+
+  // ---------- S1 : INTRO / interpreter baseline 0.00-18.12 ----------
+  scene(0.00,18.12,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    const title=txt('HORKÁ CESTA KÓDU',60,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:1.6,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('JIT · safepoint · TTSP',24,C.muted,'700'); sub.position.set(640,380); legible(sub);
+    c.addChild(title,sub);
+    const cap=txt('interpret: příkaz po příkazu, pomalu',20,C.cold,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    const tickG=new PIXI.Graphics(); c.addChild(tickG);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      const tin=easeOut(ph(t,0.2,2.2));
+      title.alpha=tin*(1-ph(t,12.0,14.5)); title.y=342-tin*12; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=1.6+1.4*beat(t);
+      // method blocks rise in
+      for(const M of METHODS){ const mp=methodPos(M.m); M.cont.y=mp[1]; M.cont.alpha=easeOutBack(ph(t,1.0+M.m*0.3,1.7+M.m*0.3)); }
+      // step-cadence tick spark @ each step word
+      tickG.clear();
+      [16.03,16.48,16.71,17.39].forEach((st,i)=>{ const a=ph(t,st,st+0.18)*(1-ph(t,st+0.18,st+0.4)); if(a>0.01){ tickG.beginFill(C.accent2,a).drawCircle(SCROLL[0],SCROLL[1]-130+(i+1)/5*240,4).endFill(); } });
+      cap.alpha=easeOut(ph(t,14.63,15.3))*(1-ph(t,17.7,18.1));
+      moteEnvelope=0.22; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S2 : re-read + profiling for hot spots 18.12-29.00 ----------
+  scene(18.12,29.00,'PROFILING','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const znova=txt('znova',16,C.muted,'700'); znova.position.set(SCROLL[0],SCROLL[1]-140); znova.alpha=0; legible(znova); c.addChild(znova);
+    const noMagic=txt('nativ?',16,C.muted,'700'); noMagic.position.set(260,160); noMagic.alpha=0; legible(noMagic); c.addChild(noMagic);
+    const slash=new PIXI.Graphics(); c.addChild(slash);
+    const hotTag=txt('HORKÉ MÍSTO',18,C.accent,'900'); hotTag.position.set(360,338); hotTag.alpha=0; legible(hotTag);
+    if(hasF('GlowFilter')){ hotTag._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); hotTag.filters=(hotTag.filters||[]).concat([hotTag._g]); }
+    c.addChild(hotTag);
+    const cap=txt('horko = často volaný kód',20,C.accent2,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      // re-read "znova" ghost stamping at head each pass (3 passes 18.12..23)
+      const passPhase=((t-18.12)*0.42)%1;
+      znova.alpha=(t>=18.12&&t<23.07)? (passPhase<0.3?0.6*(1-passPhase/0.3):0)*0.9 : 0;
+      znova.y=SCROLL[1]-130+passPhase*240;
+      // "žádný zázrak nahoře" struck @23.07
+      noMagic.alpha=easeOut(ph(t,21.34,21.9))*(1-ph(t,25.0,25.6));
+      slash.clear();
+      const sa=ph(t,23.07,23.5)*(1-ph(t,24.8,25.4));
+      if(sa>0.001){ slash.lineStyle(4,C.danger,sa).moveTo(232,150).lineTo(292,170); }
+      // hot reveal @28.30 (m=2 spike)
+      if(t>=28.30 && !S.fired.has('hot')){ S.fired.add('hot');
+        if(FILT.shock){ const mp=methodPos(HOT); FILT.shock.center=[mp[0],mp[1]]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s2shock',FILT.shock); }
+      }
+      if(FILT.shock && hasOverlayFx('s2shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s2shock'); }
+      hotTag.alpha=easeOut(ph(t,28.30,28.7))*(1-ph(t,30.6,31.2));
+      if(hotTag._g) hotTag._g.outerStrength=2+1.5*beat(t);
+      cap.alpha=easeOut(ph(t,27.19,27.8))*(1-ph(t,28.8,29.0));
+      moteEnvelope=0.26; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S3 : THE FORGE (JIT -> native at runtime) 29.00-34.78 ----------
+  scene(29.00,34.78,'FORGE','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // hot block trail to forge
+    const trail=makeTrail(TRAIL.amber,0xffc83d,12); c.addChild(trail);
+    const hotBlock=new PIXI.Graphics(); c.addChild(hotBlock);
+    // forge fire + anvil
+    const forgeGlow=glow('ember',FORGE[0],FORGE[1]+8,1.0,0.0,0xff7a18); c.addChild(forgeGlow);
+    const anvil=new PIXI.Graphics(); c.addChild(anvil);
+    if(IMG['forge-anvil']) heroSprite(c,'forge-anvil',FORGE[0],FORGE[1]+10,150,1.0,false);
+    const stampG=new PIXI.Graphics(); c.addChild(stampG);
+    // native ingot
+    const ingot=new PIXI.Graphics(); c.addChild(ingot); ingot.position.set(INGOT[0],INGOT[1]); ingot.alpha=0;
+    if(IMG['native-ingot']) heroSprite(c,'native-ingot',INGOT[0],INGOT[1],110,0.95,false);
+    const ingotGlow=glow('native',INGOT[0],INGOT[1],1.1,0.0,0xff9e3d); c.addChild(ingotGlow);
+    const nLbl=txt('nativní kód',20,C.native,'800'); nLbl.position.set(INGOT[0],INGOT[1]+58); nLbl.alpha=0; legible(nLbl); c.addChild(nLbl);
+    // speed-lines seed
+    const speed=new PIXI.Graphics(); c.addChild(speed);
+    const cap=txt('JIT překládá horká místa za běhu do nativu',20,C.accent,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      // grab hot block @30.79 -> forge (m=2 home is hidden by methodHomeVisible)
+      const gp=easeInOut(ph(t,30.79,31.9));
+      const mp=methodPos(HOT);
+      const bx=lerp(mp[0],FORGE[0],gp), by=lerp(mp[1],FORGE[1]-10,gp);
+      drawToken(hotBlock, lerpColor(C.accent2,C.accent,gp));
+      hotBlock.position.set(bx,by); hotBlock.visible=(t>=30.0);
+      setRopeAlongPath(trail,[[mp[0],mp[1]],[lerp(mp[0],FORGE[0],0.5),lerp(mp[1],FORGE[1]-10,0.6)],[bx,by]]);
+      trail.alpha=(gp>0.02&&gp<0.98)?0.7:0;
+      // anvil
+      anvil.clear();
+      anvil.beginFill(0x241a26,0.95).lineStyle(2,0x6a5a4a,0.8).drawPolygon([FORGE[0]-40,FORGE[1]+30,FORGE[0]+40,FORGE[1]+30,FORGE[0]+24,FORGE[1]+10,FORGE[0]-24,FORGE[1]+10]).endFill();
+      anvil.beginFill(0x2e2230,0.95).drawRoundedRect(FORGE[0]-46,FORGE[1]-2,92,14,4).endFill();
+      // forge fire flare @32.21
+      const flare=easeOutBack(ph(t,32.21,33.0));
+      forgeGlow.scale.set(1.0+0.8*flare); forgeGlow.alpha=0.4+0.5*flare;
+      // stamp slam @32.21 -> lands 33.97
+      stampG.clear();
+      const stp=easeOutBack(ph(t,32.21,33.0));
+      if(t>=31.9 && t<34.2){ const sy=lerp(FORGE[1]-80,FORGE[1]-8,stp); stampG.beginFill(0x3a2a1a,0.95).lineStyle(2,C.accent2,0.8).drawRoundedRect(FORGE[0]-30,sy-12,60,18,4).endFill(); }
+      // heat-stamp climax @32.21 carried forgeZoom + flash + shock + bulge
+      if(t>=31.34 && !hasOverlayFx('forgeZoom') && FILT.forgeZoom){ FILT.forgeZoom.center=[FORGE[0],FORGE[1]]; addOverlayFx('forgeZoom',FILT.forgeZoom); }
+      if(FILT.forgeZoom && hasOverlayFx('forgeZoom')){ FILT.forgeZoom.strength=0.30*triWave(t,31.34,34.78); if(t>=34.9) removeOverlayFx('forgeZoom'); }
+      if(t>=33.0 && !S.fired.has('stamp')){ S.fired.add('stamp');
+        if(FILT.flash){ FILT.flash.color=0xffffff; FILT.flash.alpha=0.55; sceneFlash(FILT.flash,true); }
+        if(FILT.shock){ FILT.shock.center=[FORGE[0],FORGE[1]]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s3shock',FILT.shock); }
+        if(FILT.bulge){ FILT.bulge.strength=0.4; addOverlayFx('forgePop',FILT.bulge); }
+        else if(FILT.bulgeDisp){ FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=26; addOverlayFx('forgePop',FILT.bulgeDisp); }
+        burst(FORGE[0],FORGE[1],C.accent2,22,3,0.2);
+      }
+      if(FILT.flash && S.fired.has('stamp')){ FILT.flash.alpha=0.55*(1-ph(t,33.0,33.18)); if(t>33.19) sceneFlash(FILT.flash,false); }
+      if(FILT.shock && hasOverlayFx('s3shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s3shock'); }
+      if(hasOverlayFx('forgePop')){ const k=0.4*(1-ph(t,33.0,33.3)); if(FILT.bulge) FILT.bulge.strength=k; else if(FILT.bulgeDisp) FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=k/0.4*26; if(t>=33.32) removeOverlayFx('forgePop'); }
+      // ingot materializes @33.0
+      const ia=easeOut(ph(t,33.0,34.2));
+      drawIngot(ingot, lerpColor(C.native,C.hot,temp(t)*0.4), 6, 0.6+0.4*temp(t));
+      ingot.alpha=ia; ingotGlow.alpha=0.5*ia*(0.8+0.4*beat(t)); ingotGlow.scale.set(1.0+0.1*beat(t));
+      nLbl.alpha=easeOut(ph(t,33.97,34.4));
+      // speed-lines
+      speed.clear();
+      if(ia>0.1){ for(let i=0;i<3;i++){ const yy=INGOT[1]-12+i*12; const x0=INGOT[0]+40+((t*120+i*30)%80); speed.lineStyle(2,C.accent,0.5*ia).moveTo(x0,yy).lineTo(x0+30,yy); } }
+      cap.alpha=easeOut(ph(t,29.0,29.6))*(1-ph(t,34.4,34.7));
+      if(bloomF) bloomF.bloomScale=1.0+0.6*temp(t)*beat(t)+0.4*flare;
+      moteEnvelope=0.3; moteDensity=temp(t);
+    },destroy(){ if(sceneRoot.filters) sceneRoot.filters=null; }};
+  });
+
+  // ---------- S4 : hot path flies + interpreter slow baseline 34.78-46.18 ----------
+  scene(34.78,46.18,'HOT PATH','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // native ingot persistent for this scene (forged in S3)
+    const ingot=new PIXI.Graphics(); c.addChild(ingot); ingot.position.set(760,300);
+    const ingotGlow=glow('native',760,300,1.1,0.0,0xff9e3d); c.addChild(ingotGlow);
+    if(IMG['native-ingot']) heroSprite(c,'native-ingot',760,300,110,0.95,false);
+    // START/SAFE badge under scroll
+    const safeBadge=txt('START / SAFE',16,C.safe,'800'); safeBadge.position.set(160,200); safeBadge.alpha=0; legible(safeBadge); c.addChild(safeBadge);
+    // tar ooze + slow caption
+    const tar=new PIXI.Graphics(); c.addChild(tar);
+    const slowCap=txt('pomalé, ale jisté',18,C.cold,'700'); slowCap.position.set(160,540); slowCap.alpha=0; legible(slowCap); c.addChild(slowCap);
+    // highway speed lines
+    const highway=new PIXI.Graphics(); c.addChild(highway);
+    const cap=txt('horká cesta se vyplatí — a lítá',20,C.accent,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      drawIngot(ingot, lerpColor(C.native,C.hot,temp(t)*0.4), 7, 0.7);
+      ingotGlow.alpha=0.45*(0.8+0.4*beat(t)); ingotGlow.scale.set(1.0+0.1*beat(t));
+      // START/SAFE @36.12 jistota @36.85
+      safeBadge.alpha=easeOutBack(ph(t,36.12,36.9))*(1-ph(t,44.5,45.5));
+      // tar ooze during "táhne se jak smola" 38.32..40.72
+      tar.clear();
+      const tarP=ph(t,38.32,40.72);
+      if(tarP>0.01){ tar.beginFill(0x1a140a,0.7*tarP).drawRoundedRect(110,510,100,18,9).endFill();
+        for(let i=0;i<3;i++){ const dy=((t*30+i*30)%60); tar.beginFill(0x231a0c,0.6*tarP).drawCircle(130+i*30,510+dy*0.5,4+2*Math.sin(t+i)).endFill(); } }
+      slowCap.alpha=easeOut(ph(t,38.32,39.0))*(1-ph(t,40.4,40.9));
+      // highway lights fully @40.72; lítá burst @45.19
+      highway.clear();
+      const hp=easeOut(ph(t,40.72,45.19));
+      if(hp>0.01){ for(let i=0;i<5;i++){ const yy=288+i*8; const len=lerp(40,260,hp); const x0=800+((t*180+i*50)%120); highway.lineStyle(2.5,C.accent,0.6*hp).moveTo(x0,yy).lineTo(x0+len*0.3,yy); } }
+      if(t>=45.19 && !S.fired.has('lita')){ S.fired.add('lita'); if(FILT.zoom){ FILT.zoom.center=[760,300]; FILT.zoom.strength=0.22; addOverlayFx('s4zoom',FILT.zoom);} burst(820,300,C.accent,18,3,0.2); }
+      if(FILT.zoom && hasOverlayFx('s4zoom')){ FILT.zoom.strength=0.22*(1-ph(t,45.19,45.44)); if(t>45.45) removeOverlayFx('s4zoom'); }
+      cap.alpha=easeOut(ph(t,40.72,41.4))*(1-ph(t,45.7,46.1));
+      if(bloomF) bloomF.bloomScale=1.0+0.6*temp(t)*beat(t)+0.3*easeOut(ph(t,45.19,45.5));
+      moteEnvelope=0.3; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S5 : PRE-CHORUS / C1 fast, few opts 46.18-57.58 ----------
+  scene(46.18,57.58,'C1 · CLIENT','prechorus',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // C1 smith
+    const smith=new PIXI.Container(); c.addChild(smith); smith.position.set(430,300); smith.alpha=0;
+    const sg=new PIXI.Graphics(); drawFigure(sg,C.c1); smith.addChild(sg);
+    const sLbl=txt('C1 · client',20,C.c1,'800'); sLbl.position.set(0,-60); smith.addChild(sLbl); legible(sLbl);
+    const sparkG=new PIXI.Graphics(); smith.addChild(sparkG);
+    // inverted dial pair
+    const dials=new PIXI.Container(); c.addChild(dials); dials.position.set(1080,240);
+    const dialG=new PIXI.Graphics(); dials.addChild(dialG);
+    const dLbl=txt('rychle · málo optimalizací',16,C.c1,'700'); dLbl.position.set(0,80); dials.addChild(dLbl); legible(dLbl);
+    if(hasF('GlowFilter')){ const dgf=new F.GlowFilter({distance:8,outerStrength:1,color:C.c1,quality:0.3}); dialG.filters=[dgf]; }
+    // quick start ingot + runner + wait bar
+    const qIngot=new PIXI.Graphics(); c.addChild(qIngot); qIngot.position.set(560,300); qIngot.alpha=0;
+    const runTrail=makeTrail(TRAIL.cyan,0x8fd6ff,10); c.addChild(runTrail);
+    const runHead=new PIXI.Graphics().beginFill(0x8fd6ff,0.9).drawCircle(0,0,7).endFill(); runHead.blendMode=PIXI.BLEND_MODES.ADD; runHead.alpha=0; c.addChild(runHead);
+    const waitBar=new PIXI.Graphics(); c.addChild(waitBar);
+    const waitLbl=txt('krátké čekání',13,C.c1,'700'); waitLbl.position.set(150,86); waitLbl.alpha=0; legible(waitLbl); c.addChild(waitLbl);
+    const cap=txt('C1: hned na nohách',18,C.c1,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      smith.alpha=easeOutBack(ph(t,46.18,47.0));
+      // quick chisel sparks (fast cadence)
+      sparkG.clear();
+      for(let i=0;i<4;i++){ const a=(t*6+i)%TAU; const r=18+6*Math.sin(t*8+i); sparkG.beginFill(C.c1,0.5).drawCircle(20+Math.cos(a)*r,Math.sin(a)*r,2.5).endFill(); }
+      // dials: compile speed MAXED, optimization LOW (snap @46.74 / @49.12)
+      dialG.clear();
+      const csp=easeOut(ph(t,46.74,47.4)), opp=easeOut(ph(t,49.12,49.8));
+      // compile speed dial (left, high)
+      dialG.lineStyle(4,C.ink,0.7); dialG.moveTo(-40+Math.cos(Math.PI*0.8)*26,Math.sin(Math.PI*0.8)*26); dialG.arc(-40,0,26,Math.PI*0.8,Math.PI*0.2,false);
+      const csa=lerp(Math.PI*0.8,Math.PI*0.2 + TAU,0.85*csp);
+      dialG.lineStyle(3,C.c1,1).moveTo(-40,0).lineTo(-40+Math.cos(csa)*22,Math.sin(csa)*22);
+      // optimization dial (right, low)
+      dialG.lineStyle(4,C.ink,0.7); dialG.moveTo(40+Math.cos(Math.PI*0.8)*26,Math.sin(Math.PI*0.8)*26); dialG.arc(40,0,26,Math.PI*0.8,Math.PI*0.2,false);
+      const opa=lerp(Math.PI*0.8,Math.PI*0.2 + TAU,0.20*opp);
+      dialG.lineStyle(3,C.muted,1).moveTo(40,0).lineTo(40+Math.cos(opa)*22,Math.sin(opa)*22);
+      // dial captions (static graphics ticks)
+      dialG.lineStyle(0).beginFill(C.c1,0.9).drawCircle(-40,0,3).endFill().beginFill(C.muted,0.9).drawCircle(40,0,3).endFill();
+      // quick-start sprint @52.18
+      qIngot.alpha=easeOut(ph(t,52.18,53.0)); drawToken(qIngot,C.c1);
+      const sp=ph(t,55.28,57.0);
+      const path=[[560,310],[700,330],[860,310]];
+      let pp=easeOut(sp);
+      const cur=pathPosOf(path,pp);
+      for(let i=0;i<runTrail._pts.length;i++){ const pos=pathPosOf(path,i/(runTrail._pts.length-1)*pp); runTrail._pts[i].x=pos[0]; runTrail._pts[i].y=pos[1]; }
+      const on=(sp>0.02&&sp<0.98)?0.7:0; runTrail.alpha=on; runHead.position.set(cur[0],cur[1]); runHead.alpha=on;
+      // SHORT wait bar (fills tiny then done)
+      waitBar.clear();
+      waitBar.beginFill(C.ink,0.6).drawRoundedRect(90,80,120,12,4).endFill();
+      const wf=easeOut(ph(t,52.18,53.4))*0.35;
+      waitBar.beginFill(C.c1,0.9).drawRoundedRect(90,80,120*wf,12,4).endFill();
+      waitLbl.alpha=easeOut(ph(t,52.18,53.0))*(1-ph(t,56.8,57.4));
+      cap.alpha=easeOut(ph(t,55.28,55.9))*(1-ph(t,57.2,57.5));
+      if(bloomF) bloomF.bloomScale=1.0+0.4*temp(t)*beat(t);
+      moteEnvelope=0.32; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S6 : tier order intro 57.58-63.18 (uses tierRung) ----------
+  scene(57.58,63.18,'TIERS · 0→3→4','chorusish',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const tag=txt('podle tepla',18,C.accent,'800'); tag.position.set(LADX,150); tag.alpha=0; legible(tag); c.addChild(tag);
+    const weldLine=new PIXI.Graphics(); c.addChild(weldLine);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      // ladder visible; sequential light-up keyed to lyric
+      ladderState.visible=true;
+      ladderState.lit[0]=easeOut(ph(t,57.58,58.2));
+      ladderState.lit[3]=easeOut(ph(t,59.85,60.5));        // on C1,
+      ladderState.lit[4]=easeOut(ph(t,61.19,61.85));       // on C2,
+      ladderState.meter=0; ladderState.gateOpen=0; ladderState.bloom=0.5;
+      // token rises L0->L3 @59.85, L3->L4 @61.19
+      let ty=rungY(0);
+      if(t>=61.19){ ty=lerp(rungY(3),rungY(4),easeOutBack(ph(t,61.19,61.85))); }
+      else if(t>=59.85){ ty=lerp(rungY(0),rungY(3),easeOutBack(ph(t,59.85,60.65))); }
+      ladderState.tokenY=ty;
+      // token rise trail
+      setRopeAlongPath(ladderTrail,[[LADX,ty+20],[LADX,ty]]);
+      ladderTrail.alpha=(t>=59.85&&t<62.0)?0.6:0;
+      // "podle tepla" weld gauge<->ladder @61.91
+      tag.alpha=easeOut(ph(t,61.91,62.4))*(1-ph(t,62.9,63.2));
+      weldLine.clear();
+      const wp=ph(t,61.91,62.6)*(1-ph(t,62.9,63.2));
+      if(wp>0.01){ weldLine.lineStyle(2,C.accent,0.6*wp).moveTo(GAUGE[0]+40,GAUGE[1]+20).bezierCurveTo(760,150,860,160,LADX-20,rungY(4)); }
+      moteEnvelope=0.34; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S7 : hotter = better compiled 63.18-68.48 ----------
+  scene(63.18,68.48,'HEAT HINGE','chorusish',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const arrow=new PIXI.Graphics(); c.addChild(arrow);
+    const promoLbl=txt('→ lepší kompilátor (C2)',16,C.c2,'800'); promoLbl.position.set(920,150); promoLbl.alpha=0; legible(promoLbl); c.addChild(promoLbl);
+    const cap=txt('čím teplejší, tím dál ho povýšíme',20,C.accent,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      ladderState.visible=true;
+      ladderState.lit[0]=1; ladderState.lit[3]=1; ladderState.lit[4]=1;
+      ladderState.tokenY=rungY(4); ladderState.meter=0; ladderState.gateOpen=0;
+      // promotion arrow up the ladder
+      arrow.clear();
+      const ap=easeOut(ph(t,65.91,66.8))*(1-ph(t,68.0,68.4));
+      if(ap>0.01){ arrow.lineStyle(3,C.c2,0.85*ap).moveTo(LADX-50,rungY(3)-20).lineTo(LADX-50,rungY(4)+18);
+        arrow.beginFill(C.c2,0.85*ap).drawPolygon([LADX-50,rungY(4)+10,LADX-56,rungY(4)+22,LADX-44,rungY(4)+22]).endFill(); }
+      promoLbl.alpha=easeOut(ph(t,65.91,66.6))*(1-ph(t,68.0,68.4));
+      cap.alpha=easeOut(ph(t,63.18,63.9))*(1-ph(t,68.0,68.3));
+      moteEnvelope=0.36; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S8 : C2 slow but aggressive -> fastest (crescendo PEAK) 68.48-79.40 ----------
+  scene(68.48,79.40,'C2 · SERVER','chorusish',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // C2 smith + heavy anvil
+    const smith=new PIXI.Container(); c.addChild(smith); smith.position.set(560,320); smith.alpha=0;
+    const sg=new PIXI.Graphics(); drawFigure(sg,C.c2); smith.addChild(sg);
+    const sLbl=txt('C2 · server',20,C.c2,'800'); sLbl.position.set(0,-70); smith.addChild(sLbl); legible(sLbl);
+    const anvil=new PIXI.Graphics(); c.addChild(anvil);
+    if(IMG['forge-anvil']) heroSprite(c,'forge-anvil',560,360,150,1.0,false);
+    const hammerSpark=new PIXI.Graphics(); c.addChild(hammerSpark);
+    // ingot (refines here)
+    const ingot=new PIXI.Graphics(); c.addChild(ingot); ingot.position.set(700,300);
+    if(IMG['native-ingot']) heroSprite(c,'native-ingot',700,300,110,0.95,false);
+    const ingotGlow=glow('hot',700,300,1.2,0.0,0xfff2c2); c.addChild(ingotGlow);
+    // tool labels
+    const tools=[txt('inlining',16,C.c2,'800'),txt('escape analysis',16,C.c2,'800'),txt('víc triků',16,C.c2,'800')];
+    tools.forEach((tl,i)=>{ tl.position.set(720,260+i*30); tl.alpha=0; legible(tl); c.addChild(tl); });
+    // dials: compile speed LOW, optimization MAX, final speed MAX
+    const dials=new PIXI.Graphics(); c.addChild(dials);
+    const cap=txt('C2: nejrychlejší nativ',20,C.hot,'800'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.32,bloomScale:1.0,brightness:1.0,blur:9,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      ladderState.visible=true; ladderState.lit[0]=1; ladderState.lit[3]=1; ladderState.lit[4]=1; ladderState.tokenY=rungY(4);
+      smith.alpha=easeOutBack(ph(t,68.48,69.3));
+      // anvil
+      anvil.clear();
+      anvil.beginFill(0x241a26,0.95).lineStyle(2,0x6a5a4a,0.8).drawPolygon([520,360,600,360,584,338,536,338]).endFill();
+      anvil.beginFill(0x2e2230,0.95).drawRoundedRect(514,326,92,16,4).endFill();
+      // SLOW deliberate hammer (big spark each strike, period ~1.3s)
+      hammerSpark.clear();
+      const strike=(t*0.77)%1;
+      if(strike<0.12){ const a=strike/0.12; hammerSpark.beginFill(C.accent2,0.7*(1-a)).drawCircle(560,330,8+24*a).endFill(); if(strike<0.04&&t>=69.07&&!S.fired.has('strike'+Math.floor(t*0.77))){ S.fired.add('strike'+Math.floor(t*0.77)); burst(560,330,C.accent2,8,2.5,0.15);} }
+      // tools unfurl @71.41 (0.5s stagger), ingot grooves refine 6->14 across 71.41..74.30
+      tools.forEach((tl,i)=>{ tl.alpha=easeOut(ph(t,71.41+i*0.5,71.41+i*0.5+0.4))*(1-ph(t,77.5,78.5)); });
+      const grooves=Math.round(lerp(6,14,easeOut(ph(t,71.41,74.30))));
+      const heatTone=lerpColor(C.native,C.hot, easeOut(ph(t,74.30,78.20)));
+      drawIngot(ingot, heatTone, grooves, 0.7+0.3*temp(t));
+      ingotGlow.alpha=0.4+0.5*easeOut(ph(t,74.30,78.5))*(0.8+0.4*beat(t)); ingotGlow.scale.set(1.0+0.15*beat(t));
+      // dials
+      dials.clear();
+      const slow=easeOut(ph(t,69.07,70.0)), opt=easeOut(ph(t,71.41,73.0));
+      dials.lineStyle(4,C.ink,0.7); dials.moveTo(1040+Math.cos(Math.PI*0.8)*24,240+Math.sin(Math.PI*0.8)*24); dials.arc(1040,240,24,Math.PI*0.8,Math.PI*0.2,false);
+      const csa=lerp(Math.PI*0.8,Math.PI*0.2+TAU,0.18); // compile speed LOW
+      dials.lineStyle(3,C.muted,1).moveTo(1040,240).lineTo(1040+Math.cos(csa)*20,240+Math.sin(csa)*20);
+      dials.lineStyle(4,C.ink,0.7); dials.moveTo(1130+Math.cos(Math.PI*0.8)*24,240+Math.sin(Math.PI*0.8)*24); dials.arc(1130,240,24,Math.PI*0.8,Math.PI*0.2,false);
+      const opa=lerp(Math.PI*0.8,Math.PI*0.2+TAU,0.9*opt); // optimization MAX
+      dials.lineStyle(3,C.c2,1).moveTo(1130,240).lineTo(1130+Math.cos(opa)*20,240+Math.sin(opa)*20);
+      // payoff @78.20
+      if(t>=78.20 && !S.fired.has('peak')){ S.fired.add('peak');
+        if(FILT.shock){ FILT.shock.center=[700,300]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s8shock',FILT.shock); }
+        if(FILT.flash){ FILT.flash.color=0xfff2c2; FILT.flash.alpha=0.5; sceneFlash(FILT.flash,true); }
+        burst(700,300,C.hot,28,3.2,0.2);
+      }
+      if(FILT.shock && hasOverlayFx('s8shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s8shock'); }
+      if(FILT.flash && S.fired.has('peak')){ FILT.flash.alpha=0.5*(1-ph(t,78.20,78.5)); if(t>78.55) sceneFlash(FILT.flash,false); }
+      cap.alpha=easeOut(ph(t,74.30,75.0))*(1-ph(t,79.0,79.4));
+      if(bloomF) bloomF.bloomScale=1.0+0.9*temp(t)*beat(t)+0.3*easeOut(ph(t,78.20,78.6));
+      moteEnvelope=0.42; moteDensity=temp(t);
+    },destroy(){ if(sceneRoot.filters) sceneRoot.filters=null; }};
+  });
+
+  // ---------- S9 : tiered = one flow + level labels 79.40-87.52 (uses tierRung) ----------
+  scene(79.40,87.52,'TIERED','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // two tributaries merge into one river
+    const ribC1=makeTrail(TRAIL.cyan,0x5bd0e0,14); c.addChild(ribC1);
+    const ribC2=makeTrail(TRAIL.c2,0xff5a3c,14); c.addChild(ribC2);
+    const river=makeTrail(TRAIL.accent,0xff7a18,14); c.addChild(river);
+    // level labels
+    const l0lbl=txt('L0 = interpret',16,C.cold,'800'); l0lbl.position.set(740,470); l0lbl.alpha=0; legible(l0lbl); c.addChild(l0lbl);
+    const l3lbl=txt('L3 = C1 + čítače (MDO)',16,C.c1,'800'); l3lbl.position.set(740,320); l3lbl.alpha=0; legible(l3lbl); c.addChild(l3lbl);
+    const zhorkne=txt('zhorkne dost → výš',16,C.accent,'800'); zhorkne.position.set(920,260); zhorkne.alpha=0; legible(zhorkne); c.addChild(zhorkne);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      ladderState.visible=true; ladderState.lit[0]=1; ladderState.lit[3]=1; ladderState.lit[4]=1; ladderState.tokenY=rungY(3);
+      // merge ribbons @79.40..83.24
+      const mp=easeInOut(ph(t,79.40,83.24));
+      setRopeAlongPath(ribC1,[[430,300],[lerp(430,640,mp),lerp(300,360,mp)],[lerp(560,720,mp),360]]); ribC1.alpha=0.6*(1-mp*0.3);
+      setRopeAlongPath(ribC2,[[760,300],[lerp(760,700,mp),lerp(300,360,mp)],[720,360]]); ribC2.alpha=0.6*(1-mp*0.3);
+      setRopeAlongPath(river,[[700,360],[lerp(700,900,mp),360],[lerp(720,1100,mp),lerp(360,360,mp)]]); river.alpha=0.7*mp;
+      // level labels @83.24 (L0 on "0," @83.24, L3 on C1/čítači @84.76/85.19)
+      l0lbl.alpha=easeOut(ph(t,83.24,83.8))*(1-ph(t,86.8,87.4));
+      ladderState.lit[0]=1;
+      l3lbl.alpha=easeOut(ph(t,84.76,85.4))*(1-ph(t,86.8,87.4));
+      // L3 profiling sub-meter (L3 = C1 + counters)
+      ladderState.meter=easeOut(ph(t,84.76,86.5));
+      // promotion prep @86.12 zhorkne dost
+      zhorkne.alpha=easeOut(ph(t,86.12,86.7))*(1-ph(t,87.2,87.5));
+      ladderState.tokenY = (t>=86.12)? lerp(rungY(3),rungY(3)-12,easeInOut(ph(t,86.12,87.52))) : rungY(3);
+      ladderState.gateOpen=0;
+      moteEnvelope=0.4; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S10 : promote to C2, profiling decides WHO 87.52-92.44 (uses tierRung) ----------
+  scene(87.52,92.44,'PROMOTE','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // extra method tokens queue at L3
+    const q1=new PIXI.Graphics(); c.addChild(q1); q1.position.set(LADX-40,rungY(3)+4); q1.alpha=0;
+    const q2=new PIXI.Graphics(); c.addChild(q2); q2.position.set(LADX+40,rungY(3)+4); q2.alpha=0;
+    const profLbl=txt('profil rozhoduje: KDO, ne kvalita',18,C.accent,'800'); profLbl.position.set(920,140); profLbl.alpha=0; legible(profLbl); c.addChild(profLbl);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      ladderState.visible=true; ladderState.lit[0]=1; ladderState.lit[3]=1; ladderState.lit[4]=1;
+      // the chosen token rides L3->L4 @88.44
+      ladderState.tokenY = (t>=88.44)? lerp(rungY(3),rungY(4),easeOutBack(ph(t,88.44,89.3))) : rungY(3);
+      setRopeAlongPath(ladderTrail,[[LADX,ladderState.tokenY+24],[LADX,ladderState.tokenY]]);
+      ladderTrail.alpha=(t>=88.44&&t<89.6)?0.6:0;
+      // glow snap on lock to L4
+      if(t>=88.44 && !S.fired.has('lock')){ S.fired.add('lock'); if(RUNGS[4]&&RUNGS[4]._g){ /* handled by drawRung glow */ } }
+      // profiling gate fills @88.91; gate opens for chosen only
+      ladderState.meter=easeOut(ph(t,88.91,90.5));
+      ladderState.gateOpen=easeOut(ph(t,89.6,90.4));   // gate opens once meter crosses threshold
+      // two extra tokens queue @90.98..92.44 (stay at L3, cold-er)
+      q1.alpha=easeOut(ph(t,90.98,91.5))*(1-ph(t,92.2,92.5)); drawToken(q1,lerpColor(C.cold,C.c1,0.4));
+      q2.alpha=easeOut(ph(t,91.34,91.9))*(1-ph(t,92.2,92.5)); drawToken(q2,lerpColor(C.cold,C.c1,0.3));
+      profLbl.alpha=easeOut(ph(t,88.91,89.5))*(1-ph(t,92.1,92.4));
+      moteEnvelope=0.4; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S11 : BRIDGE p1 / speculation set up + broken 92.44-104.10 ----------
+  scene(92.44,104.10,'DEOPT · SPEC','bridge',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // speculative bridge with predicted-type slot
+    const bridge=new PIXI.Graphics(); c.addChild(bridge);
+    const predLbl=txt('predikce: typ A',16,C.c2,'800'); predLbl.position.set(690,400); predLbl.alpha=0; legible(predLbl); c.addChild(predLbl);
+    // L4 ingot on the bridge
+    const ingot=new PIXI.Graphics(); c.addChild(ingot); ingot.position.set(690,380);
+    if(IMG['native-ingot']) heroSprite(c,'native-ingot',690,380,100,0.9,false);
+    // wrong-shape type B
+    const typeB=new PIXI.Container(); c.addChild(typeB); typeB.alpha=0;
+    const tbg=new PIXI.Graphics(); typeB.addChild(tbg);
+    const tbl=txt('typ B',16,C.danger,'800'); tbl.position.set(0,-26); typeB.addChild(tbl); legible(tbl);
+    // shards
+    const shards=new PIXI.Graphics(); c.addChild(shards);
+    const collLbl=txt('předpověď se zhroutí',20,C.danger,'900'); collLbl.position.set(640,300); collLbl.alpha=0; legible(collLbl);
+    if(hasF('GlowFilter')){ collLbl._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.danger,quality:0.4}); collLbl.filters=(collLbl.filters||[]).concat([collLbl._g]); }
+    c.addChild(collLbl);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      ladderState.visible=true; ladderState.lit[0]=0.5; ladderState.lit[3]=0.7; ladderState.lit[4]=1; ladderState.tokenY=rungY(4);
+      // hide ladder token at L4 (ingot now on bridge) — keep rungs
+      // bridge span (shatters @102.84)
+      const broken=ph(t,102.84,103.4);
+      bridge.clear();
+      if(broken<0.99){
+        const dangerRim=lerpColor(C.c2,C.danger, easeOut(ph(t,95.55,98.0))*(t<98.6?1:1));
+        const slotFlare=ph(t,97.16,98.0);
+        bridge.lineStyle(3,lerpColor(dangerRim,C.danger,slotFlare),0.9*(1-broken)).moveTo(560,420).lineTo(820,420);
+        bridge.beginFill(C.ink,0.7*(1-broken)).drawRoundedRect(560,418,260,10,4).endFill();
+        // predicted slot (key-shaped hole)
+        bridge.lineStyle(2,lerpColor(C.c2,C.danger,slotFlare),0.9*(1-broken));
+        bridge.drawRoundedRect(666,404,48,16,4); bridge.drawRect(682,396,16,10);
+      }
+      predLbl.alpha=easeOut(ph(t,92.44,93.5))*(1-broken);
+      drawIngot(ingot, lerpColor(C.hot,C.danger,ph(t,98.6,102.84)), 14, 0.8*(1-broken)); ingot.alpha=1-broken;
+      // type B arrives @98.60
+      const tbp=easeInOut(ph(t,98.60,101.02));
+      typeB.alpha=tbp*(1-broken); typeB.position.set(lerp(1180,840,tbp),420);
+      tbg.clear(); tbg.beginFill(C.danger,0.85).drawRoundedRect(-22,-12,44,24,4).endFill(); tbg.beginFill(C.ink,0.8).drawCircle(8,0,5).endFill();
+      // COLLAPSE @102.84
+      shards.clear();
+      if(broken>0.001){
+        for(let i=0;i<10;i++){ const a=hash01(i*9.7)*TAU; const d=broken*broken*120*(0.5+hash01(i*3.1)); const sx=690+Math.cos(a)*d, sy=420+Math.sin(a)*d+broken*broken*60;
+          shards.beginFill(lerpColor(C.c2,C.danger,0.5),0.9*(1-broken)).drawPolygon([sx,sy,sx+10,sy+4,sx+4,sy+12]).endFill(); }
+      }
+      if(t>=102.84 && !S.fired.has('coll')){ S.fired.add('coll');
+        if(FILT.glitch){ FILT.glitch.slices=8; FILT.glitch.offset=14; FILT.glitch.seed=Math.random(); addOverlayFx('deoptGlitch',FILT.glitch); }
+        if(FILT.rgb){ FILT.rgb.red=[8,0]; FILT.rgb.green=[0,0]; FILT.rgb.blue=[-8,0]; addOverlayFx('deoptRGB',FILT.rgb); }
+        if(FILT.zoom){ FILT.zoom.center=[690,420]; FILT.zoom.strength=0.35; addOverlayFx('deoptZoom',FILT.zoom); }
+        if(FILT.twist){ FILT.twist.offset=[640,300]; FILT.twist.angle=0; addOverlayFx('deoptTwist',FILT.twist); }
+        else if(FILT.twistDisp){ FILT.twistDisp.scale.x=FILT.twistDisp.scale.y=0; addOverlayFx('deoptTwist',FILT.twistDisp); }
+        if(FILT.shock){ FILT.shock.center=[690,420]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('deoptShock',FILT.shock); }
+        burst(690,420,C.danger,30,3.5,0.2);
+      }
+      // mutate transient deopt filters as pure f(t); detach by 103.6
+      if(hasOverlayFx('deoptGlitch') && FILT.glitch){ FILT.glitch.offset=14*(1-ph(t,102.84,103.6)); if(Math.floor(t*40)%2===0) FILT.glitch.seed=hash01(Math.floor(t*40)); if(t>=103.6) removeOverlayFx('deoptGlitch'); }
+      if(hasOverlayFx('deoptRGB') && FILT.rgb){ const k=8*(1-ph(t,102.84,103.6)); FILT.rgb.red=[k,0]; FILT.rgb.blue=[-k,0]; if(t>=103.6) removeOverlayFx('deoptRGB'); }
+      if(hasOverlayFx('deoptZoom') && FILT.zoom){ FILT.zoom.strength=0.35*(1-ph(t,102.84,103.14)); if(t>=103.16) removeOverlayFx('deoptZoom'); }
+      if(hasOverlayFx('deoptTwist')){ const a=0.6*(t<103.3? easeOut(ph(t,102.84,103.3)) : (1-ph(t,103.3,104.1))); if(FILT.twist) FILT.twist.angle=a; else if(FILT.twistDisp) FILT.twistDisp.scale.x=FILT.twistDisp.scale.y=a*40; if(t>=104.1) removeOverlayFx('deoptTwist'); }
+      if(FILT.shock && hasOverlayFx('deoptShock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('deoptShock'); }
+      collLbl.alpha=easeOut(ph(t,102.84,103.3))*(1-ph(t,103.9,104.1));
+      if(collLbl._g) collLbl._g.outerStrength=2+2*beat(t);
+      // hsl desaturate during speculation breaking
+      bgIntent.hsl=true; if(FILT.hsl) FILT.hsl.saturation=-0.2*ph(t,95.55,101.0);
+      moteEnvelope=0.36; moteDensity=temp(t);
+    },destroy(){ ['deoptGlitch','deoptRGB','deoptZoom','deoptTwist','deoptShock'].forEach(removeOverlayFx); }};
+  });
+
+  // ---------- S12 : BRIDGE p2 / deopt = SAFE fall to interpreter 104.10-115.90 ----------
+  scene(104.10,115.90,'DEOPT · NET','bridge',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // safety net
+    const net=new PIXI.Graphics(); c.addChild(net);
+    // falling/caught token
+    const token=new PIXI.Graphics(); c.addChild(token);
+    const safeBadge=txt('START / SAFE',16,C.safe,'800'); safeBadge.position.set(160,200); safeBadge.alpha=0; legible(safeBadge); c.addChild(safeBadge);
+    const cap=txt('deopt → bezpečně zpět do interpretu (bez paniky)',18,C.safe,'700'); cap.position.set(640,640); cap.alpha=0; legible(cap); c.addChild(cap);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      ladderState.visible=true; ladderState.lit[0]=lerp(0.5,1,ph(t,104.1,110.34)); ladderState.lit[3]=0.5; ladderState.lit[4]=0.4*(1-ph(t,104.1,108.0)); ladderState.tokenY=rungY(4); ladderState.meter=0; ladderState.gateOpen=0;
+      // net snaps taut @104.10 catches token, lowers to interpreter floor (160,360)
+      net.clear();
+      net.lineStyle(2,C.safe,0.85);
+      const ny=lerp(500,510,0.5+0.5*Math.sin(t*1.5));
+      for(let x=500;x<=880;x+=30){ net.moveTo(x,490).lineTo(x,ny); }
+      for(let y=490;y<=ny;y+=8){ net.moveTo(500,y).lineTo(880,y); }
+      net.beginFill(C.safe,0.08).drawRect(500,490,380,ny-490).endFill();
+      // token lowered from bridge (690,420) to scroll (160,360)
+      const lp=easeOut(ph(t,104.10,110.34));
+      const tx=lerp(690,160,lp), ty=lerp(420,360,lp);
+      drawToken(token, lerpColor(C.danger,C.cold,lp)); token.position.set(tx,ty);
+      // START/SAFE badge callback glow
+      safeBadge.alpha=easeOut(ph(t,104.10,105.0));
+      // bez paniky @114.84 reassurance bloom
+      const reassure=Math.exp(-Math.pow((t-114.84),2)/0.5);
+      cap.alpha=easeOut(ph(t,104.10,104.8))*(1-ph(t,115.5,115.9));
+      // hsl lift
+      bgIntent.hsl=true; if(FILT.hsl) FILT.hsl.saturation=-0.2*(1-ph(t,110.34,113.0));
+      if(bloomF) bloomF.bloomScale=1.0+0.3*reassure+0.2*temp(t)*beat(t);
+      moteEnvelope=0.3; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S13 : safepoint defined + why 115.90-125.76 ----------
+  scene(115.90,125.76,'SAFEPOINT','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    // conductor raises hand
+    const conductor=new PIXI.Container(); c.addChild(conductor); conductor.position.set(640,140); conductor.alpha=0;
+    const cg=new PIXI.Graphics(); drawFigure(cg,C.safe); conductor.addChild(cg);
+    cg.lineStyle(3,C.safe,0.9).moveTo(14,0).lineTo(34,-22); // raised arm/baton
+    if(IMG['conductor']) heroSprite(conductor,'conductor',0,0,80,0.95,false);
+    // OopMap stack frames + arrows (at a station)
+    const oop=new PIXI.Graphics(); c.addChild(oop);
+    const knownLbl=txt('známý stav',14,C.safe,'800'); knownLbl.position.set(660,150); knownLbl.alpha=0; legible(knownLbl); c.addChild(knownLbl);
+    const pauseGlyph=new PIXI.Graphics(); c.addChild(pauseGlyph);
+    // cause tags
+    const gcTag=txt('GC',16,C.safe,'900'); gcTag.position.set(420,140); gcTag.alpha=0; legible(gcTag); c.addChild(gcTag);
+    const deoptTag=txt('deoptimalizace',16,C.safe,'800'); deoptTag.position.set(560,140); deoptTag.alpha=0; legible(deoptTag); c.addChild(deoptTag);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      ladderState.visible=false;
+      threadsRoot.visible=true; threadsRoot.alpha=easeOut(ph(t,115.90,117.4));
+      // draw lanes + stations + runners (mid-motion)
+      for(const T of THREADS){ const j=T.j; const ly=laneY(j);
+        T.lane.clear();
+        T.lane.lineStyle(2,0x24304a,0.7).moveTo(120,ly).lineTo(1000,ly);
+        const hl=(j===0)?1:0.4;
+        for(const sx of STATIONS) drawStation(T.lane, sx, ly, hl*(0.5+0.5*beat(t)));
+        // runner drifts (define it segment) — mid-instruction
+        const rx=200+((t*30+j*120)%760);
+        T.runner.clear(); T.runner.beginFill(0x8fd6ff,0.9).drawCircle(rx,ly,7).endFill();
+        T.runner.beginFill(C.safe,0.0).endFill();
+        T.trail.alpha=0;
+      }
+      conductor.alpha=easeOut(ph(t,115.90,116.8));
+      // OopMap snapshot @119.40 (stack frames + reference arrows, crisp)
+      oop.clear();
+      const oopP=easeOut(ph(t,119.40,120.4))*(1-ph(t,124.5,125.6));
+      if(oopP>0.01){
+        const ox=460,oy=300;
+        for(let i=0;i<3;i++){ oop.beginFill(C.ink,0.8*oopP).lineStyle(2,C.safe,0.8*oopP).drawRoundedRect(ox-30,oy-40+i*26,60,20,4).endFill(); }
+        oop.lineStyle(2,C.safe,0.8*oopP);
+        oop.moveTo(ox+34,oy-30).lineTo(ox+70,oy-30); oop.beginFill(C.safe,0.8*oopP).drawCircle(ox+70,oy-30,3).endFill();
+        oop.moveTo(ox+34,oy-4).lineTo(ox+70,oy+10); oop.beginFill(C.safe,0.8*oopP).drawCircle(ox+70,oy+10,3).endFill();
+      }
+      knownLbl.alpha=easeOut(ph(t,118.68,119.3))*(1-ph(t,121.0,121.6));
+      // pause glyph @121.71
+      pauseGlyph.clear();
+      const pg=easeOut(ph(t,121.71,122.3))*(1-ph(t,124.5,125.6));
+      if(pg>0.01){ pauseGlyph.beginFill(C.safe,0.85*pg).drawRoundedRect(636,200,7,22,2).drawRoundedRect(648,200,7,22,2).endFill(); }
+      // KawaseBlur on non-station mid-instruction bits
+      bgIntent.kawase=true; if(FILT.kawase) FILT.kawase.strength=1.2*easeOut(ph(t,119.40,120.5))*(1-ph(t,124.5,125.6));
+      // cause tags @123.22 GC / @124.66 deopt
+      gcTag.alpha=easeOutBack(ph(t,123.22,123.9))*(1-ph(t,125.4,125.7));
+      deoptTag.alpha=easeOutBack(ph(t,124.66,125.3));
+      moteEnvelope=0.26; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S14 : nearest safepoint + TTSP + long loop 125.76-147.10 ----------
+  scene(125.76,147.10,'TTSP','verse',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const parkRing=new PIXI.Graphics(); c.addChild(parkRing);
+    const loopArrow=new PIXI.Graphics(); c.addChild(loopArrow);
+    const loopRunner=new PIXI.Graphics(); c.addChild(loopRunner);
+    // max-bars HUD under lanes
+    const maxBars=new PIXI.Graphics(); c.addChild(maxBars);
+    const vsichniLbl=txt('VŠICHNI musí dorazit (MAX)',16,C.muted,'800'); vsichniLbl.position.set(640,540); vsichniLbl.alpha=0; legible(vsichniLbl); c.addChild(vsichniLbl);
+    // GC pause door (held open)
+    const gcDoor=new PIXI.Graphics(); c.addChild(gcDoor);
+    const gcLbl=txt('GC pauza čeká',14,C.danger,'800'); gcLbl.position.set(1080,330); gcLbl.alpha=0; legible(gcLbl); c.addChild(gcLbl);
+    const cap1=txt('smyčka bez safepoint pollu = nikdo nezačne',18,C.danger,'700'); cap1.position.set(640,640); cap1.alpha=0; legible(cap1); c.addChild(cap1);
+    const cap2=txt('i krátká pauza čeká, než vůbec začne',18,C.danger,'700'); cap2.position.set(640,600); cap2.alpha=0; legible(cap2); c.addChild(cap2);
+    // per-lane parked x (nearest station) computed at coast time; straggler j=3 stuck in loop
+    const parkX=THREADS.map(T=>{ const j=T.j; const startX=200+((125.76*30+j*120)%760); return nearestStation(startX); });
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      threadsRoot.visible=true; threadsRoot.alpha=1;
+      // coast to nearest + park (5 of 6); straggler j=3 loops forever
+      parkRing.clear();
+      for(const T of THREADS){ const j=T.j; const ly=laneY(j);
+        T.lane.clear(); T.lane.lineStyle(2,0x24304a,0.7).moveTo(120,ly).lineTo(1000,ly);
+        for(const sx of STATIONS) drawStation(T.lane, sx, ly, 0.5+0.5*beat(t));
+        if(j===STRAGGLER){
+          // stuck loop circle (no exit door) around (600,ly)
+          const lx=600;
+          loopArrow.clear();
+          loopArrow.lineStyle(3,C.danger,0.9).arc(lx,ly,22,0,TAU*0.85,false);
+          const ea=TAU*0.85; loopArrow.beginFill(C.danger,0.9).drawPolygon([lx+Math.cos(ea)*22,ly+Math.sin(ea)*22, lx+Math.cos(ea)*22+8,ly+Math.sin(ea)*22-2, lx+Math.cos(ea)*22+2,ly+Math.sin(ea)*22+8]).endFill();
+          const a=t*3; loopRunner.clear(); loopRunner.beginFill(C.danger,0.95).drawCircle(lx+Math.cos(a)*22,ly+Math.sin(a)*22,7).endFill();
+          T.runner.clear();
+          T.trail.alpha=0;
+        } else {
+          const startX=200+((125.76*30+j*120)%760);
+          const px=parkX[j];
+          const cp=easeOut(ph(t,125.76,129.0));
+          const rx=lerp(startX,px,cp);
+          T.runner.clear(); T.runner.beginFill(0x8fd6ff,0.95).drawCircle(rx,ly,7).endFill();
+          // parked green ring @ arrival
+          if(cp>=0.98){ parkRing.lineStyle(2,C.safe,0.8+0.2*beat(t)).drawCircle(px,ly,12); }
+          T.trail.alpha=0;
+        }
+      }
+      // TTSP stopwatch starts @130.56
+      stopwatchC.alpha=easeOut(ph(t,130.56,131.2)); ttspLbl.alpha=stopwatchC.alpha;
+      const running=t>=130.56;
+      const overrun=t>=144.60;
+      const frac=running? clamp01(ph(t,130.56,150.0)) : 0;
+      drawStopwatch(stopwatchC, running, frac, overrun);
+      // max-bars HUD (lane 3 grows long; others finished)
+      maxBars.clear();
+      const mbY=560;
+      for(const T of THREADS){ const j=T.j; const by=mbY+ (j-2.5)*0; const bx=120+j*80;
+        let len; if(j===STRAGGLER){ len=lerp(20,200,easeOut(ph(t,136.56,146.0))); } else { len=70; }
+        const col=(j===STRAGGLER)?C.danger:C.safe;
+        maxBars.beginFill(C.ink,0.5).drawRoundedRect(bx,by,12,-72,3).endFill();
+        maxBars.beginFill(col,0.85).drawRoundedRect(bx,by,12,-len*0.36,3).endFill();
+      }
+      vsichniLbl.alpha=easeOut(ph(t,134.78,135.4))*(1-ph(t,140.5,141.3));
+      // GC door held open @141.34
+      gcDoor.clear();
+      const doorP=easeOut(ph(t,141.34,142.2));
+      if(doorP>0.01){ gcDoor.lineStyle(3,C.danger,0.85).drawRoundedRect(1040,300,80,90,6);
+        gcDoor.beginFill(C.danger,0.10).drawRoundedRect(1042,302,76,86,5).endFill();
+        gcDoor.lineStyle(2,C.danger,0.7).moveTo(1080,300).lineTo(1080,390); } // door stuck open
+      gcLbl.alpha=doorP*(1-ph(t,146.6,147.1));
+      cap1.alpha=easeOut(ph(t,136.56,137.2))*(1-ph(t,141.0,141.5));
+      cap2.alpha=easeOut(ph(t,141.34,142.0))*(1-ph(t,146.6,147.0));
+      moteEnvelope=0.2; moteDensity=temp(t);
+    }};
+  });
+
+  // ---------- S15 : OUTRO / one lazy thread holds the whole world + end-card 147.10-169.512 ----------
+  scene(147.10,169.512,'STOP-THE-WORLD','outro',(S)=>{
+    const c=new PIXI.Container();
+    camDollyScale=1;
+    const lazyLbl=txt('jedno líné vlákno…',22,C.danger,'900'); lazyLbl.position.set(640,300); lazyLbl.alpha=0; legible(lazyLbl);
+    if(hasF('GlowFilter')){ lazyLbl._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.danger,quality:0.4}); lazyLbl.filters=(lazyLbl.filters||[]).concat([lazyLbl._g]); }
+    c.addChild(lazyLbl);
+    const dangerRing=new PIXI.Graphics(); c.addChild(dangerRing);
+    const loopArrow=new PIXI.Graphics(); c.addChild(loopArrow);
+    const loopRunner=new PIXI.Graphics(); c.addChild(loopRunner);
+    // end-card
+    const eTitle=txt('HORKÁ CESTA KÓDU',54,C.accent,'900'); eTitle.position.set(640,320); eTitle.alpha=0; legible(eTitle);
+    if(hasF('GlowFilter')){ eTitle._g=new F.GlowFilter({distance:18,outerStrength:1.5,color:C.accent,quality:0.4}); eTitle.filters=(eTitle.filters||[]).concat([eTitle._g]); }
+    const eSub=txt('interpret → C1 → C2 · safepoint · TTSP',22,C.muted,'700'); eSub.position.set(640,372); eSub.alpha=0; legible(eSub);
+    const eBadge=txt('🔥  JIT, safepoint, TTSP · ESW B4M36ESW',18,C.muted,'700'); eBadge.position.set(640,560); eBadge.alpha=0; legible(eBadge);
+    c.addChild(eTitle,eSub,eBadge);
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const parkX=THREADS.map(T=>{ const j=T.j; const startX=200+((125.76*30+j*120)%760); return nearestStation(startX); });
+    return {c,update(lt,t){
+      camPivotX=640; camPivotY=360;
+      threadsRoot.visible=true; threadsRoot.alpha=1;
+      // camera push toward stuck lane j=3 (147.10..150.51), then hold (freeze)
+      const focusP=easeInOut(ph(t,147.10,150.51));
+      camDollyScale=lerp(1.0,1.10,focusP);
+      camPivotX=lerp(640,600,focusP); camPivotY=lerp(360,laneY(STRAGGLER),focusP);
+      // freeze gate: beatAmp->0 by 156.0; embers/godray freeze on held "svět"
+      emberFreeze=(t>=151.94);
+      // draw lanes: 5 parked green, j=3 stuck
+      for(const T of THREADS){ const j=T.j; const ly=laneY(j);
+        T.lane.clear(); T.lane.lineStyle(2,0x24304a,0.7).moveTo(120,ly).lineTo(1000,ly);
+        for(const sx of STATIONS) drawStation(T.lane, sx, ly, j===STRAGGLER?0.3:0.6);
+        if(j===STRAGGLER){
+          const lx=600; const frozen=(t>=151.94);
+          loopArrow.clear(); loopArrow.lineStyle(3,C.danger,0.9).arc(lx,ly,22,0,TAU*0.85,false);
+          const a=frozen? 0.0 : t*3; loopRunner.clear(); loopRunner.beginFill(C.danger,0.95).drawCircle(lx+Math.cos(a)*22,ly+Math.sin(a)*22,7).endFill();
+          T.runner.clear();
+        } else {
+          const px=parkX[j]; T.runner.clear(); T.runner.beginFill(0x7fe6a6,0.95).drawCircle(px,ly,7).endFill();
+        }
+      }
+      // pulsing danger ring on lane j=3
+      dangerRing.clear();
+      dangerRing.lineStyle(2.5,C.danger,0.6+0.4*beat(t)).drawCircle(600,laneY(STRAGGLER),28+4*beat(t));
+      // TTSP stopwatch frozen red overrun
+      stopwatchC.alpha=1; ttspLbl.alpha=1;
+      drawStopwatch(stopwatchC, true, clamp01(ph(t,130.56,150.0)), true);
+      lazyLbl.alpha=easeOut(ph(t,147.10,147.9))*(1-ph(t,155.0,157.0));
+      if(lazyLbl._g) lazyLbl._g.outerStrength=2+1.5*beat(t);
+      // carried codaZoom (slow tighten over held svět)
+      if(t>=151.94 && !hasOverlayFx('codaZoom') && FILT.codaZoom){ FILT.codaZoom.center=[640,260]; addOverlayFx('codaZoom',FILT.codaZoom); }
+      if(FILT.codaZoom && hasOverlayFx('codaZoom')){ FILT.codaZoom.strength=0.10*easeInOut(ph(t,151.94,162.0)); }
+      // end-card fades (wall-clock offsets anchored to svetOn=151.94)
+      eTitle.alpha=easeOut(ph(t,158.0,160.0)); if(eTitle._g) eTitle._g.outerStrength=1.5+0.5*beat(t)*beatAmp(t);
+      eSub.alpha=easeOut(ph(t,161.0,162.5));
+      eBadge.alpha=easeOut(ph(t,162.5,164.0));
+      if(bloomF) bloomF.bloomScale=1.0+0.2*Math.exp(-Math.pow((t-165.0),2)/0.4);
+      // motes thin/frozen
+      moteEnvelope=lerp(0.2,0.08,easeInOut(ph(t,151.94,160.0)));
+      moteDensity=temp(t);
+    },destroy(){ removeOverlayFx('codaZoom'); emberFreeze=false; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene (ColorMatrix on bgLayer, temp-driven)
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    const tp=temp(t);
+    if(t>=98.60 && t<104.10){
+      // deopt crash: cold + dim
+      const cr=ph(t,98.60,103.0);
+      bgGrade.saturate(-0.5*cr,false); bgGrade.brightness(1-0.18*cr,true);
+    } else if(t>=151.94){
+      // freeze: drain to cold
+      const fr=easeInOut(ph(t,151.94,158.0));
+      bgGrade.saturate(-0.45*fr,false); bgGrade.brightness(1-0.12*fr,true);
+    } else {
+      // warm-saturate with temperature
+      bgGrade.saturate(-0.15+0.35*tp,false);
+    }
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM) — exact picker from storyboard §5
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=0, LAST_WORD_END=169440;
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;     // GLOBAL GATE first
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; } // primary
+    return null;                                                  // FALLBACK REMOVED — gaps show no line
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    const dt=app.ticker.deltaMS/1000;
+    // reset transient bg-filter intents each frame (only the owning scene's update sets them true)
+    bgIntent.kawase=false; bgIntent.hsl=false;
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec;
+    // ----- background gradient (temperature-aware) -----
+    const tp=temp(t);
+    let top=lerpColor(C.bgTop,C.bgTopWarm,clamp01(tp));
+    let bot=lerpColor(C.bgBot,C.bgBotWarm,clamp01(tp*0.7));
+    if(t>=98.60 && t<104.10){ const cr=ph(t,98.60,103.0); top=lerpColor(top,0x0a1525,cr); bot=lerpColor(bot,0x05070d,cr); }
+    if(t>=151.94){ const fr=easeInOut(ph(t,151.94,158.0)); top=lerpColor(top,0x0b1020,fr); bot=lerpColor(bot,0x05070d,fr); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // godray intent: foundry-wide, always (furnace light)
+    bgIntent.godray=true;
+
+    // ----- scene manager (with backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.12);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame from intent flags -----
+    { const arr=[bgGrade];
+      if(bgIntent.hsl && FILT.hsl) arr.push(FILT.hsl);
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+
+    // ----- persistent foundry set + ladder -----
+    renderFoundry(t,sec);
+    updateLadder(t);
+
+    // ----- camera -----
+    updateCamera(t,dt);
+
+    // ----- karaoke + section label -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=0.85;
+
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — embers + sparks (non-load-bearing; frozen on pause/freeze)
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    // Ambient embers/sparks advance ONLY while audio is actually playing AND not in the S15 freeze.
+    const playing = !player.paused && !player.ended && !emberFreeze;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y<-20){ m.s.y=H+20; m.s.x=Math.random()*W; } }
+      const visible=(i/motes.length) < clamp01(0.25+0.75*moteDensity);
+      m.s.alpha=visible? moteEnvelope*(0.6+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>

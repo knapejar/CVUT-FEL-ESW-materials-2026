@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P5 – Přístup do paměti: cache a NUMA · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="04-skalovatelna-synchronizace.html">← předchozí: Synchronizace</a>
+    <a class="nav-link" href="06-serializace.html">další: Serializace →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 5 · <span class="badge badge-c">C/C++ část</span></div>
+    <h1>Přístup do paměti: cache, dynamická alokace a NUMA</h1>
+    <p class="perex">Proč je hlavní paměť (DRAM) pomalá, jak ji cache procesoru zakrývá a jak psát kód,
+    který cache co nejvíc využije. Projdeme vnitřek DRAM a její časování, organizaci cache (přímo
+    mapovaná / asociativní), zápisové politiky, TLB, cache-friendly datové struktury a alokátory.
+    Ukázkový příklad násobení matic ukáže, že pouhým přeskupením přístupů (transpozice, dlaždice,
+    rekurze) lze dosáhnout více než 10× zrychlení při <em>stejné</em> složitosti O(N³). Na závěr
+    vícejádrová témata: cache koherence (MESI(F)), true a false sharing, NUMA, připínání vláken
+    a <code>libnuma</code>.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#dram">Proč je DRAM pomalá</a></li>
+      <li><a href="#lokalita">Lokalita a princip cache</a></li>
+      <li><a href="#terminologie">Terminologie a typy miss</a></li>
+      <li><a href="#asociativita">Organizace a asociativita</a></li>
+      <li><a href="#zapis">Zápisové politiky</a></li>
+      <li><a href="#eviction">Eviction a replacement policy</a></li>
+      <li><a href="#tlb">TLB a překlad adres</a></li>
+      <li><a href="#struktury">Cache-friendly datové struktury</a></li>
+      <li><a href="#alokace">Dynamická alokace</a></li>
+      <li><a href="#matice">Příklad: násobení matic</a></li>
+      <li><a href="#koherence">Cache koherence (MESI)</a></li>
+      <li><a href="#sharing">True a false sharing</a></li>
+      <li><a href="#numa">NUMA a rozložení vláken</a></li>
+      <li><a href="#pojmy">Klíčové pojmy</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="dram">Proč je DRAM pomalá</h2>
+
+  <h3>SRAM vs DRAM</h3>
+  <p>Existují dva základní typy paměti RAM, které se liší cenou, rychlostí i způsobem uložení bitu:</p>
+  <table>
+    <thead><tr><th>Typ</th><th>Vlastnosti</th><th>Uložení bitu</th><th>Použití</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>SRAM</strong> (statická)</td>
+        <td>Rychlá, ale drahá.</td>
+        <td><strong>6 tranzistorů na bit.</strong></td>
+        <td>Registry, cache, TLB…</td>
+      </tr>
+      <tr>
+        <td><strong>DRAM</strong> (dynamická)</td>
+        <td>Pomalá – (vy)nabíjení kondenzátoru není okamžité; čtení navíc ničí hodnotu (po čtení se musí
+        obnovit zápisem). Kompromis kapacita / velikost / spotřeba.</td>
+        <td>1 tranzistor + kondenzátor na bit.</td>
+        <td>Hlavní paměť.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>SRAM buňka má 6 tranzistorů (M1–M6) řízených slovem <strong>WL</strong>, napájených z <strong>Vdd</strong>,
+  s komplementárními bitovými linkami <strong>BL</strong>/<span style="white-space:nowrap">B̄L</span>. DRAM buňka
+  je naproti tomu jediný tranzistor <strong>M</strong> (řízený linkou <strong>AL</strong>), který připojuje
+  úložný kondenzátor <strong>C</strong> k datové lince <strong>DL</strong>. Nabití kondenzátoru na 100 % trvá
+  zhruba 5·RC a vybití zpět na 0 dalších ~4·RC – proto (vy)nabíjení DRAM buňky není okamžité.</p>
+
+  <h3>DRAM v počítači</h3>
+  <ul>
+    <li>Procesor obsahuje <strong>paměťový řadič (MC, memory controller)</strong>.</li>
+    <li>Řadič komunikuje s DRAM čipy přes <strong>paměťovou sběrnici („Memory Bus“)</strong> protokolem
+    s příkazy: <code>ACTIVATE</code>, <code>READ</code> / <code>WRITE</code>, <code>PRECHARGE</code>.</li>
+  </ul>
+  <p>Na schématu platformy Intel P55 je <strong>CPU</strong> uprostřed: k <strong>DDR</strong> modulům
+  ho připojuje Memory Bus, ke <strong>GPU</strong> (s vlastní <strong>GDDR</strong> pamětí) sběrnice
+  <strong>PCIe x16</strong> a k čipsetu <strong>PCH</strong> (Platform Controller Hub) sběrnice
+  <strong>DMI</strong>. PCH dále připojuje disk přes <strong>SATA</strong> a rozšiřující karty.</p>
+
+  <h3>Jak DRAM čip funguje</h3>
+  <ul>
+    <li>Adresovat každou buňku zvlášť je nepraktické (potřebovalo by to příliš mnoho vodičů).</li>
+    <li>Čip je uspořádaný do <strong>řádků a sloupců (a bank)</strong>; adresa je <strong>multiplexovaná</strong>.</li>
+    <li>Multiplexery řádků a sloupců vybírají linky podle bitů adresy.</li>
+    <li>Čtení/zápis probíhá v <strong>mnoha čipech paralelně</strong>, aby se složilo celé datové slovo
+    (<strong>64 bitů</strong>).</li>
+  </ul>
+
+  <h3>Uvnitř DRAM banky</h3>
+  <p>Přístup do DRAM probíhá ve třech analogových fázích:</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue">
+        <span class="dn-title">Cell Array</span>
+        <span class="dn-sub">Row 0 / Row 1 / Row 2 ★aktivní / Row 3 · bitové linky BL, B̄L</span>
+      </div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple">
+        <span class="dn-title">Sense Amps = „Row Buffer“</span>
+        <span class="dn-sub">ACTIVATE · tRCD ≈ 13 ns · (≈ obvod SRAM)</span>
+      </div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber">
+        <span class="dn-title">Column Decoder / Mux</span>
+        <span class="dn-sub">READ · CL ≈ 10 ns</span>
+      </div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green">
+        <span class="dn-title">I/O Buffer → piny</span>
+        <span class="dn-sub">datová slova ven</span>
+      </div>
+    </div>
+    <div class="diag-cap">Tři analogové fáze přístupu do DRAM banky</div>
+  </div>
+  <ul>
+    <li><strong>ACTIVATE</strong>: otevře řádek → snímací zesilovače (sense amps) detekují a zachytí data.
+    Sense amps <em>jsou</em> ten „row buffer“ (ne samostatná SRAM).</li>
+    <li><strong>READ</strong>: sloupcový multiplexer vybere, které bity půjdou na I/O piny.</li>
+    <li><strong>PRECHARGE</strong>: obnoví buňky a vynuluje bitové linky pro další řádek.</li>
+    <li>Každý krok trvá ≈ <strong>10–13 ns</strong> (čas analogového ustálení).</li>
+    <li>Toto se za <strong>20 let téměř nezlepšilo</strong> – roste pouze propustnost (bandwidth).</li>
+  </ul>
+  <p>Klíčové latence: <strong>tRCD ≈ 13 ns</strong> (ACTIVATE → připraveno) a <strong>CL ≈ 10 ns</strong>
+  (CAS latency, READ).</p>
+
+  <h3>Komunikační protokol SDRAM</h3>
+  <ul>
+    <li>Přístupový protokol je <strong>synchronní</strong> – existuje hodinový signál → <strong>SDRAM
+    (Synchronous DRAM)</strong>.</li>
+    <li><strong>CLK</strong> dodává paměťový řadič (frekvence FSB – typicky <strong>800–1600 MHz</strong>).</li>
+    <li><strong>Double/Quad-pumped</strong> – data se přenášejí na obou hranách hodin / ve více podfázích.</li>
+    <li>Max. rychlost: <strong>64 bit × 8 × 200 MHz = 12,8 GB/s</strong> (v reálu nedosažitelná).</li>
+    <li>Technologie DRAM vyžaduje zpoždění t<sub>RCD</sub> a CL – <strong>nelze je zkrátit</strong>.</li>
+    <li>Data se posílají v <strong>dávkách (bursts) o velikosti cache line</strong> – poslat jediné slovo
+    by bylo velmi neefektivní kvůli zpožděním t<sub>RCD</sub> a CL.</li>
+  </ul>
+  <p>Časový diagram má signály <strong>CLK</strong>, R̄ĀS̄, C̄ĀS̄, <strong>Address</strong> a <strong>DQ</strong>
+  (data). Adresa nejprve nese řádek/banku (Activate), po mezeře t<sub>RCD</sub> sloupec; po mezeře CL pak
+  <strong>DQ</strong> přenese souvislou dávku datových slov.</p>
+
+  <h3>Časovací parametry DDR4</h3>
+  <p>U každého standardu je <em>memory clock</em> skutečné hodiny DRAM buněk, <em>I/O bus clock</em> je 4×
+  vyšší a <em>data rate</em> (MT/s) je 8× memory clock (double data rate přes quad-pumped sběrnici).
+  Pozor: CAS latency v <strong>nanosekundách</strong> zůstává napříč generacemi zhruba konstantní
+  (~12,5–15 ns), i když data rate roste – <strong>roste propustnost, ne latence</strong>.</p>
+  <table>
+    <thead><tr><th>Standard</th><th>Memory clock (MHz)</th><th>I/O bus clock (MHz)</th><th>Data rate (MT/s)</th><th>Modul</th><th>Peak (MB/s)</th><th>CL-tRCD-tRP</th><th>CAS lat. (ns)</th></tr></thead>
+    <tbody>
+      <tr><td>DDR4-1600J*/1600K/1600L</td><td>200</td><td>800</td><td>1600</td><td>PC4-12800</td><td>12800</td><td>10-10-10 / 11-11-11 / 12-12-12</td><td>12,5 / 13,75 / 15</td></tr>
+      <tr><td>DDR4-1866L*/1866M/1866N</td><td>233,33</td><td>933,33</td><td>1866,67</td><td>PC4-14900</td><td>14933,33</td><td>12-12-12 / 13-13-13 / 14-14-14</td><td>12,857 / 13,929 / 15</td></tr>
+      <tr><td>DDR4-2133N*/2133P/2133R</td><td>266,67</td><td>1066,67</td><td>2133,33</td><td>PC4-17000</td><td>17066,67</td><td>14-14-14 / 15-15-15 / 16-16-16</td><td>13,125 / 14,063 / 15</td></tr>
+      <tr><td>DDR4-2400P*/2400R/2400U</td><td>300</td><td>1200</td><td>2400</td><td>PC4-19200</td><td>19200</td><td>15-15-15 / 16-16-16 / 18-18-18</td><td>12,5 / 13,33 / 15</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="lokalita">Lokalita a princip cache</h2>
+
+  <div class="box pisnicka" id="pisen-lokalita">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Lokalita</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s05">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+
+  <h3>Lokalita přístupů</h3>
+  <p>Cache funguje, protože reálné programy přistupují do paměti se dvěma druhy lokality:</p>
+  <dl class="pojmy-list">
+    <dt>Prostorová lokalita</dt>
+    <dd>Přistupované objekty leží <em>blízko sebe</em>. Kód: vnitřní smyčky. Data: struktury (čtení jednoho
+    pole bývá následováno čtením dalších polí).</dd>
+    <dt>Časová lokalita</dt>
+    <dd>Tatáž data se použijí <em>vícekrát v krátkém čase</em>. Kód: smyčky. Data: např. koeficienty
+    digitálního filtru čtené každou vzorkovací periodu.</dd>
+  </dl>
+
+  <h3>Cache procesoru – celkový obraz</h3>
+  <ul>
+    <li><strong>Všechny load/store operace jdou přes cache.</strong></li>
+    <li><strong>CPU ↔ cache</strong>: rychlé propojení.</li>
+    <li><strong>Cache ↔ hlavní paměť</strong>: sběrnice FSB.</li>
+    <li><strong>Oddělené cache pro instrukce a data</strong> (L1i a L1d).</li>
+  </ul>
+  <p>Hierarchie bývá víceúrovňová a per-jádro: <code>CPU jádro → L1d / L1i → L2 → sdílená L3 → sběrnice →
+  hlavní paměť</code>. Ve vícejádrovém uspořádání má každé jádro vlastní rozdělené L1 cache, které napájejí
+  sdílené vyšší úrovně připojené ke společné sběrnici a hlavní paměti.</p>
+
+  <h2 id="terminologie">Terminologie a typy miss</h2>
+  <dl class="pojmy-list">
+    <dt>Cache hit</dt><dd>Paměťový požadavek je obsloužen z cache, bez přístupu do vyšší (pomalejší) úrovně.</dd>
+    <dt>Cache miss</dt><dd>Opak hitu – požadavek musí do pomalé hlavní paměti. Má více možných příčin (viz níže).</dd>
+    <dt>Cache line eviction</dt><dd>Vystěhování cache line, aby se uvolnilo místo pro nová data.</dd>
+    <dt>Cache replacement policy</dt><dd>Politika, která rozhoduje, kterou line vystěhovat: LRU, pseudo-LRU, random…</dd>
+  </dl>
+  <p>Typy cache miss (zdroje, proč k němu dojde):</p>
+  <ul>
+    <li><strong>Cold miss (compulsory)</strong> – první, povinný přístup k datům, která v cache ještě nebyla.</li>
+    <li><strong>Capacity miss</strong> – pracovní množina (working set) se nevejde do cache.</li>
+    <li><strong>Conflict miss</strong> – data sice kapacitně stačí, ale mapují se na stejnou line/set a vytěsňují se.</li>
+    <li><strong>True sharing miss</strong> – jiné jádro zapsalo do <em>téže</em> sdílené line.</li>
+    <li><strong>False sharing miss</strong> – jiné jádro zapsalo do <em>jiné</em> proměnné, která ale náhodou leží
+    ve stejné line (viz dále).</li>
+  </ul>
+
+  <h2 id="asociativita">Organizace a asociativita</h2>
+  <p>Existují tři hlavní organizace cache podle toho, kam se daná adresa smí umístit:</p>
+  <table>
+    <thead><tr><th>Organizace</th><th>Mapování</th><th>Kompromis</th><th>Verdikt</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Přímo mapovaná (direct-mapped)</strong></td><td>Každá adresa se mapuje přesně na <strong>jednu</strong> cache line.</td><td>Jednoduchý HW, ale náchylná na conflict miss.</td><td>Jednoduchá</td></tr>
+      <tr><td><strong>Plně asociativní (fully associative)</strong></td><td>Adresa může jít <strong>kamkoli</strong>.</td><td>Ideální miss rate, ale drahý komparátor.</td><td>Ideální</td></tr>
+      <tr><td><strong>Set-asociativní (set associative)</strong></td><td><strong>N-cestné</strong> sety vyvažují cenu HW a miss rate.</td><td>Používá se ve všech moderních CPU.</td><td>Reálný kompromis</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Přímo mapovaná cache</h3>
+  <ul>
+    <li>Každé místo v paměti má přiřazenu jen <strong>jednu</strong> cache line.</li>
+    <li>Místa vzdálená o <strong>násobky velikosti cache spolu vždy kolidují!</strong> (zde o násobky 8 × 64 B).</li>
+    <li>Kromě dat cache ukládá i <strong>tag</strong>.</li>
+    <li>Typická velikost cache line: Intel/AMD <strong>64 B</strong>, Apple M1–M4 <strong>128 B</strong>.</li>
+  </ul>
+  <p>Adresa se dělí na tři pole:</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent">
+        <span class="db-title">Tag (T)</span>
+        <span class="db-sub">bity 31…</span>
+      </div>
+      <div class="diag-box accent">
+        <span class="db-title">Cache Line (S)</span>
+        <span class="db-sub">výběr line</span>
+      </div>
+      <div class="diag-box accent">
+        <span class="db-title">Offset (O)</span>
+        <span class="db-sub">…0 uvnitř line</span>
+      </div>
+    </div>
+    <div class="diag-cap">Rozdělení 32bitové adresy v přímo mapované cache</div>
+  </div>
+  <p>Více vzdálených bloků paměti (např. adresy 8·64 B od sebe) ukazuje na <em>tutéž</em> cache line –
+  proto v přímo mapované cache snadno dochází ke konfliktům.</p>
+
+  <h3>Samovytěsňující se kód (direct-mapped)</h3>
+  <pre><code>void outer_func() {
+  for (int i = 0; i &lt; 1000; i++)
+    inner_func();
+}
+void inner_func() {
+  // do something
+}</code></pre>
+  <ul>
+    <li>Pokud se <code>outer_func()</code> a <code>inner_func()</code> náhodou mapují na <strong>tutéž</strong>
+    cache line, dostanete <strong>dva cache miss každou iteraci</strong> (fetch instrukcí)!</li>
+    <li><strong>Řešení: dej související (hot) funkce k sobě</strong>, aby je linker umístil vedle sebe:</li>
+  </ul>
+  <pre><code>__attribute__((hot)) void outer_func();
+__attribute__((hot)) void inner_func();</code></pre>
+
+  <h3>Set-asociativní cache</h3>
+  <ul>
+    <li><strong>Většina dnešního hardwaru.</strong></li>
+    <li>Typicky <strong>8–16 cest (ways)</strong>.</li>
+    <li>2-cestná set-asociativní cache ≈ přímo mapovaná cache <strong>dvojnásobné velikosti</strong>.</li>
+    <li>Cache ≈ <strong>hardwarová hash-tabulka s omezenou velikostí bucketu</strong> (limit = počet cest).</li>
+    <li><strong>Replacement policy</strong> určuje, která cesta se při conflict miss vystěhuje (LRU, pseudo-LRU, random…).</li>
+  </ul>
+  <p>Dělení adresy má stejný tvar, ale prostřední pole teď vybírá <strong>set</strong>, ne jedinou line:</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent">
+        <span class="db-title">Tag (T)</span>
+        <span class="db-sub">bity 31…</span>
+      </div>
+      <div class="diag-box accent">
+        <span class="db-title">Cache Set (S)</span>
+        <span class="db-sub">výběr setu</span>
+      </div>
+      <div class="diag-box accent">
+        <span class="db-title">Offset (O)</span>
+        <span class="db-sub">…0 uvnitř line</span>
+      </div>
+    </div>
+    <div class="diag-cap">Rozdělení adresy v set-asociativní cache – prostřední pole vybírá set</div>
+  </div>
+  <p>Blok paměti lze umístit do kterékoli cesty svého setu, takže dva kolidující bloky mohou existovat
+  současně (po jednom v každé cestě). Velikost cache line 64 B.</p>
+
+  <div class="box poznamka">
+    <p class="box-title">💬 Existuje samovytěsňování i u set-asociativní cache?</p>
+    <p><strong>Ano, ale je méně pravděpodobné.</strong> Při N cestách může v jednom setu koexistovat až N
+    kolidujících line, takže k samovytěsnění dojde, až když se do jednoho setu mapuje <em>více než N</em>
+    hot line – to je mnohem vzácnější než u přímo mapované cache, kde už dvě kolidující line jsou v konfliktu.</p>
+  </div>
+
+  <h2 id="zapis">Zápisové politiky</h2>
+  <p><strong>Cíl: vyhnout se zbytečnému vystěhování cachovaných dat.</strong></p>
+  <dl class="pojmy-list">
+    <dt>Write-back (nejčastější)</dt>
+    <dd>Zapsaná data se cachují pro pozdější opětovné použití a do systémové paměti se <strong>nepíšou hned</strong>
+    → <strong>snižuje provoz na sběrnici</strong>.</dd>
+    <dt>Write-through</dt>
+    <dd>Zapsaná data se <strong>cachují i zapisují do systémové paměti zároveň</strong>. Hodí se pro frame buffery,
+    kde chcete zápis „vidět“ jako pixely na obrazovce. Lze vyvolat explicitně přes SSE <em>streaming stores</em>.</dd>
+    <dt>Write-combining</dt>
+    <dd>Zápisy se <strong>necachují</strong>, ale ukládají do <strong>write-combining bufferu</strong>. Jakmile je
+    buffer plný, data se zapíšou přímo do paměti najednou. Často pro frame-buffer paměť – bez něj by aktualizace
+    obrazovky vytěsnila všechna ostatní cachovaná data.</dd>
+  </dl>
+
+  <h3>Streaming stores (obejití cache při zápisu)</h3>
+  <p>SSE/AVX intrinsiky pro <strong>obejití cache při zápisu</strong>:</p>
+  <pre><code>#include &lt;emmintrin.h&gt;
+void _mm_stream_si32(int *p, int a);
+void _mm_stream_si128(int *p, __m128i a);
+void _mm_stream_pd(double *p, __m128d a);
+
+#include &lt;xmmintrin.h&gt;
+void _mm_stream_pi(__m64 *p, __m64 a);
+void _mm_stream_ps(float *p, __m128 a);
+
+#include &lt;ammintrin.h&gt;
+void _mm_stream_sd(double *p, __m128d a);
+void _mm_stream_ss(float *p, __m128 a);</code></pre>
+  <div class="box insight">
+    <p class="box-title">💡 Kdy streaming stores</p>
+    <p>Používej je pro <strong>velké sekvenční zápisy, které se brzy znovu nečtou</strong> – zabráníš tím
+    znečištění cache (cache pollution).</p>
+  </div>
+
+  <h3>Benchmark: sekvenční vs náhodný přístup</h3>
+  <pre><code>#define REP 1000000
+char A[65536*1024];
+
+for (rep = 0; rep &lt; REP; rep++)
+  for (i = 0; i &lt; WSS; i += 64)
+    A[i]++;            // sekvenční</code></pre>
+  <p>Cena za přístup (CPU cykly) roste schodovitě, jak pracovní množina přetéká z jedné úrovně cache do další.
+  I při <em>sekvenčním</em> přístupu zůstává díky prefetchingu a prostorové lokalitě nízká (≤ ~7 cyklů):</p>
+  <table>
+    <thead><tr><th>Pracovní množina</th><th>Cykly/přístup</th><th>Úroveň</th></tr></thead>
+    <tbody>
+      <tr><td>≤ ~32 KiB</td><td>~1</td><td>L1</td></tr>
+      <tr><td>~64 KiB … ~6 MiB</td><td>~3,3–3,6</td><td>L2/L3</td></tr>
+      <tr><td>≥ ~12 MiB</td><td>~6,6</td><td>DRAM</td></tr>
+    </tbody>
+  </table>
+  <pre><code>char A[65536*1024];
+WSS = (1&lt;&lt;N);
+mask = (1&lt;&lt;N) - 1;
+
+for (rep = 0; rep &lt; REP; rep++) {
+  addr = ((rep+523)*253573) &amp; mask;
+  A[addr]++;          // pseudonáhodný
+}</code></pre>
+  <p>Náhodný přístup ztrácí prostorovou lokalitu a je <strong>mnohem dražší</strong> – vrcholí kolem
+  ~230 cyklů na přístup (vs. ~7 u sekvenčního). Při velkých pracovních množinách se k L3 miss přidávají
+  i <strong>TLB miss</strong> jako významný přispěvatel:</p>
+  <table>
+    <thead><tr><th>Pracovní množina</th><th>Cykly/přístup (přibl.)</th><th>Dominantní miss</th></tr></thead>
+    <tbody>
+      <tr><td>≤ ~32 KiB</td><td>~5–7</td><td>(vejde se do L1)</td></tr>
+      <tr><td>~64–256 KiB</td><td>~10–13</td><td>L1 miss rostou (~33)</td></tr>
+      <tr><td>~512 KiB–2 MiB</td><td>~28–32</td><td>objevují se L2 miss</td></tr>
+      <tr><td>~4–6 MiB</td><td>~35–50</td><td>roste</td></tr>
+      <tr><td>≥ ~8 MiB</td><td>skok na ~120, pak ~210–235</td><td>L3 miss + rostoucí <strong>TLB miss</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="eviction">Eviction a replacement policy</h2>
+  <p>Při zaplnění setu se nějaká cache line musí <strong>vystěhovat (eviction)</strong>. O výběru oběti
+  rozhoduje <strong>replacement policy</strong>:</p>
+  <dl class="pojmy-list">
+    <dt>LRU (Least Recently Used)</dt><dd>Vystěhuje nejdéle nepoužitou line. Ideální aproximace lokality, ale
+    přesné LRU je u mnoha cest drahé na realizaci.</dd>
+    <dt>Pseudo-LRU</dt><dd>Levnější přiblížení LRU (např. stromové bity), používané v reálném HW.</dd>
+    <dt>Random</dt><dd>Náhodný výběr oběti – minimální HW, překvapivě obstojné výsledky.</dd>
+  </dl>
+
+  <h3>Cache-related preemption delay</h3>
+  <ul>
+    <li>Když je vlákno odebráno (preempted), <strong>nahrazující vlákno vytěsní data z cache</strong>.</li>
+    <li>Po skončení preempce zažije původní vlákno <strong>dávku cache miss</strong>.</li>
+    <li>Některé (starší) architektury musí při přepnutí adresního prostoru <strong>vyprázdnit TLB (flush)</strong>.
+    Moderní architektury <strong>označují TLB identifikátorem adresního prostoru</strong> (ASID, PCID…).</li>
+    <li>Vysoce výkonný software <strong>omezuje preempce</strong> (např. připínáním vláken).
+    <strong>Kompromis: omezení preempce zvyšuje dobu odezvy!</strong></li>
+  </ul>
+
+  <h2 id="tlb">TLB a překlad adres</h2>
+  <p><strong>TLB (Translation Lookaside Buffer)</strong> cachuje překlad <strong>virtuální → fyzická</strong>
+  adresa.</p>
+  <ul>
+    <li>Při <strong>TLB miss</strong> se musí provést <strong>page walk</strong> (procházení tabulek stránek,
+    <strong>2 až 5 úrovní</strong>).</li>
+    <li>Intel i7-2600 má <strong>512 položek L2 TLB</strong> ⇒ <strong>512 × 4 kB = 2 MB</strong> pokrytí.</li>
+    <li>Vylepšení: tzv. <strong>huge pages</strong> (1 stránka = <strong>2 MB</strong>, <code>PS=1</code>).
+    V Linuxu někdy automaticky, nebo explicitně přes <strong><code>hugetlbfs</code></strong>.</li>
+  </ul>
+  <p>Při IA-32e stránkování se 48bitová lineární adresa dělí na <strong>PML4 (47:39) / Directory Ptr (38:30) /
+  Directory (29:21) / Table (20:12) / Offset (11:0)</strong> a překlad prochází
+  <code>CR3 → PML4E → PDPTE → PDE → PTE → 4 KiB stránka → fyzická adresa</code> (9bitový index na úroveň).
+  Při velké stránce (PS=1) se procházení zkrátí.</p>
+
+  <h2 id="struktury">Cache-friendly datové struktury</h2>
+  <table>
+    <thead><tr><th>Datová struktura</th><th>Vzor přístupu</th><th>Vhodnost pro cache</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Pole</strong></td><td>Sekvenční přístup</td><td><strong>Dobrá</strong> prostorová lokalita</td></tr>
+      <tr><td><strong>Spojové seznamy</strong></td><td>Honba za ukazateli (pointer chasing)</td><td><strong>Špatná</strong> – jako náhodný přístup</td></tr>
+      <tr><td><strong>Vyhledávací stromy</strong></td><td>Náhodný přístup</td><td><strong>Špatná</strong> (kromě B-stromů)</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>Pro většinu datových struktur/algoritmů <strong>existují cache-optimalizované varianty</strong>.</li>
+    <li>Jsou složitější než učebnicové příklady – ale často <strong>10× a víc rychlejší</strong>.</li>
+    <li>Viz též přednáška 2: <strong>Struct of Arrays (SoA)</strong> dosahuje <strong>100 % využití cache line</strong>
+    oproti <strong>33 %</strong> u <strong>Array of Structs (AoS)</strong>.</li>
+  </ul>
+  <div class="box insight">
+    <p class="box-title">💡 SoA vs AoS</p>
+    <p>U <strong>Array of Structs</strong> (klasické pole objektů) se při čtení jednoho pole natáhne celý 64B řádek,
+    ale využijí se z něj jen bajty toho jednoho pole (~33 %). U <strong>Struct of Arrays</strong> leží stejnojmenná
+    pole pohromadě, takže sekvenční zpracování využije celý řádek (100 %).</p>
+  </div>
+
+  <h2 id="alokace">Dynamická alokace (<code>malloc()</code>, <code>new</code>)</h2>
+  <ul>
+    <li>Paměťové alokátory se <strong>snaží udržovat prostorovou a časovou lokalitu</strong>.</li>
+    <li><strong>Prostorová lokalita</strong> je obtížná, když je halda <strong>fragmentovaná</strong>
+    (po mnoha operacích <code>new</code>/<code>delete</code>).</li>
+    <li><strong>Časová lokalita</strong> – když se paměť uvolní, následná alokace ji znovu použije, protože je
+    <strong>cache-hot</strong>.</li>
+  </ul>
+  <div class="box poznamka">
+    <p class="box-title">💬 Vlastní alokátor</p>
+    <p>Pokud heuristiky alokátoru pro vaši zátěž selhávají, zvažte <strong>vlastní alokátor pro hot path</strong>.</p>
+  </div>
+
+  <h2 id="matice">Příklad: násobení matic</h2>
+  <p>Násobíme <strong>C = A · B</strong>, kde c<sub>ij</sub> = Σ<sub>k=1..N</sub> a<sub>ik</sub> · b<sub>kj</sub>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Pointa příkladu</p>
+    <p>Cache-optimalizovaná verze je <strong>10× rychlejší</strong> než naivní implementace <strong>při stejné
+    složitosti O(N³)</strong> – pouze přeskupením pořadí přístupů do paměti.</p>
+  </div>
+  <p>Předpoklady animované simulace cache na slidech: prvek matice <code>double</code> (8 B), velikost cache line
+  16 B (2 prvky), plně asociativní cache, L2 = 128 B, L1 = 32 B, každá matice má v příkladu vlastní cache.</p>
+
+  <h3>Naivní implementace</h3>
+  <pre><code>for (i = 0; i &lt; N; ++i)
+  for (j = 0; j &lt; N; ++j)
+    for (k = 0; k &lt; N; ++k)
+      C[i][j] += A[i][k] * B[k][j];</code></pre>
+  <p>Matice <strong>A</strong> se prochází po řádcích (dobrá lokalita), <strong>B</strong> po sloupcích (každý
+  přístup na novou cache line → špatná lokalita). Uváděné součty pro daný krok: <strong>mem:27, cache hits:12 ≈ 44 %</strong>.</p>
+
+  <h3>Implementace s transpozicí</h3>
+  <pre><code>double B[N][N];
+for (i = 0; i &lt; N; ++i)
+  for (j = 0; j &lt; N; ++j)
+    B[i][j] = Bsrc[j][i];
+
+for (i = 0; i &lt; N; ++i)
+  for (j = 0; j &lt; N; ++j)
+    for (k = 0; k &lt; N; ++k)
+      C[i][j] += A[i][k] * B[j][k];</code></pre>
+  <p>Transpozicí B prochází vnitřní smyčka B <strong>po řádcích</strong> (<code>B[j][k]</code>) místo po sloupcích,
+  čímž se obnoví prostorová lokalita. <strong>Výkon: naivní = 100 %, transpozice = 23,4 %</strong> –
+  <strong>4× zrychlení</strong> jen díky transpozici. Součty kroku: <strong>mem:27, cache hits:16 ≈ 59 %</strong>.</p>
+
+  <h3>Dlaždicová (tiled) implementace</h3>
+  <pre><code>for (k1 = 0; k1 &lt; N; k += tile)
+  for (j1 = 0; j1 &lt; N; j += tile)
+    for (i1 = 0; i1 &lt; N; i += tile)
+      for (i = i1; i &lt; i1 + tile; ++i)
+        for (j = j1; j &lt; j1 + tile; ++j)
+          for (k = k1; k &lt; k1 + tile; ++k)
+            C[i][j] += A[i][k] * B[j][k];</code></pre>
+  <ul>
+    <li>Každá <strong>dlaždice (tile)</strong> se vejde do cache, takže se její data mnohokrát použijí před vystěhováním.</li>
+    <li><strong>Výkon: 17,3 % výkonu naivní verze (9,5 % se SIMD)</strong> – <strong>6× zrychlení</strong>.</li>
+    <li>Dlaždice se vejdou do L2, ale ne do L1 – jen <strong>75 % hitů v L1</strong>.</li>
+  </ul>
+  <p>Součty kroku: <strong>mem:384, cache hits:344 ≈ 89 %</strong>.</p>
+
+  <h3>Dvouúrovňové dlaždicování</h3>
+  <pre><code>for (k2 = 0; k2 &lt; N; k2 += tile2)
+  for (j2 = 0; j2 &lt; N; j2 += tile2)
+    for (i2 = 0; i2 &lt; N; i2 += tile2)
+      for (k1 = k2; k1 &lt; k2 + tile2; k += tile1)
+        for (j1 = j2; j1 &lt; j2 + tile2; j += tile1)
+          for (i1 = i2; i1 &lt; i2 + tile2; i += tile1)
+            for (i = i1; i &lt; i1 + tile1; ++i)
+              for (j = j1; j &lt; j1 + tile1; ++j)
+                for (k = k1; k &lt; k1 + tile1; ++k)
+                  C[i][j] += A[i][k] * B[j][k];</code></pre>
+  <ul>
+    <li>Vnější dlaždice (<code>tile2</code>) cílí na <strong>L2</strong>, vnitřní (<code>tile1</code>) na <strong>L1</strong>.</li>
+    <li><strong>79 % hitů v L1</strong> (oproti 75 % u jednoúrovňového dlaždicování).</li>
+  </ul>
+  <p>Součty kroku: <strong>mem:378, L1 hits:298 ≈ 78 %, L2 hits:40 ≈ 10 %, cache hits:338 ≈ 89 %</strong>.</p>
+
+  <h3>Rekurzivní násobení matic</h3>
+  <ul>
+    <li><strong>Zobecnění na libovolný počet úrovní cache</strong> (cache-oblivious přístup).</li>
+    <li>Násobení N × N = <strong>8 multiply-add</strong> operací nad maticemi (N/2) × (N/2).</li>
+  </ul>
+  <p>Bloky se rozdělí na čtvrtiny (A<sub>11</sub>…A<sub>22</sub> atd.) a výsledné bloky se skládají např. jako
+  C<sub>11</sub> = A<sub>11</sub>B<sub>11</sub> + A<sub>12</sub>B<sub>21</sub>. Animace: YouTube playlist „Matrix
+  multiplication cache animations“, zdrojový kód <code>GitHub: wentasah/mmul-anim</code>.</p>
+
+  <h2 id="koherence">Cache koherence (MESI)</h2>
+  <ul>
+    <li>V symetrických multiprocesorových (SMP) systémech <strong>nemohou cache jednotlivých CPU pracovat
+    nezávisle</strong>.</li>
+    <li>Udržení <strong>jednotného pohledu na paměť</strong> pro všechny procesory se nazývá <strong>cache koherence</strong>.</li>
+    <li>Pokud nějaký procesor zapíše do cache line, ostatní procesory musí odpovídající line ze svých cache
+    <strong>vyčistit</strong>. (Pozor: komunikace mezi jádry/sokety je „pomalá“.)</li>
+    <li>Synchronizační protokol: <strong>MESI(F)</strong>.
+      <ul>
+        <li><strong>Dirty</strong> cache line <strong>není přítomna v žádné jiné</strong> cache procesoru.</li>
+        <li><strong>Čisté kopie</strong> téže cache line mohou být v <strong>libovolně mnoha</strong> cache.</li>
+      </ul>
+    </li>
+  </ul>
+  <p>Každé CPU má <strong>store buffer</strong>, privátní <strong>L1$</strong> a <strong>L2$</strong>, vše
+  připojené ke sdílenému <strong>CPU interconnectu (sběrnici)</strong>, který vede i k <strong>paměti</strong>.</p>
+  <div class="box poznamka">
+    <p class="box-title">💬 Hot / dirty cache line</p>
+    <p><strong>Hot</strong> line je nedávno použitá (cache-hot) – přístup k ní je rychlý. <strong>Dirty</strong>
+    line obsahuje zápis, který ještě nebyl propsán do paměti; v MESI smí existovat jen v jedné cache a při
+    sdílení se musí nejdřív propsat do paměti a přenést do ostatních cache.</p>
+  </div>
+
+  <h2 id="sharing">True a false sharing</h2>
+
+  <div class="box pisnicka" id="pisen-true-false-sharing">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>True False Sharing</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s04">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+
+  <h3>True sharing</h3>
+  <ul>
+    <li>Program je <strong>pomalý, protože cache line se sdílenými daty putují z jednoho CPU na druhý</strong>.</li>
+    <li>Typický příklad: <strong>každý mutex je sdílený mezi CPU</strong>.</li>
+    <li>Když je to problém (<strong>příliš velká contention</strong>): jemnější zamykání, nebo změna datové
+    struktury (např. per-CPU data) a/nebo cache-friendly algoritmy.</li>
+  </ul>
+  <pre><code>std::atomic_int32_t counter;
+
+void thread_cpu0() {
+  while (true)
+    counter++;
+}
+void thread_cpu1() {
+  while (true)
+    counter++;
+}</code></pre>
+  <p>Obě vlákna inkrementují <strong>tentýž</strong> <code>counter</code>, takže jeho cache line při každém
+  inkrementu „ping-ponguje“ (poskakuje) mezi cache obou jader.</p>
+  <p>Když všechna CPU atomicky inkrementují <strong>globální</strong> proměnnou, každé jádro táhne jedinou
+  sdílenou line přes interconnect → <strong>každé CPU má cache miss</strong> a inkrementy se fakticky
+  <strong>serializují</strong>. Když inkrementují <strong>per-CPU</strong> proměnnou, každé jádro sahá jen na
+  svou lokální line → <strong>žádný cache miss, mnohem rychlejší a paralelní</strong>.</p>
+  <div class="box poznamka">
+    <p class="box-title">💬 AMD Ryzen 5000 – NUMA i v jednom soketu</p>
+    <p><strong>Chiplet design</strong>: 2 CCD (Core Complex Dies), každý se 2 CCX (Core Complexes). Latence napříč
+    CCD je vyšší než uvnitř CCX ⇒ <strong>NUMA-like efekty i na jednom soketu</strong>. Software musí znát topologii.</p>
+  </div>
+
+  <h3>False sharing</h3>
+  <p>Data přistupovaná z různých CPU <strong>nejsou sdílená, ale náhodou leží v jedné cache line</strong>:</p>
+  <pre><code>// Per-CPU counters
+std::atomic_int32_t counter_cpu0;
+std::atomic_int32_t counter_cpu1;
+
+void thread_cpu0() {
+  while (true)
+    counter_cpu0++;
+}
+void thread_cpu1() {
+  while (true)
+    counter_cpu1++;
+}</code></pre>
+  <ul>
+    <li>Problém <strong>není vidět ve zdrojovém kódu!</strong> <code>counter_cpu0</code> a <code>counter_cpu1</code>
+    jsou různé proměnné, přesto mohou skončit v téže 64bajtové line, která pak poskakuje mezi jádry.</li>
+    <li>Pomoct může <strong>kombinace více HW výkonnostních čítačů</strong> – to dělá linuxový
+    <strong><code>perf c2c</code></strong> (cache-to-cache).</li>
+  </ul>
+  <p><strong>Řešení: zarovnat každou proměnnou na hranici cache line:</strong></p>
+  <pre><code>std::atomic_int32_t counter_cpu0 __attribute__((aligned(64)));
+std::atomic_int32_t counter_cpu1 __attribute__((aligned(64)));</code></pre>
+  <p>Velikost cache line zjistíte za běhu přes <code>sysconf(_SC_LEVEL1_DCACHE_LINESIZE)</code> nebo při překladu
+  přes <code>gcc -DLEVEL1_DCACHE_LINESIZE=$(getconf LEVEL1_DCACHE_LINESIZE) ...</code>.</p>
+
+  <h3>Příklad: <code>__thread</code> brání false sharingu</h3>
+  <p>Per-thread seed přidělený kompilátorem/linkerem (dobře – thread-local storage):</p>
+  <pre><code>__thread unsigned int seed;
+
+void gen_rnd_key(char *key, int length)
+{
+    int len = strlen(charset);
+    for (int i = 0; i &lt; length; i++) {
+        int r = rand_r(&amp;seed);
+        key[i] = charset[r];
+    }
+    key[length] = '\0';
+}</code></pre>
+  <p><code>__thread</code> v praxi zajistí, že každá <code>seed</code> leží v <strong>jiné cache line</strong>.
+  Naproti tomu pole přidělené programátorem způsobí false sharing:</p>
+  <pre><code>unsigned int seed[NUM_CPUS];
+
+void gen_rnd_key(char *key,
+    int length, int thread_idx)
+{
+    int len = strlen(charset);
+    for (int i = 0; i &lt; length; i++) {
+        int r = rand_r(&amp;seed[thread_idx]);
+        key[i] = charset[r];
+    }
+    key[length] = '\0';
+}</code></pre>
+  <p>Sousední položky <code>seed[]</code> sdílejí cache line. Tato verze je <strong>asi o 40 % pomalejší na serveru
+  ritchie při běhu na 32 CPU</strong>.</p>
+  <div class="box insight">
+    <p class="box-title">💡 Fyzikální mez komunikace mezi jádry</p>
+    <p>Rychlost světla za 1 takt @ 3 GHz urazí round-trip ≈ <strong>5 cm</strong>; rychlost elektronů v tranzistorech
+    ≈ <strong>0,03–0,3·C</strong>. Tím je shora omezeno, jak rychlá vůbec může komunikace mezi jádry být.</p>
+  </div>
+
+  <h2 id="numa">NUMA a rozložení vláken</h2>
+  <ul>
+    <li>Každý socket CPU má vlastní <strong>lokální paměť</strong>.</li>
+    <li>Přístup do <strong>vzdálené</strong> paměti jde přes <strong>interconnect</strong> (QPI, Infinity Fabric).</li>
+    <li><strong>Lokální: ~100 ns, vzdálená: ~150–200 ns.</strong></li>
+    <li><strong>First-touch politika</strong>: OS alokuje paměť na uzlu, kde do ní vlákno <strong>poprvé zapíše</strong>.</li>
+  </ul>
+  <p>Schéma: čtyři procesory propojené křížem; každý má vlastní banky paměti a I/O řadiče. Přístup do paměti přímo
+  připojené k procesoru je rychlý (lokální), dosažení paměti jiného procesoru znamená jeden či více skoků přes
+  interconnect (vzdálené).</p>
+
+  <h3>Migrace vláken mezi jádry</h3>
+  <p>Load balancing OS migruje vlákna mezi jádry, přičemž migrovaná vlákna <strong>ztratí svou cache stopu</strong>
+  i <strong>NUMA lokalitu</strong>.</p>
+  <p><strong>Řešení: připnout vlákna k CPU (nastavit CPU affinity):</strong></p>
+  <pre><code>cpu_set_t cpuset;
+pthread_t thread;
+thread = pthread_self();
+/* Set affinity mask to include
+   only CPU 3 */
+CPU_ZERO(&amp;cpuset);
+CPU_SET(3, &amp;cpuset);
+s = pthread_setaffinity_np(
+  thread, sizeof(cpu_set_t),
+  &amp;cpuset);</code></pre>
+
+  <h3>libnuma (Linux)</h3>
+  <pre><code>#include &lt;numa.h&gt;
+
+int numa_available(void);
+int numa_max_possible_node(void);
+int numa_num_possible_nodes();
+
+int numa_max_node(void);
+//...
+int numa_preferred(void);
+void numa_set_preferred(int node);
+void numa_set_interleave_mask(struct bitmask *nodemask);
+//...
+void numa_bind(struct bitmask *nodemask);
+void numa_set_localalloc(void);
+void numa_set_membind(struct bitmask *nodemask);</code></pre>
+
+  <div class="box insight">
+    <p class="box-title">💡 Size matters</p>
+    <p>I když máme terabajty paměti, na <strong>velikosti a rozložení</strong> datových struktur stále záleží –
+    <strong>jen pár kilobajtů paměti je rychlých, zbytek je pomalý!</strong> Cache-optimalizované algoritmy mohou
+    být <strong>10–100× rychlejší</strong> než naivní. Když profiler hlásí spoustu cache miss a vy <strong>nevidíte
+    žádná sdílená data, zkontrolujte false sharing.</strong></p>
+  </div>
+
+  <div class="box pojmy" id="pojmy">
+    <p class="box-title">🔑 Klíčové pojmy</p>
+    <dl class="pojmy-list">
+      <dt>SRAM vs DRAM</dt><dd>SRAM 6 tranzistorů/bit (rychlá, drahá – registry, cache, TLB); DRAM 1 tranzistor + kondenzátor (pomalá, levná – hlavní paměť).</dd>
+      <dt>tRCD / CL</dt><dd>ACTIVATE→připraveno ≈ 13 ns; CAS latency (READ) ≈ 10 ns. Za 20 let se nezlepšily, roste jen propustnost.</dd>
+      <dt>Prostorová / časová lokalita</dt><dd>Blízká adresa brzy / tatáž adresa znovu – princip, na němž cache stojí.</dd>
+      <dt>Cache hit / miss</dt><dd>Obsloužení z cache / nutnost jít do pomalé paměti.</dd>
+      <dt>Typy miss</dt><dd>cold (compulsory), capacity, conflict, true-sharing, false-sharing.</dd>
+      <dt>Asociativita</dt><dd>direct-mapped (1 line), fully associative (kamkoli), set-associative (N cest – reálný HW).</dd>
+      <dt>Tag / Set / Offset</dt><dd>Rozdělení adresy; offset uvnitř line, set vybírá bucket, tag identifikuje blok.</dd>
+      <dt>Zápisové politiky</dt><dd>write-back (default), write-through (frame buffer, streaming stores), write-combining (bufferovaný hromadný zápis).</dd>
+      <dt>Replacement policy</dt><dd>LRU, pseudo-LRU, random – kdo se vystěhuje (eviction).</dd>
+      <dt>TLB</dt><dd>Cache překladů virtuální→fyzická; miss → page walk (2–5 úrovní); huge pages (2 MB) zvyšují pokrytí.</dd>
+      <dt>SoA vs AoS</dt><dd>Struct of Arrays = 100% využití line; Array of Structs = 33 %.</dd>
+      <dt>MESI(F)</dt><dd>Dirty line jen v jedné cache; čisté kopie v libovolně mnoha.</dd>
+      <dt>True / false sharing</dt><dd>Sdílení téhož údaje (serializace) / různé proměnné v jedné line (skrytá brzda); řeší <code>perf c2c</code>, <code>aligned(64)</code>, <code>__thread</code>.</dd>
+      <dt>NUMA / first-touch</dt><dd>Lokální ~100 ns vs vzdálená ~150–200 ns; OS alokuje na uzel prvního zápisu.</dd>
+      <dt>Připnutí vláken</dt><dd><code>pthread_setaffinity_np</code> / <code>cpu_set_t</code>; alokaci řídí <code>libnuma</code>.</dd>
+    </dl>
+  </div>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Daný kus kódu má vysoké cache misses – navrhni úpravy a odůvodni je (funkčnost musí zůstat).</summary>
+    <div class="odpoved">
+      <p>Postup: nejdřív zjistit, <strong>jaký</strong> miss (cold/capacity/conflict, true/false sharing) – např. přes
+      <code>perf stat</code>, <code>perf c2c</code>. Typické úpravy zachovávající funkčnost:</p>
+      <ul>
+        <li><strong>Změnit pořadí přístupů / smyček</strong>, aby byl přístup sekvenční po řádcích (prostorová lokalita) –
+        např. transpozice nebo prohození vnitřních smyček (viz násobení matic, 4×).</li>
+        <li><strong>Blocking / tiling</strong> – zpracovávat data po dlaždicích, které se vejdou do cache, aby se data
+        před vystěhováním mnohokrát použila (časová lokalita).</li>
+        <li><strong>Změnit rozložení dat</strong>: Array of Structs → <strong>Struct of Arrays</strong> (100 % využití line
+        místo 33 %); nahradit spojový seznam polem.</li>
+        <li>Při sdílení napříč jádry <strong>zarovnat / oddělit proměnné</strong> (<code>aligned(64)</code>, <code>__thread</code>,
+        per-CPU data) proti false sharingu.</li>
+        <li>Velké sekvenční zápisy, které se brzy znovu nečtou → <strong>streaming stores</strong> (necachovat).</li>
+      </ul>
+      <p>Vždy: jedna změna → změř, že to pomohlo a výsledek je stejný.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Kód s funkcí, kde perf zaměřený na TLB našel hotspot – kde je problém a jak ho zlepšit při zachování funkčnosti?</summary>
+    <div class="odpoved">
+      <p>Vysoké <strong>TLB miss</strong> znamenají, že přístupy sahají na příliš mnoho různých <strong>stránek</strong> –
+      typicky <strong>náhodný / roztroušený přístup přes velkou pracovní množinu</strong>, takže se nevejde do TLB
+      (např. i7-2600 pokryje 512 × 4 kB = 2 MB). Každý miss spustí page walk (2–5 úrovní). Řešení:</p>
+      <ul>
+        <li><strong>Zlepšit prostorovou lokalitu</strong> – přístup sekvenčně, blocking/tiling, kompaktnější datová struktura
+        (pole místo pointer-chasing), aby se sahalo na méně stránek.</li>
+        <li><strong>Huge pages (2 MB)</strong> – jedna položka TLB pokryje 2 MB místo 4 kB; v Linuxu automaticky (THP) nebo
+        přes <code>hugetlbfs</code>.</li>
+        <li>Zmenšit pracovní množinu / zhustit data, aby se vešla do dosahu TLB.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">3 b</span> <code>perf record -e l1i_miss ./myprog</code> ukázal zpomalení ve <code>process_data</code>, která v cyklu volá tři <code>static inline</code> funkce do_a/do_b/do_c – vysvětli příčinu a navrhni změnu zachovávající funkčnost.</summary>
+    <div class="odpoved">
+      <p>Událost <code>l1i_miss</code> = miss v <strong>L1 instrukční cache</strong>. Pokud se kód <code>process_data</code>
+      a kód volaných funkcí mapuje na <strong>kolidující cache line</strong> (zejména u přímo mapované / málo cestné L1i),
+      vzájemně se v cyklu vytěsňují – jde o variantu <strong>samovytěsňujícího se kódu</strong>: každá iterace platí miss
+      na fetch instrukcí. (I když jsou označené <code>inline</code>, nemusí se reálně inline-ovat, takže se skáče na vzdálené
+      adresy.)</p>
+      <p><strong>Řešení:</strong> dostat související horký kód <strong>blízko k sobě</strong>, aby se nevytěsňoval:</p>
+      <ul>
+        <li>Označit funkce <code>__attribute__((hot))</code>, aby je linker umístil pohromadě.</li>
+        <li>Vynutit skutečný inlining (<code>__attribute__((always_inline))</code>) – tělo do_a/do_b/do_c se vloží přímo do
+        smyčky a zmizí skoky na vzdálené instrukce.</li>
+      </ul>
+      <p>Funkčnost zůstává, mění se jen rozmístění/inlining kódu.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Kód s cache misses na poli <code>partial_sums</code> – v čem je problém a jak ho vyřešit při zachování funkčnosti?</summary>
+    <div class="odpoved">
+      <p>Pole mezisoučtů indexované per-vlákno/per-CPU (<code>partial_sums[thread_idx]</code>) je klasický
+      <strong>false sharing</strong>: sousední položky leží v <strong>téže 64B cache line</strong>, a protože do nich různá
+      jádra zapisují, line neustále poskakuje mezi jejich cache (koherenční provoz) → spousta miss, přestože vlákna logicky
+      nic nesdílejí. Ve zdrojáku to není vidět; odhalí to <code>perf c2c</code>.</p>
+      <p><strong>Řešení:</strong> oddělit položky do různých cache line:</p>
+      <ul>
+        <li>Zarovnat / vypolstrovat položky na velikost line: <code>__attribute__((aligned(64)))</code>, padding ve struktuře.</li>
+        <li>Použít <strong>thread-local</strong> (<code>__thread</code>) mezisoučet a sečíst až na konci.</li>
+        <li>Velikost line zjistit přes <code>sysconf(_SC_LEVEL1_DCACHE_LINESIZE)</code>.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Jak je organizovaná cache v dnešních CPU? Co je true a false sharing a proč je důležité na sdílení dbát?</summary>
+    <div class="odpoved">
+      <p><strong>Organizace cache:</strong> víceúrovňová hierarchie (L1i/L1d per jádro, L2, sdílená L3), data se přenášejí po
+      <strong>cache line</strong> (typicky 64 B, Apple 128 B). Dnešní cache jsou <strong>set-asociativní</strong> (typicky
+      8–16 cest) – ≈ hardwarová hash-tabulka s bucketem o velikosti počtu cest; adresa se dělí na <strong>tag / set /
+      offset</strong>, eviction řídí replacement policy (LRU/pseudo-LRU/random). Koherenci mezi jádry zajišťuje
+      <strong>MESI(F)</strong> (dirty line jen v jedné cache).</p>
+      <p><strong>True sharing:</strong> více jader přistupuje k <em>témuž</em> údaji (globální čítač, mutex) – jeho line
+      ping-ponguje mezi jádry a přístupy se serializují.</p>
+      <p><strong>False sharing:</strong> jádra přistupují k <em>různým</em> proměnným, které ale náhodou leží v jedné line –
+      ta poskakuje stejně, ačkoli logicky se nic nesdílí; ve zdrojáku neviditelné.</p>
+      <p><strong>Proč na tom záleží:</strong> komunikace mezi jádry/sokety je drahá; oba jevy zabíjejí škálování. Řeší se
+      jemnějším zamykáním, per-CPU/thread-local daty a zarovnáním na cache line (<code>aligned(64)</code>).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P5</span> Proč je DRAM pomalá a proč se data přenášejí v dávkách velikosti cache line?</summary>
+    <div class="odpoved">
+      <p>Přístup probíhá ve třech analogových fázích – ACTIVATE (t<sub>RCD</sub> ≈ 13 ns), READ (CL ≈ 10 ns), PRECHARGE –
+      a ty se za 20 let téměř nezlepšily (roste jen propustnost). Poslat jediné 64bitové slovo by tato zpoždění platilo
+      zbytečně, proto se přenáší celá <strong>dávka (burst) o velikosti cache line</strong>, aby se latence amortizovala.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P5</span> Vysvětli přímo mapovanou, plně asociativní a set-asociativní cache. Co je samovytěsňující se kód?</summary>
+    <div class="odpoved">
+      <p><strong>Direct-mapped:</strong> každá adresa má 1 line – jednoduché, ale conflict miss při kolizích (násobky velikosti
+      cache kolidují). <strong>Fully associative:</strong> kamkoli – ideální miss rate, drahý komparátor. <strong>Set-associative:</strong>
+      N cest na set – reálný kompromis (8–16 cest), ≈ hash-tabulka. <strong>Samovytěsňující se kód</strong>: dvě hot funkce
+      (outer/inner) se mapují na tutéž line a v každé iteraci se vzájemně vytěsňují (2 miss/iter). Řešení: <code>__attribute__((hot))</code>,
+      aby je linker dal vedle sebe; u set-asociativní je problém méně pravděpodobný (potřeba > N kolidujících line).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P5</span> Co je NUMA a first-touch? Jak zabránit ztrátě lokality při migraci vláken?</summary>
+    <div class="odpoved">
+      <p>NUMA = každý socket má lokální paměť (~100 ns), vzdálená přes interconnect je pomalejší (~150–200 ns). <strong>First-touch</strong>:
+      OS alokuje paměť na uzlu, kde do ní vlákno poprvé zapíše. Migrace vlákna mezi jádry ztratí cache stopu i NUMA lokalitu →
+      propad. Řešení: <strong>připnout vlákna</strong> (<code>pthread_setaffinity_np</code> / <code>cpu_set_t</code>) a řídit
+      alokaci přes <strong><code>libnuma</code></strong> (<code>numa_set_localalloc</code>, <code>numa_bind</code>…). I jednosoketové
+      chiplety (Ryzen, 2 CCD × 2 CCX) mají NUMA-like efekty.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li>DRAM je principiálně pomalá: ACTIVATE/READ/PRECHARGE ~10–13 ns (t<sub>RCD</sub> ≈ 13 ns, CL ≈ 10 ns), latence se
+      20 let nezlepšila – roste jen propustnost; data jdou v <strong>dávkách velikosti cache line</strong> (64 B / Apple 128 B).</li>
+      <li>Cache těží z <strong>prostorové a časové lokality</strong>. Hit = z cache, miss = do paměti; druhy: cold/compulsory,
+      capacity, conflict, true/false sharing.</li>
+      <li>Organizace: direct-mapped (jednoduchá, conflict miss, samovytěsňování), fully associative (ideál, drahá),
+      <strong>set-associative</strong> (8–16 cest, reálný HW). Adresa = tag / set / offset.</li>
+      <li>Zápis: write-back (default), write-through (frame buffer, <code>_mm_stream_*</code>), write-combining. Eviction řídí
+      replacement policy (LRU/pseudo-LRU/random).</li>
+      <li><strong>TLB</strong> cachuje virtuální→fyzické překlady; miss → page walk (2–5 úrovní); <strong>huge pages (2 MB)</strong>
+      zvyšují pokrytí.</li>
+      <li>Cache-friendly: pole dobrá, spojové seznamy/stromy špatné (kromě B-stromů); <strong>SoA 100 % vs AoS 33 %</strong> využití line.</li>
+      <li>Násobení matic O(N³): transpozice (4×), tiling (6×, 75 % L1), dvouúrovňové (79 % L1), rekurze → 10×+ jen přeskupením přístupů.</li>
+      <li>Koherence <strong>MESI(F)</strong>: dirty line jen v jedné cache. <strong>True sharing</strong> (týž údaj) serializuje;
+      <strong>false sharing</strong> (různé proměnné v jedné line) je skrytá brzda – detekce <code>perf c2c</code>, oprava
+      <code>aligned(64)</code> / <code>__thread</code> / per-CPU data.</li>
+      <li><strong>NUMA</strong>: lokální ~100 ns, vzdálená ~150–200 ns, first-touch; migrace ztrácí cache i NUMA lokalitu →
+      připnout vlákna (<code>pthread_setaffinity_np</code>) a řídit alokaci <code>libnuma</code>.</li>
+      <li>Pointa: <strong>jen pár kilobajtů je rychlých</strong>; cache-optimalizované algoritmy bývají 10–100× rychlejší.
+      Hodně miss bez viditelného sdílení → hledej false sharing.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="04-skalovatelna-synchronizace.html">← Předchozí: Synchronizace</a></span>
+    <span><a href="06-serializace.html">Další: Serializace →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

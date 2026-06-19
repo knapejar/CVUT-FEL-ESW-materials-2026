@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P7 – Běh programu, JVM, JIT · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="06-serializace.html">← předchozí: Serializace</a>
+    <a class="nav-link" href="08-konkurence-dat-jvm.html">další: Konkurence dat →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 7 · <span class="badge badge-java">Java/JVM část</span></div>
+    <h1>Běh programu – virtuální stroj, bytecode, JIT</h1>
+    <p class="perex">Jak vlastně běží program v Javě: zdrojový kód se přeloží do platformně
+    nezávislého <strong>bytecodu</strong>, který JVM vykonává v <strong>hybridním modelu</strong> –
+    nejprve interpretovaně, později pomocí JIT zkompilovaně do nativního assembleru. Projdeme rozložení
+    paměti JVM (zásobník a frames vs. halda), zásobníkový instrukční model, prohlížení class souborů
+    disassemblerem (<code>javap</code>) a dekompilátorem (procyon), tiered JIT kompilaci (C1/C2, OSR,
+    de-optimalizace), safepointy a Time-To-Safe-Point a nakonec profiling aplikací (sampling vs.
+    tracing). Vracející se motiv: kompilátor není kouzelník – piš efektivní algoritmy a pak
+    <strong>měř → analyzuj → optimalizuj</strong>.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#vm">Model virtuálního stroje</a></li>
+      <li><a href="#pamet">Rozložení paměti JVM</a></li>
+      <li><a href="#frame">Frame (rámec) a zásobník</a></li>
+      <li><a href="#oop">OOP – ukazatele na objekty</a></li>
+      <li><a href="#bytecode">Bytecode a zásobníkové vykonávání</a></li>
+      <li><a href="#classfile">Class soubor, javap, procyon</a></li>
+      <li><a href="#compile">Kompilace zdroje (javac)</a></li>
+      <li><a href="#jit">JIT kompilace, C1/C2, tiery</a></li>
+      <li><a href="#osr">OSR, de-optimalizace, warm-up</a></li>
+      <li><a href="#safepoint">Safepoint a TTSP</a></li>
+      <li><a href="#profiling">Profiling: sampling vs. tracing</a></li>
+      <li><a href="#bench">Mikro- a makrobenchmark</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="vm">Model virtuálního stroje</h2>
+  <p>Model <strong>virtuálního stroje</strong> používá <strong>.NET</strong> i <strong>JVM</strong>
+  (na JVM běží i jazyky Scala, Kotlin, Jython, Clojure, …). Zdrojový kód se přeloží do
+  <strong>bytecodu</strong> virtuálního stroje a ten běží v <strong>hybridním modelu vykonávání</strong>:</p>
+  <ul>
+    <li><strong>interpretovaně</strong>, nebo</li>
+    <li><strong>zkompilovaně</strong> do nativního <strong>assembleru</strong> s automatickými
+      optimalizacemi specifickými pro danou platformu (např. <strong>SIMD</strong>).</li>
+  </ul>
+  <table>
+    <thead><tr><th>Výhody</th><th>Nevýhody</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Platformní nezávislost (architektura RISC/CISC, velikost slova, OS), reflexe (inspekce
+          a úprava za běhu), menší velikost binárky.</td>
+        <td>Pomalejší start (interpretace, latence kompilace), menší kontrola nad nízkoúrovňovými
+          optimalizacemi.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="pamet">Rozložení paměti JVM</h2>
+  <p>Paměť JVM se dělí na oblasti <strong>specifické pro vlákno</strong> (zásobník) a oblasti
+  <strong>sdílené všemi vlákny</strong> (Non-Heap a Heap).</p>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Co má každé vlákno vlastní a co je sdílené</p>
+    <dl class="pojmy-list">
+      <dt>Vlastní pro každé vlákno (zásobník)</dt>
+      <dd><strong>Program Counter (PC)</strong>, <strong>Java zásobník</strong> (drží frames) a
+        <strong>nativní zásobník</strong>. Žádné jiné vlákno do nich nevidí.</dd>
+      <dt>Sdílené – Non-Heap</dt>
+      <dd><em>Ostatní nativní paměť</em>, <strong>Metaspace</strong> (obsahuje <strong>Code Cache</strong>
+        a <strong>Method Area</strong>) a <strong>Class Data</strong> s <strong>běhovým constant poolem</strong>
+        (Run-Time Constant Pool: řetězcové a číselné konstanty, odkazy na třídy, pole, metody, name &amp; type,
+        invoke dynamic) plus <strong>Method Code</strong> (kód metod).</dd>
+      <dt>Sdílené – Heap (halda)</dt>
+      <dd>Drží objekty i internované řetězce. <strong>Young Generation</strong> = <em>Eden Space</em> +
+        <em>Survivor Spaces</em>; <strong>Old / Tenured Generation</strong>. <strong>Minor GC</strong> čistí
+        mladou generaci, <strong>Major GC</strong> povyšuje/čistí starou generaci.</dd>
+    </dl>
+  </div>
+
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent">
+        <span class="db-title">🧵 ZÁSOBNÍK – vlastní pro každé vlákno</span>
+        <span class="db-sub">Thread (jeden na vlákno): Program Counter · Java zásobník (frames) · Nativní zásobník</span>
+        <span class="db-sub">Frame: Return Value · Local Variables · Operand Stack · Constant Pool Reference (odkaz na conpool →)</span>
+      </div>
+      <div class="diag-box">
+        <span class="db-title">📦 NON-HEAP – sdílený</span>
+        <span class="db-sub">Ostatní nativní paměť</span>
+        <span class="db-sub"><strong>Metaspace</strong>: Code Cache · Method Area</span>
+        <span class="db-sub"><strong>Class Data</strong>: Run-Time Constant Pool (řetězce, čísla, třídy, pole, metody, name&amp;type, invoke dynamic) · Method Code</span>
+      </div>
+    </div>
+    <div class="diag-stack">
+      <div class="diag-layer"><span class="dl-title">HEAP / halda</span> <span class="dl-sub">sdílená, internované Stringy</span></div>
+      <div class="diag-layer"><span class="dl-title">Young Generation</span> <span class="dl-sub">Eden Space · Survivor Spaces</span></div>
+      <div class="diag-layer"><span class="dl-title">Eden → Survivor → Old/Tenured</span> <span class="dl-sub">promotion: nejdřív Minor GC, později Major GC</span></div>
+      <div class="diag-layer"><span class="dl-title">Old / Tenured Generation</span></div>
+    </div>
+    <div class="diag-cap">Lokální proměnné framu odkazují (přes constant pool) do sdíleného Non-Heapu; objekty žijí na Heapu.</div>
+  </div>
+
+  <div class="box insight">
+    <p class="box-title">💡 Vyčerpání zásobníku vs. haldy</p>
+    <p>Přetečení <strong>zásobníku</strong> → <code>StackOverflowError</code>; vyčerpání
+    <strong>haldy</strong> → <code>OutOfMemoryError</code>.</p>
+  </div>
+
+  <h2 id="frame">Frame (rámec) a stack-oriented execution</h2>
+  <p>Každé vlákno má <strong>svůj vlastní zásobník frames</strong> (pevné velikosti). Frame
+  <strong>vzniká při volání metody</strong> a <strong>zaniká při návratu</strong>.</p>
+  <ul>
+    <li><strong>Interpretovaný frame</strong> odpovídá přesně <strong>jedné metodě</strong>.</li>
+    <li><strong>Zkompilovaný frame</strong> zahrnuje <strong>všechny inlinované metody</strong>.</li>
+    <li>Velikost framu je dána <strong>v době kompilace</strong> (uložena v class souboru pro
+      interpretované vykonávání).</li>
+  </ul>
+  <p>Co frame obsahuje:</p>
+  <ul>
+    <li><strong>Pole lokálních proměnných</strong> (libovolného typu), indexované <code>0 1 2 3 4 5 …</code>:
+      <ul>
+        <li><code>{this}</code> – <strong>jen u instanční metody!</strong> (zabírá lokální proměnnou 0)</li>
+        <li><code>{argumenty metody}</code></li>
+        <li><code>{lokální proměnné}</code></li>
+      </ul>
+    </li>
+    <li><strong>Operandový zásobník</strong> (libovolný typ) – <strong>LIFO</strong>; <strong>roste</strong>,
+      jak se hodnoty vkládají.</li>
+    <li><strong>Odkaz na běhový constant pool</strong> (definici třídy).</li>
+  </ul>
+
+  <h2 id="oop">OOP – Ordinary Object Pointers</h2>
+  <p>Lokální proměnné dvou různých vláken mohou <strong>ukazovat na stejný objekt</strong> ve sdílené
+  haldě. Reference v JVM se nazývají <strong>Ordinary Object Pointers (OOP)</strong>.</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent">
+        <span class="db-title">Thread Stack 1</span>
+        <span class="db-sub">methodOne(): localVar 1,2 → Obj1, Obj2</span>
+        <span class="db-sub">methodTwo(): localVar 1 → Obj3</span>
+      </div>
+      <div class="diag-box accent">
+        <span class="db-title">Thread Stack 2</span>
+        <span class="db-sub">methodOne(): localVar 1,2 → Obj3, Obj4</span>
+        <span class="db-sub">methodTwo(): localVar 1 → Obj5</span>
+      </div>
+      <div class="diag-box">
+        <span class="db-title">HEAP (sdílená)</span>
+        <span class="db-sub">Object 1 · Object 2</span>
+        <span class="db-sub"><strong>Object 3</strong> (sdílený oběma vlákny!)</span>
+        <span class="db-sub">Object 4 · Object 5</span>
+      </div>
+    </div>
+    <div class="diag-cap">Lokální proměnné dvou vláken mohou ukazovat na stejný objekt (Object 3) ve sdílené haldě.</div>
+  </div>
+  <table>
+    <thead><tr><th>Typ OOP</th><th>Šířka</th><th>Velikost haldy</th><th>Poznámka</th></tr></thead>
+    <tbody>
+      <tr><td>Komprimovaný (Compressed)</td><td>32 bitů</td><td>až ~32 GB</td><td>využívá zarovnání objektů (object alignment)</td></tr>
+      <tr><td>Regulérní / nekomprimovaný</td><td>64 bitů</td><td>přímé adresování</td><td>rychlejší při použití, ale větší</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="bytecode">Bytecode a zásobníkové vykonávání</h2>
+  <p>JVM používá pro většinu operací <strong>zásobníkový (stack-oriented) model</strong>: instrukce
+  pracují <strong>přímo s operandovým zásobníkem</strong>.</p>
+  <p>Příklad – výpočet <strong>(2 + 3) × 11 + 1</strong>. Vstupní proud instrukcí a stav operandového
+  zásobníku v čase:</p>
+  <table>
+    <thead><tr><th>Vstup</th><th><code>2</code></th><th><code>3</code></th><th><code>add</code></th><th><code>11</code></th><th><code>mul</code></th><th><code>1</code></th><th><code>add</code></th></tr></thead>
+    <tbody>
+      <tr><td>Zásobník (vrchol)</td><td></td><td>3</td><td></td><td>11</td><td></td><td>1</td><td></td></tr>
+      <tr><td>Zásobník (dno)</td><td>2</td><td>2</td><td>5</td><td>5</td><td>55</td><td>55</td><td>56</td></tr>
+    </tbody>
+  </table>
+  <p>Tedy: vlož 2, vlož 3, <code>add</code> → 5, vlož 11, <code>mul</code> → 55, vlož 1, <code>add</code>
+  → <strong>56</strong>.</p>
+
+  <h3>Opcody</h3>
+  <p>Jeden <strong>JVM opcode má 1 bajt</strong>. Instrukce = opcode (kód operace) + případné parametry.
+  Kategorie:</p>
+  <ul>
+    <li><strong>load a store</strong> (<code>aload_0</code>, <code>istore</code>, <code>aconst_null</code>, …)</li>
+    <li><strong>aritmetika a logika</strong> (<code>ladd</code>, <code>fcmpl</code>, …)</li>
+    <li><strong>typové konverze</strong> (<code>i2b</code>, <code>d2i</code>, …)</li>
+    <li><strong>manipulace s objekty</strong> (<code>new</code>, <code>putfield</code>, <code>getfield</code>, …)</li>
+    <li><strong>správa zásobníku</strong> (<code>swap</code>, <code>dup2</code>, …)</li>
+    <li><strong>řízení toku</strong> (<code>ifeq</code>, <code>goto</code>, …)</li>
+    <li><strong>volání metod</strong> (<code>invokespecial</code>, <code>areturn</code>, …) – manipulace s framy</li>
+    <li><strong>výjimky a monitory/konkurence</strong> (<code>athrow</code>, <code>monitorenter</code>, …)</li>
+  </ul>
+  <p>Prefixy/sufixy značí typ – <code>i, l, s, b, c, f, d</code> a <strong><code>a</code> (reference)</strong>.
+  <strong>Lokální proměnné fungují jako registry</strong> – např. <code>istore_1</code> (proměnná
+  <strong>0 je <code>this</code></strong> u instanční metody).</p>
+
+  <p>Srovnání fragmentu CPU assembleru a ekvivalentního JVM bytecodu (AT&amp;T syntaxe):</p>
+  <pre><code>; CPU assembler (AT&amp;T syntaxe)
+mov   %rax,%r8
+shl   $0x5,%eax
+sub   %r8d,%eax
+add   %ecx,%eax
+inc   %edx</code></pre>
+  <pre><code># JVM bytecode
+iconst_0
+istore_3
+iload_3
+bipush  100</code></pre>
+  <p>CPU assembler používá reálné registry; JVM bytecode vkládá/odebírá z operandového zásobníku a
+  číslované lokální proměnné používá jako pseudo-registry.</p>
+
+  <h2 id="classfile">Class soubor, disassembler a dekompilátor</h2>
+  <p>Výstupem kompilace Javy je <strong>class soubor</strong> (<code>.class</code>): jeden class soubor =
+  <strong>jedna třída</strong>; obsahuje <strong>bytecode metod</strong>, <strong>constant pool</strong> a
+  <strong>metadata</strong> (fields, metody). Struktura <code>ClassFile</code> dle specifikace JVM:</p>
+  <pre><code>ClassFile {
+    u4              magic;
+    u2              minor_version;
+    u2              major_version;
+    u2              constant_pool_count;
+    cp_info         constant_pool[constant_pool_count - 1];
+    u2              access_flags;
+    u2              this_class;
+    u2              super_class;
+    u2              interfaces_count;
+    u2              interfaces[interfaces_count];
+    u2              fields_count;
+    field_info      fields[fields_count];
+    u2              methods_count;
+    method_info     methods[methods_count];
+    u2              attributes_count;
+    attribute_info  attributes[attributes_count];
+}</code></pre>
+  <p>Prvními 4 bajty class souboru je magické číslo <code>CA FE BA BE</code>. V ASCII jsou v binárce
+  čitelné řetězce z constant poolu (<code>Employee</code>, <code>java/lang/Object</code>, <code>update</code>,
+  <code>employeeData</code>, <code>&lt;init&gt;</code>, <code>SourceFile</code>, …).</p>
+
+  <h3>Příklad 1 – <code>Employee&lt;Type&gt;</code></h3>
+  <pre><code>public class Employee&lt;Type&gt; {
+    private Type data;
+    public int id;
+
+    public Employee(Type data, int id) {
+        update(data, id);
+    }
+
+    private void update(Type data, int id) {
+        this.data = data;
+        this.id = id;
+    }
+
+    public Type employeeData() {
+        return data;
+    }
+}</code></pre>
+
+  <h4>Disassembler – <code>javap</code></h4>
+  <p><strong><code>javap</code></strong> je <strong>Java disassembler</strong> obsažený v JDK; vytvoří
+  <strong>čitelnou podobu class souboru</strong>. Ukázka constant poolu:</p>
+  <pre><code>public class employee.Employee&lt;Type extends java.lang.Object&gt; extends java.lang.Object
+  minor version: 0
+  major version: 52
+  flags: ACC_PUBLIC, ACC_SUPER
+Constant pool:
+   #1 = Methodref          #6.#25   // java/lang/Object."&lt;init&gt;":()V
+   #2 = Methodref          #5.#26   // employee/Employee.update:(Ljava/lang/Object;I)V
+   #3 = Fieldref           #5.#27   // employee/Employee.data:Ljava/lang/Object;
+   #4 = Fieldref           #5.#28   // employee/Employee.id:I
+   #5 = Class              #29      // employee/Employee
+   #6 = Class              #30      // java/lang/Object
+   #7 = Utf8               data
+   #8 = Utf8               Ljava/lang/Object;
+   #9 = Utf8               Signature
+  #10 = Utf8               TType;
+  ...
+  #22 = Utf8               &lt;Type:Ljava/lang/Object;&gt;Ljava/lang/Object;
+  #23 = Utf8               SourceFile</code></pre>
+  <div class="box insight">
+    <p class="box-title">💡 Generika a type erasure</p>
+    <p><strong>Generika existují jen v době kompilace</strong> (type erasure) – deskriptory používají
+    <code>Ljava/lang/Object;</code>, zatímco záznamy <strong><code>Signature</code></strong>
+    (např. <code>#10 = TType;</code>) generickou informaci zachovávají. Konstanty jsou
+    <strong>indexované</strong> a odkazují se přes <code>#n</code>.</p>
+  </div>
+
+  <p>Rozdíl deskriptoru a signatury na disassemblovaných fields:</p>
+  <pre><code>{
+  private Type data;
+    descriptor: Ljava/lang/Object;
+    flags: ACC_PRIVATE
+    Signature: #10            // TType;
+
+  public int id;
+    descriptor: I
+    flags: ACC_PUBLIC
+}</code></pre>
+  <table>
+    <thead><tr><th></th><th>Používá</th><th>Generika</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Descriptor</strong></td><td>JVM</td><td>neobsahuje</td></tr>
+      <tr><td><strong>Signature</strong></td><td>kompilátor</td><td>obsahuje</td></tr>
+    </tbody>
+  </table>
+
+  <p>Disassemblovaná metoda <code>employeeData</code> – instrukce pracují se zásobníkem:</p>
+  <pre><code>public Type employeeData();
+  descriptor: ()Ljava/lang/Object;
+  flags: ACC_PUBLIC
+  Code:
+    stack=1, locals=1, args_size=1
+       0: aload_0
+       1: getfield      #3          // Field data:Ljava/lang/Object;
+       4: areturn
+  Signature: #21                    // ()TType;</code></pre>
+  <p>Čísla vlevo jsou <strong>offsety opcodů v bytecodu</strong>. <code>getfield</code> načte hodnotu na
+  zásobník pomocí indexu do constant poolu a <code>this</code>; <code>areturn</code> vrátí referenci ze
+  zásobníku (vloží ji na zásobník volajícího). Bytecode v bajtech:</p>
+  <table>
+    <thead><tr><th>offset</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th></tr></thead>
+    <tbody>
+      <tr><td>instr</td><td><code>aload_0</code></td><td><code>getfield</code></td><td><code>00</code></td><td><code>03</code></td><td><code>areturn</code></td></tr>
+      <tr><td>bajt</td><td><code>2A</code></td><td><code>B4</code></td><td><code>00</code></td><td><code>03</code></td><td><code>B0</code></td></tr>
+    </tbody>
+  </table>
+  <p>(<code>getfield</code> = <code>B4</code> bere 2bajtový index do constant poolu <code>00 03</code> = <code>#3</code>;
+  <code>aload_0</code> = <code>2A</code>; <code>areturn</code> = <code>B0</code>.)</p>
+
+  <p>Konstruktor nejprve volá <code>super()</code> (<code>invokespecial #1</code> → <code>Object.&lt;init&gt;</code>),
+  pak <code>update</code> (<code>invokespecial #2</code>):</p>
+  <pre><code>public employee.Employee(Type, int);
+  Code:
+    stack=3, locals=3, args_size=3
+       0: aload_0
+       1: invokespecial #1          // Method java/lang/Object."&lt;init&gt;":()V
+       4: aload_0
+       5: aload_1
+       6: iload_2
+       7: invokespecial #2          // Method update:(Ljava/lang/Object;I)V
+      10: return</code></pre>
+
+  <h4>Dekompilátor – <code>procyon</code></h4>
+  <p><strong>procyon</strong> je open-source Java <strong>dekompilátor</strong>: převádí bytecode
+  <strong>zpět do čitelného kódu podobného zdroji</strong>. Výstup (Procyon v0.5.30) je funkčně shodný
+  s originálem; kosmetické rozdíly: modifikátory <code>final</code>, přejmenované parametry (<code>type</code>,
+  <code>n</code>) a explicitní <code>this.</code>:</p>
+  <pre><code>// Decompiled by Procyon v0.5.30
+package employee;
+
+public class Employee&lt;Type&gt; {
+    private Type data;
+    public int id;
+
+    public Employee(final Type type, final int n) {
+        this.update(type, n);
+    }
+
+    private void update(final Type data, final int id) {
+        this.data = data;
+        this.id = id;
+    }
+
+    public Type employeeData() {
+        return this.data;
+    }
+}</code></pre>
+
+  <h3>Příklad 2 – <code>daysInMonth</code> / <code>compute</code></h3>
+  <p>Cíl: pochopit, jak se jednoduchá logika překládá do bytecodu, a vidět <strong>neefektivity před
+  zásahem JIT</strong>. <code>daysInMonth</code> vrací počet dní v měsíci, <code>compute</code> sečte dny
+  přes <strong>milion</strong> měsíců.</p>
+  <pre><code>private static Integer daysInMonth(int month, int year) {
+    int retVal;
+    switch (month) {
+        case 1: case 3: case 5: case 7: case 8: case 10: case 12:
+            retVal = 31; break;
+        case 2:
+            retVal = (year % 4 == 0 &amp;&amp; (year % 100 != 0 || year % 400 == 0)) ? 29 : 28;
+            break;
+        case 4: case 6: case 9: case 11:
+            retVal = 30; break;
+        default:
+            throw new IllegalArgumentException("Unknown month: " + month);
+    }
+    return new Integer(retVal);
+}
+
+private static int compute() {
+    int month = 4;
+    int year = 2000;
+    int o = 0;
+    for (int i = 0; i &lt; 1_000_000; i++) {
+        o += daysInMonth(month, year);
+    }
+    return o;
+}</code></pre>
+  <p><code>switch</code> se přeloží na <strong><code>tableswitch</code></strong> – skokovou tabulku
+  indexovanou 1..12 s cílem <code>default</code> na offsetu 108:</p>
+  <pre><code>private static java.lang.Integer daysInMonth(int, int);
+  Code:
+    stack=4, locals=3, args_size=2
+       0: iload_0
+       1: tableswitch   { // 1 to 12
+                     1: 64
+                     2: 70
+                     ...
+                    12: 64
+               default: 108 }
+      64: bipush        31
+      66: istore_2
+      67: goto          135
+      70: iload_1
+      71: iconst_4
+      72: irem
+      73: ifne          96
+      ...
+     102: bipush        30
+     104: istore_2
+     105: goto          135
+     108: new           #2          // class java/lang/IllegalArgumentException
+     ...
+     135: new           #10         // class java/lang/Integer
+     138: dup
+     139: iload_2
+     140: invokespecial #11         // Method java/lang/Integer."&lt;init&gt;":(I)V
+     143: areturn</code></pre>
+  <p>Atribut <strong><code>StackMapTable</code></strong> definuje typy proměnných ve frame (lokály i
+  operandový zásobník) na <strong>každém cíli skoku</strong>. První mapa se určí z deskriptoru metody,
+  ostatní jsou <strong>diferenciální aktualizace</strong>.</p>
+
+  <p>Bytecode <code>compute</code> – smyčka <code>for</code> se přímo mapuje na vzor
+  <code>iload_3 / ldc / if_icmpge / … / iinc / goto</code>:</p>
+  <pre><code>private static int compute();
+  Code:
+    stack=3, locals=4, args_size=0
+       0: iconst_4
+       1: istore_0
+       2: sipush        2000
+       5: istore_1
+       6: iconst_0
+       7: istore_2
+       8: iconst_0
+       9: istore_3
+      10: iload_3
+      11: ldc           #12         // int 1000000
+      13: if_icmpge     33
+      16: iload_2
+      17: iload_0
+      18: iload_1
+      19: invokestatic  #13         // Method daysInMonth:(II)Ljava/lang/Integer;
+      22: invokevirtual #14         // Method java/lang/Integer.intValue:()I
+      25: iadd
+      26: istore_2
+      27: iinc          3, 1
+      30: goto          10
+      33: iload_2
+      34: ireturn</code></pre>
+  <div class="box pozor">
+    <p class="box-title">⚠️ javac neoptimalizuje</p>
+    <p><strong>Při kompilaci zdroje se neoptimalizuje!</strong> Bytecode <strong>věrně odráží strukturu
+    zdrojového kódu</strong> – neefektivní zdroj vede k neefektivnímu bytecodu. Offset 10 je začátek
+    smyčky, kde jsou <strong>čtyři <code>int</code> lokály a prázdný zásobník</strong>.</p>
+  </div>
+
+  <h2 id="compile">Kompilace zdrojového kódu (javac)</h2>
+  <p>Kompilace zdroje (zdroj ⇒ bytecode) <strong>nedělá optimalizace</strong>:</p>
+  <ul>
+    <li>Bytecode <strong>není sám o sobě efektivnější</strong> než váš zdrojový kód.</li>
+    <li><strong>Invarianty smyček se neodstraňují.</strong></li>
+    <li>Konkrétně žádné: <strong>loop unrolling</strong>, <strong>algebraické zjednodušení</strong>,
+      <strong>strength reduction</strong>.</li>
+  </ul>
+  <p>Volitelně lze <strong>bytecode transformovat před spuštěním</strong>. Příklad
+  <strong>ProGuard</strong> – obfuskátor včetně bytecode optimalizací:</p>
+  <ul>
+    <li><strong>shrinker</strong> – odstraní nepoužitý kód,</li>
+    <li><strong>optimizer</strong> – optimalizuje bytecode (mění přístupový vzor <code>private</code>/<code>static</code>/<code>final</code>, inlinuje),</li>
+    <li><strong>obfuscator</strong> – obfuskuje názvy, mění rozložení,</li>
+    <li><strong>preverifier</strong> – zajistí načtení tříd.</li>
+  </ul>
+  <p><strong>Obfuskace</strong> = ztížení čitelnosti pro člověka při <strong>zachování stejné
+  funkcionality</strong>. Pokud se <code>compute</code> zjednoduší → <strong>rychlejší interpretace</strong>
+  a <strong>lepší výstup JIT</strong>.</p>
+
+  <h2 id="jit">JIT kompilace – C1, C2 a tiered přístup</h2>
+  <p><strong>Just-in-time (JIT) kompilace</strong> překládá <strong>bytecode na nativní kód za běhu</strong>.
+  JIT dělá <strong>adaptivní optimalizaci</strong> (<strong>tiered kompilace od verze 7</strong>):</p>
+  <ul>
+    <li>Vyvažuje kompromis mezi JIT kompilací a interpretací.</li>
+    <li>Identifikuje <strong>často vykonávané části ("hot spots")</strong>, včetně dat o vztahu
+      <strong>volající–volaný</strong> pro virtuální volání metod.</li>
+    <li>Spouští <strong>dynamickou rekompilaci</strong> podle aktuálního profilu vykonávání.</li>
+    <li><strong>Inlining</strong> pro snížení režie volání, <strong>optimalizace větvení</strong>.</li>
+    <li>Může dělat <strong>spekulativní předpoklady</strong> (např. přeskočit kód) → později může být nutné kód
+      <strong>de-optimalizovat</strong>.</li>
+  </ul>
+  <div class="box poznamka">
+    <p class="box-title">💬 AOT (Ahead-of-Time)</p>
+    <p>AOT kompilace překládá do assembleru <strong>před spuštěním</strong> virtuálního stroje a
+    odstraňuje fázi warm-up. <strong>V Javě 17 byla odstraněna.</strong></p>
+  </div>
+
+  <h3>JIT kompilátory C1 a C2</h3>
+  <p>JIT kompilátory jsou <strong>asynchronní</strong> (běží na více vláknech).</p>
+  <table>
+    <thead><tr><th>C1 – rychlá kompilace</th><th>C2 – plně optimalizující, vysoký výkon</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>
+          <ul>
+            <li>zjednodušený inlining a efektivní využití CPU registrů,</li>
+            <li><strong>window-based</strong> optimalizace nad malou množinou instrukcí,</li>
+            <li><strong>intrinsic funkce</strong> s vektorovými operacemi <strong>SIMD</strong>
+              (<code>Math</code>, <code>arraycopy</code>, …).</li>
+          </ul>
+        </td>
+        <td>
+          <ul>
+            <li><strong>dead code elimination</strong>, <strong>loop unrolling</strong>,
+              <strong>loop invariant hoisting</strong>, <strong>common sub-expression elimination</strong>,
+              <strong>constant propagation</strong>,</li>
+            <li><strong>plný inlining</strong>, <strong>plná de-optimalizace</strong> (zpět na úroveň 0),</li>
+            <li><strong>escape analysis</strong>, <strong>null check elimination</strong>,</li>
+            <li><strong>pattern-based loop vectorization</strong> a <strong>super word packing</strong> (SIMD).</li>
+          </ul>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Tiered compilation – úrovně 0–4</h3>
+  <pre><code>CompLevel_none            = 0,   // Interpret
+CompLevel_simple          = 1,   // C1
+CompLevel_limited_profile = 2,   // C1, čítače invokací &amp; backedge
+CompLevel_full_profile    = 3,   // C1, čítače invokací &amp; backedge + mdo
+CompLevel_full_optimization = 4, // C2</code></pre>
+  <div class="box insight">
+    <p class="box-title">💡 Typická cesta kompilace</p>
+    <p><strong>0 → 3 → 4</strong> (interpret → C1 s plným profilováním → C2). V příkladu:
+    tier 3 nastoupí při <code>count=256</code>; práh pro spuštění tier 4 (C2) je <strong>1024 invokací</strong>
+    (<code>0x1ff8 &gt;&gt; 3 = 1024</code>) a tier 4 se reálně zkompiluje při <code>count=5376</code>.</p>
+  </div>
+
+  <h2 id="osr">OSR, de-optimalizace a warm-up</h2>
+  <p><strong>On-stack replacement (OSR)</strong> je optimalizace metody <strong>za běhu</strong>: začíná
+  na <strong>cílech skoků v bytecodu</strong> (<code>goto</code>, <code>if_*</code>). Díky OSR lze nahradit
+  právě běžící metodu (typicky uvnitř dlouhé smyčky) její zkompilovanou verzí, aniž by se čekalo na další
+  zavolání.</p>
+  <p>Log tiered kompilace zapneš přes <strong><code>-XX:+PrintCompilation</code></strong> (a volitelně
+  <code>-XX:+PrintInlining</code>). Sloupec <em>flags</em> ukazuje <code>n</code> (native),
+  <code>s</code> (synchronized), <code>%</code> (OSR); sloupec <em>tier</em> číslo úrovně:</p>
+  <pre><code>67   3       java.lang.String::hashCode (55 bytes)
+...
+84   3       SwitchTest::daysInMonth (144 bytes)
+85   3       SwitchTest::compute (35 bytes)
+88   21 %    SwitchTest::compute @ 10 (35 bytes)
+89   21 %    SwitchTest::compute @ -2 (35 bytes)   made not entrant
+93   24 %    SwitchTest::compute @ 10 (35 bytes)
+94   22      SwitchTest::compute (35 bytes)</code></pre>
+
+  <h3>Cesta optimalizace na assembleru (tier 3 → tier 4)</h3>
+  <p>Příklady běží na <strong>JVM 8 (64-bit)</strong>, <strong>Intel Haswell</strong>, AT&amp;T syntaxe
+  (assembler se zapne přes <code>-XX:+UnlockDiagnosticVMOptions -XX:+PrintAssembly</code>).</p>
+  <ul>
+    <li><strong>Tier 3</strong> = C1 s čítači invokací &amp; backedge + MethodDataOop (MDO). Tableswitch je
+      řetěz <code>cmp</code>/<code>je</code> porovnání proti <code>%esi</code> (vstup <code>month</code>),
+      s <strong>default skokem</strong>. Alokace <code>Integer</code> je <strong>inlinovaná v TLAB</strong>
+      (<code>0x10</code> = 16 B velikost instance); pokud v TLABu není místo → nový TLAB + externí alokace.</li>
+    <li><strong>Tier 4</strong> = C2 bez profilovacích čítačů. Tableswitch je <strong>jump přes lookup
+      tabulku</strong> (jeden indexovaný nepřímý skok místo řetězu <code>cmp/je</code>). Konstruktory
+      <code>Integer.&lt;init&gt;</code> → <code>Number.&lt;init&gt;</code> → <code>Object.&lt;init&gt;</code>
+      jsou <strong>inlinované (hot)</strong>, je vidět <strong>komprimovaný OOP</strong> na třídu
+      <code>Integer</code> a <strong>prefetch 3 cache lines dopředu</strong>.</li>
+  </ul>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Struktura objektu na haldě (64-bit JVM)</p>
+    <div class="diag">
+      <div class="diag-grid">
+        <div class="diag-box accent">
+          <span class="db-title">Objekt</span>
+          <span class="db-sub">8B mark word</span>
+          <span class="db-sub">4B/8B Klass ref.</span>
+          <span class="db-sub">... data objektu ...</span>
+          <span class="db-sub"><strong>hlavička 12 nebo 16 B</strong></span>
+        </div>
+        <div class="diag-box accent">
+          <span class="db-title">Pole (array)</span>
+          <span class="db-sub">8B mark word</span>
+          <span class="db-sub">4B/8B Klass ref.</span>
+          <span class="db-sub">4B délka pole</span>
+          <span class="db-sub">sekvence hodnot</span>
+          <span class="db-sub"><strong>hlavička 16 nebo 20 B</strong></span>
+        </div>
+      </div>
+    </div>
+    <p>Hlavička = <strong>mark word (8 B) + Klass ref (4 B / 8 B)</strong>. Instance <code>Integer</code>
+    má <code>0x10</code> = 16 B. U pole hlavička navíc obsahuje <strong>4 B délku</strong>.</p>
+  </div>
+
+  <div class="box insight">
+    <p class="box-title">💡 De-optimalizace a warm-up</p>
+    <p>Cesta <code>default</code> (výjimka <code>IllegalArgumentException</code>) nemá profil → je
+    považována za <strong>nepravděpodobnou (uncommon)</strong> → <strong>návrat (fallback) do interpretu</strong>
+    (de-optimalizace této větve, <code>uncommon_trap</code>), tier 3 verze se zahodí (<code>made not
+    entrant</code>). U <code>compute</code> proběhne <strong>tier 4 OSR @10</strong>
+    (<code>backedge_count=101376</code>) a nakonec C2 celou milionovou smyčku díky <strong>full inline,
+    dead code elimination, escape analysis, loop invariant hoisting a strength reduction</strong> složí na
+    konstantu – výsledek <strong>30 000 000</strong> se vrátí bez jediné iterace:</p>
+    <pre><code>mov    $0x1c9c380,%eax         ; 30 000 000
+add    $0x10,%rsp
+pop    %rbp
+test   %eax,-0x214f0dc(%rip)   ; {poll_return}
+retq                           ; RAX = návratová hodnota (primitivní int)</code></pre>
+    <p>To je odměna za warm-up. JVM proto <strong>vyžaduje warm-up</strong>, aby využila výhody C2 (či C1);
+    kompilátor ale neudělá všechno → <strong>piš efektivnější algoritmy</strong>.</p>
+  </div>
+
+  <div class="box poznamka">
+    <p class="box-title">💬 32-bit vs 64-bit JVM a komprimované OOP</p>
+    <p><strong>32-bit</strong> (max ~3 GB haldy): menší paměťová stopa, ale <strong>pomalejší</strong>
+    operace s <code>long</code> &amp; <code>double</code>. <strong>64-bit do ~32 GB</strong>: rychlejší
+    <code>long</code>/<code>double</code>, mírně větší stopa; <strong>komprimované OOP</strong> jsou při
+    použití trochu pomalejší, ale <strong>zaberou méně paměti → méně častý GC → lepší výkon</strong>.
+    Nad ~32 GB: rychlé reference, ale plýtvání pamětí (48 GB ≈ 32 GB s komprimovanými OOP).</p>
+  </div>
+
+  <h2 id="safepoint">Safepoint a Time-To-Safe-Point (TTSP)</h2>
+  <div class="box pisnicka" id="pisen-jit-safepoint">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>JIT Safepoint</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s09">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <p><strong>Safepoint</strong> je stav, kdy jsou všechny OOP (Ordinary Object Pointers) v
+  <strong>dobře definovaném stavu</strong> popsaném <strong>OopMap (GC mapy)</strong> – OOP může JVM
+  <strong>bezpečně manipulovat</strong>, zatímco je vlákno pozastaveno.</p>
+  <p>Kde safepoint nastává:</p>
+  <ul>
+    <li>v <strong>interpretovaném módu</strong> – mezi <strong>libovolnými dvěma bytecode instrukcemi</strong>,</li>
+    <li>ve <strong>zkompilovaném C1/C2 kódu</strong> – na <strong>konci všech (neinlinovaných) metod</strong>,
+      na <strong>back-edge nepočítané smyčky</strong> a <strong>během běhového volání JVM</strong>,</li>
+    <li>při <strong>parkování</strong>, blokování na IO, monitoru či zámku,</li>
+    <li>při běhu <strong>JNI</strong> – nevyžaduje pozastavení vlákna (nativní vlákna jsou de facto už na safepointu).</li>
+  </ul>
+  <div class="box pojmy">
+    <p class="box-title">🔑 Použití safepointu (globální vs. lokální)</p>
+    <dl class="pojmy-list">
+      <dt>Globální safepoint (všechna vlákna) – stop-the-world pauza</dt>
+      <dd><strong>GC</strong>, výpis vláken, <strong>thread dump</strong>, <strong>heap dump</strong>, získání
+        všech stack trace, <strong>redefinice tříd</strong> (instrumentace), debug.</dd>
+      <dt>Lokální safepoint (jen běžící vlákno)</dt>
+      <dd><strong>de-optimalizace</strong>, <strong>OSR</strong>.</dd>
+    </dl>
+  </div>
+
+  <h3>Time To Safe Point (TTSP)</h3>
+  <p><strong>TTSP</strong> je čas, který potřebují <strong>všechna vlákna</strong>, aby dosáhla safepointu.
+  Ovlivňuje <strong>délku GC pauz</strong> i <strong>přesnost profilování</strong>. Měří se přes flagy
+  <code>-XX:+PrintSafepointStatistics -XX:+PrintGCApplicationStoppedTime</code>.</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-num">1</span><span class="dn-title">PROF: setSafepoint(true)</span><span class="dn-sub">profiler žádá J1, J2, J3 (Java) o safepoint; J4, J5 (JNI/Native) už na safepointu jsou</span></div>
+      <div class="diag-arrow"><span class="lbl">okno = TTSP</span></div>
+      <div class="diag-node c-amber"><span class="dn-num">2</span><span class="dn-title">Vlákna běží k safepointu</span><span class="dn-sub">každé Java vlákno běží, dokud nedosáhne safepointu</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-num">3</span><span class="dn-title">@Safepoint</span><span class="dn-sub">poslední vlákno (J1) dorazilo – konec okna TTSP</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-num">4</span><span class="dn-title">Actual GetStackTrace work</span><span class="dn-sub">teprve teď profiler sbírá stack trace</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-teal"><span class="dn-num">5</span><span class="dn-title">resumeAll()</span><span class="dn-sub">vlákna se rozběhnou dál</span></div>
+    </div>
+    <div class="diag-cap">Okno od žádosti, dokud nedorazí poslední vlákno, je TTSP. Běžící (zelená) i odplánovaná (žlutá) Java vlákna do TTSP přispívají; nativní (červená, JNI) jsou už na safepointu.</div>
+  </div>
+  <p>Okno od žádosti, dokud nedorazí <strong>poslední</strong> vlákno, je <strong>TTSP</strong>. Běžící
+  (zelená) i odplánovaná (žlutá) Java vlákna do TTSP přispívají; nativní (červená, JNI) jsou už na
+  safepointu. Proto na TTSP záleží: než profiler zavolá <code>GetStackTrace</code>, musí počkat na
+  poslední vlákno.</p>
+
+  <h2 id="profiling">Profiling: CPU a paměť, sampling vs. tracing</h2>
+  <p><strong>Profiling</strong> sleduje <strong>CPU</strong> (kde se tráví čas) a <strong>paměť</strong>
+  (alokace a využití). Dva základní módy:</p>
+  <table>
+    <thead><tr><th>Sampling</th><th>Tracing (instrumentace)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>
+          <ul>
+            <li>periodické vzorkování zásobníků běžících vláken,</li>
+            <li><strong>žádné počty invokací</strong>, <strong>není 100% přesné</strong> (vzorkovací chyby),</li>
+            <li><strong>žádná modifikace</strong> bytecodu/assembleru,</li>
+            <li><strong>dopad 1–2 %</strong> na výkon (TTSP, thread dumpy, analýza).</li>
+          </ul>
+        </td>
+        <td>
+          <ul>
+            <li>sleduje vstup/výstup metod, <code>traceObjAllocations</code>,</li>
+            <li><strong>instrumentovaný bytecode</strong> → <strong>ovlivněný výkon</strong> →
+              <strong>ovlivněné optimalizace kompilátoru</strong>,</li>
+            <li>kód se <strong>může chovat jinak</strong> než v produkci.</li>
+          </ul>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Tracing zabíjí JIT optimalizace</p>
+    <p>Instrumentace vkládá volání (<code>rootMethodEntry</code>/<code>rootMethodExit</code>) – v příkladu
+    <strong>749 bajtů assembleru na jeden <code>rootMethodEntry</code></strong> u <code>daysInMonth</code>,
+    <strong>313 bajtů</strong> u vnitřních konstruktorů. CPU tracing <code>compute</code> je výrazně pomalejší:
+    <strong>žádný object escape</strong>, <strong>žádný invariant hoisting</strong>, <strong>žádná strength
+    reduction</strong> (smyčka zůstane celá). Ve VisualVM se pak <code>daysInMonth</code> i konstruktory
+    volají <strong>1 000 000×</strong> a dominují běhu.</p>
+  </div>
+
+  <h3>Nástroje pro profiling v Javě</h3>
+  <ul>
+    <li><strong>VisualVM</strong> (<code>jvisualvm</code>) – monitoring, troubleshooting a profiling; sampling
+      i instrumentace, statistiky objektů na haldě, heap dumpy, monitoring GC a vláken. Dříve v JDK 6–8,
+      dnes samostatný nástroj.</li>
+    <li><strong>JMC (Java Mission Control)</strong> + <strong>JFR (JDK Flight Recorder)</strong> – součást
+      JDK, sampling přes Flight Recorder s <strong>téměř nulovou režií</strong> (i v produkci); zaznamenává
+      kompilaci, GC, I/O, výjimky, statistiky objektů. Spustí se i přes
+      <code>-XX:StartFlightRecording=duration=100s,filename=myrecording.jfr</code>.</li>
+    <li><strong>async-profiler</strong> – nízkorežijní profiler pro Linux/macOS (využívá perf), integrovaný
+      do IntelliJ IDEA Ultimate.</li>
+    <li><strong>JConsole</strong> – základní monitoring (halda, CPU, vlákna) přes JMX.</li>
+    <li>Profiler integrovaný v <strong>IDE</strong> (IntelliJ IDEA Ultimate od 2019.3).</li>
+    <li>CLI nástroje: <code>jcmd</code>, <code>jhat</code>, <code>jinfo</code>.</li>
+  </ul>
+
+  <div class="box insight">
+    <p class="box-title">💡 Postup při optimalizaci Java aplikace</p>
+    <ol>
+      <li><strong>Začni samplingem</strong> (nízká režie, neovlivní JIT).</li>
+      <li><strong>Najdi úzká hrdla</strong> (kde se tráví nejvíce času) – může to být i <strong>mimo JVM</strong>
+        (latence externí DB, souborový systém).</li>
+      <li><strong>Tracing použij jen na hotspoty.</strong></li>
+      <li>Profiluj i paměť – hledej objekty, které vznikají nejčastěji (autoboxing <code>int</code> vs.
+        <code>Integer</code>, zbytečné alokace), případně analyzuj heap dump.</li>
+      <li>Zkoušej různé nástroje a metody (sampling vs. instrumentace) – kvůli odlišné chybovosti dají
+        odlišný pohled.</li>
+      <li><strong>Měř → analyzuj → optimalizuj</strong> a opakuj.</li>
+    </ol>
+  </div>
+
+  <h2 id="bench">Mikro- vs. makrobenchmark</h2>
+  <p>Testuj <strong>reálné aplikace</strong>, ideálně za <strong>realistických podmínek</strong>.</p>
+  <table>
+    <thead><tr><th>Mikrobenchmark</th><th>Makrobenchmark</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Měří velmi malé jednotky. Pozor na:
+          <ul>
+            <li><strong>warm-up</strong> – aby se měřil kód, ne kompilátor,</li>
+            <li><strong>efekty kompilátoru</strong> – výsledek je nutné použít, hrozí přeřazení operací,</li>
+            <li><strong>synchronizace</strong> u vícevláknových benchmarků,</li>
+            <li><strong>měnící se předpočítané parametry</strong> ovlivňující složitost → v praxi různé optimalizace.</li>
+          </ul>
+        </td>
+        <td>Používá realistickou zátěž. <strong>Nejméně výkonná komponenta ovlivní celou aplikaci.</strong></td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>Rozuměj <strong>throughputu, elapsed a response time</strong>; počítej s <strong>outliery</strong>
+      (např. GC). Používej <strong>existující generátory</strong>, ne vlastní.</li>
+    <li>Rozuměj <strong>variabilitě</strong> (vnitřní stav, systémový šum – zátěž/síť, pravděpodobnostní analýza).</li>
+    <li><strong>Testuj brzy a často</strong>: opakuj měření, automatizuj testy, dobré pokrytí funkcí a vstupů,
+      testuj <strong>na cílovém systému</strong> (JIT efekty, caching, systémový šum).</li>
+  </ul>
+  <div class="box insight">
+    <p class="box-title">💡 Klíčové pravidlo</p>
+    <p><strong>Měř → analyzuj → optimalizuj.</strong></p>
+  </div>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Klíčové pojmy</p>
+    <dl class="pojmy-list">
+      <dt>Bytecode / opcode</dt><dd>Platformně nezávislé instrukce VM; opcode = 1 bajt + parametry, typové prefixy <code>i,l,s,b,c,f,d,a</code>.</dd>
+      <dt>Stack-oriented execution</dt><dd>Instrukce pracují přímo s operandovým zásobníkem (LIFO), lokály jako registry.</dd>
+      <dt>Frame</dt><dd>Pole lokálních proměnných (<code>this</code> na indexu 0) + operandový zásobník + odkaz na constant pool. Interpretovaný = 1 metoda, zkompilovaný = všechny inlinované.</dd>
+      <dt>Vlastní vs. sdílené</dt><dd>Vlastní: PC + Java/nativní zásobník. Sdílené: Non-Heap (Metaspace, Class Data) a Heap.</dd>
+      <dt>javap / procyon / ProGuard</dt><dd>Disassembler / dekompilátor / obfuskátor + bytecode optimizér.</dd>
+      <dt>C1 / C2</dt><dd>Rychlý lehký JIT / plně optimalizující JIT (dead-code elim, loop unrolling, escape analysis, SIMD).</dd>
+      <dt>Tiered compilation</dt><dd>Úrovně 0 (interpret), 1/2/3 (C1, 3 = full profile + MDO), 4 (C2). Cesta 0→3→4.</dd>
+      <dt>OSR</dt><dd>On-stack replacement – výměna běžící metody za zkompilovanou na back-edge smyčky.</dd>
+      <dt>De-optimalizace</dt><dd>Spekulativní kód padne zpět do interpretu (uncommon trap) při porušení předpokladu.</dd>
+      <dt>OOP / komprimované OOP</dt><dd>Ordinary Object Pointer; 32-bit komprimovaný (≤~32 GB) vs. 64-bit.</dd>
+      <dt>Safepoint / TTSP</dt><dd>Stav OOP v OopMap pro bezpečnou manipulaci; TTSP = čas, než všechna vlákna dosáhnou safepointu.</dd>
+      <dt>Sampling vs. tracing</dt><dd>Periodické vzorkování (1–2 %, nepřesné) vs. instrumentace (přesné, ale ničí JIT optimalizace).</dd>
+    </dl>
+  </div>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Popiš paměť v JVM. Co má každé vlákno vlastní a co je společné? Co je stack-oriented execution? Co obsahují frames?</summary>
+    <div class="odpoved">
+      <p><strong>Paměť JVM:</strong> zásobník (vlastní pro vlákno) + Non-Heap a Heap (sdílené).</p>
+      <p><strong>Vlastní pro každé vlákno:</strong> Program Counter, Java zásobník (frames) a nativní zásobník.
+      <strong>Sdílené:</strong> Non-Heap = Metaspace (Code Cache + Method Area) a Class Data (běhový constant
+      pool + Method Code); Heap = Young (Eden + Survivor) a Old/Tenured (drží i internované Stringy).
+      Přetečení zásobníku → <code>StackOverflowError</code>, vyčerpání haldy → <code>OutOfMemoryError</code>.</p>
+      <p><strong>Stack-oriented execution:</strong> JVM je zásobníkový stroj – instrukce pracují přímo
+      s operandovým zásobníkem (LIFO), např. (2+3)×11+1 = postupné push/add/mul. Lokální proměnné fungují jako
+      registry.</p>
+      <p><strong>Frame obsahuje:</strong> pole lokálních proměnných (<code>this</code> na indexu 0 u instanční
+      metody, pak argumenty a lokály), operandový zásobník (LIFO, roste) a odkaz na běhový constant pool.
+      Vzniká při volání, zaniká při návratu; interpretovaný = 1 metoda, zkompilovaný = všechny inlinované.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Které optimalizace probíhají v C1, C2 a tiered kompilaci.</summary>
+    <div class="odpoved">
+      <p><strong>C1</strong> (rychlá kompilace): zjednodušený inlining, efektivní využití registrů,
+      window-based optimalizace nad malou množinou instrukcí, intrinsic funkce s SIMD
+      (<code>Math</code>, <code>arraycopy</code>).</p>
+      <p><strong>C2</strong> (plně optimalizující): dead code elimination, loop unrolling, loop invariant
+      hoisting, common sub-expression elimination, constant propagation, plný inlining, plná de-optimalizace,
+      escape analysis, null check elimination, pattern-based loop vectorization a super word packing (SIMD).</p>
+      <p><strong>Tiered kompilace</strong> (od Javy 7): adaptivní úrovně 0 (interpret), 1 (C1 simple),
+      2 (C1 + čítače invokací/backedge), 3 (C1 + čítače + MDO), 4 (C2). Typická cesta <strong>0 → 3 → 4</strong>;
+      JIT je asynchronní, identifikuje hot spoty a podle profilu rekompiluje.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Safepoint – uveď alespoň 2 použití; co je TTSP a proč na něm záleží.</summary>
+    <div class="odpoved">
+      <p><strong>Safepoint</strong> = stav, kdy jsou všechny OOP v dobře definovaném stavu (OopMap) a JVM s nimi
+      může bezpečně manipulovat, zatímco je vlákno pozastaveno. V interpretu mezi libovolnými dvěma bytecody,
+      v C1/C2 kódu na konci neinlinovaných metod / na back-edge nepočítané smyčky / během runtime volání.</p>
+      <p><strong>Použití (alespoň 2):</strong> globální (stop-the-world) – <strong>GC</strong>, thread dump,
+      <strong>heap dump</strong>, redefinice tříd (instrumentace), debug; lokální (jen běžící vlákno) –
+      <strong>de-optimalizace</strong>, <strong>OSR</strong>.</p>
+      <p><strong>TTSP (Time To Safe Point)</strong> = čas, než <em>všechna</em> vlákna dosáhnou safepointu.
+      Záleží na něm, protože <strong>ovlivňuje délku GC pauz a přesnost profilování</strong> – stop-the-world
+      operace nemůže začít, dokud nedorazí poslední vlákno. JNI/nativní vlákna jsou už na safepointu, ale
+      běžící Java vlákna do TTSP přispívají.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Co je sampling a tracing? Jmenuj alespoň 2 programy pro profiling v Javě. Jak bys postupoval při optimalizaci Java aplikace?</summary>
+    <div class="odpoved">
+      <p><strong>Sampling:</strong> periodické vzorkování zásobníků běžících vláken; nemodifikuje bytecode,
+      žádné přesné počty invokací, není 100% přesný (vzorkovací chyby), dopad jen ~1–2 %.</p>
+      <p><strong>Tracing (instrumentace):</strong> vkládá kód na vstup/výstup metod (a <code>traceObjAlloc</code>);
+      přesné počty, ale instrumentovaný bytecode ovlivní výkon i optimalizace JIT (vypne escape analysis,
+      invariant hoisting, strength reduction) → kód se chová jinak než v produkci.</p>
+      <p><strong>Nástroje (alespoň 2):</strong> VisualVM, JMC + JFR (Flight Recorder), async-profiler,
+      JConsole, profiler v IntelliJ IDEA.</p>
+      <p><strong>Postup optimalizace:</strong> 1) začni samplingem; 2) najdi úzká hrdla (i mimo JVM – DB,
+      filesystem); 3) tracing použij jen na hotspoty; 4) profiluj i paměť (autoboxing, zbytečné alokace, heap
+      dump); 5) zkoušej různé nástroje/metody pro odlišné pohledy; 6) <strong>měř → analyzuj → optimalizuj</strong>
+      a opakuj.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P7</span> Co je model virtuálního stroje a jaké má výhody a nevýhody?</summary>
+    <div class="odpoved">
+      <p>Zdroj se přeloží do <strong>bytecodu</strong> VM, ten běží v <strong>hybridním modelu</strong>
+      (interpretovaně, nebo zkompilovaně do nativního assembleru). Používá JVM i .NET.
+      <strong>Výhody:</strong> platformní nezávislost, reflexe, menší binárka.
+      <strong>Nevýhody:</strong> pomalejší start a menší kontrola nad nízkoúrovňovými optimalizacemi.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P7</span> Co je OSR a de-optimalizace? Proč JVM potřebuje warm-up?</summary>
+    <div class="odpoved">
+      <p><strong>OSR (on-stack replacement)</strong> nahradí právě běžící metodu (typicky uvnitř dlouhé smyčky)
+      zkompilovanou verzí na cíli skoku (back-edge), aniž by se čekalo na další zavolání.
+      <strong>De-optimalizace</strong> = spekulativně zkompilovaný kód padne zpět do interpretu (uncommon trap),
+      když se poruší předpoklad (např. neočekávaná větev), a daná zkompilovaná verze se zahodí.
+      <strong>Warm-up</strong> je potřeba, aby JIT nasbíral profil a stihl zkompilovat hot spoty do C2 – teprve
+      pak se projeví plné optimalizace (např. <code>compute</code> se zhroutí na konstantu 30 000 000).</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P7</span> Jaký je rozdíl mezi disassemblerem, dekompilátorem a obfuskací?</summary>
+    <div class="odpoved">
+      <p><strong>Disassembler</strong> (<code>javap</code>) vytvoří čitelnou textovou podobu class souboru
+      (constant pool, bytecode). <strong>Dekompilátor</strong> (procyon) převede bytecode zpět do kódu podobného
+      zdroji (funkčně shodného, jen kosmetické rozdíly). <strong>Obfuskace</strong> (ProGuard) naopak ztíží
+      čitelnost pro člověka při zachování stejné funkcionality (přejmenování, změna rozložení) a může bytecode
+      i optimalizovat/zmenšit.</p>
+    </div>
+  </details>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li>VM model (JVM, .NET): zdroj → <strong>bytecode</strong> → hybridní běh (nejdřív interpret, pak JIT na nativní kód). Výhody: nezávislost, reflexe, malá binárka; cena: pomalejší start.</li>
+      <li>Paměť: <strong>vlastní pro vlákno</strong> = PC + Java/nativní zásobník (frames); <strong>sdílené</strong> = Non-Heap (Metaspace, Class Data + constant pool) a Heap (Young = Eden+Survivor, Old). Zásobník → <code>StackOverflowError</code>, halda → <code>OutOfMemoryError</code>.</li>
+      <li><strong>Frame</strong> = pole lokálů (<code>this</code> = index 0) + operandový zásobník (LIFO) + odkaz na constant pool. JVM je <strong>zásobníkový stroj</strong>, opcode = 1 bajt.</li>
+      <li><code>.class</code> = jedna třída; <strong><code>javap</code></strong> (disassembler), <strong>procyon</strong> (dekompilátor), <strong>ProGuard</strong> (obfuskátor). Generika jen v době kompilace (erasure): descriptor (JVM) bez nich, Signature (kompilátor) s nimi.</li>
+      <li><strong>javac neoptimalizuje</strong> – bytecode kopíruje zdroj (žádný unrolling, invarianty, strength reduction).</li>
+      <li><strong>JIT: adaptivní, tiered (od Javy 7), asynchronní.</strong> Úrovně 0–4, cesta <strong>0→3→4</strong>. C1 = rychlý/lehký; C2 = plný optimizér (escape analysis, SIMD…). <strong>OSR</strong> mění běžící metodu na back-edge; spekulace se může <strong>de-optimalizovat</strong>.</li>
+      <li><strong>Safepoint</strong> = OOP v OopMap. Globální = stop-the-world (GC, dumpy, redefinice tříd), lokální = de-opt/OSR. <strong>TTSP</strong> ovlivňuje GC pauzy a přesnost profilování.</li>
+      <li><strong>Komprimované OOP</strong> (32-bit, ≤~32 GB) šetří paměť → méně GC; nekomprimované 64-bit jsou rychlejší, ale větší.</li>
+      <li><strong>Profiling:</strong> sampling (≤2 %, nepřesné, bez změny bytecodu) vs. tracing (přesné, ale ničí JIT optimalizace). Nástroje: VisualVM, JMC+JFR, async-profiler. Postup: <strong>nejdřív sampling → najdi hotspoty → tracing jen na ně → měř → analyzuj → optimalizuj.</strong></li>
+      <li>Testuj reálně: mikro- (warm-up, použij výsledek) vs. makrobenchmark; AOT (odstraňuje warm-up) byl v Javě 17 odstraněn.</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="06-serializace.html">← Serializace</a></span>
+    <span><a href="08-konkurence-dat-jvm.html">Další: Konkurence dat →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

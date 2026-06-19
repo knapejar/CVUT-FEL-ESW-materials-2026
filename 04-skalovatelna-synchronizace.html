@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P4 – Škálovatelná synchronizace · ESW</title>
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html">🏠 Obsah</a>
+    <span class="spacer"></span>
+    <a class="nav-link" href="03-benchmarking-statistika-wcet.html">← předchozí: Benchmarking</a>
+    <a class="nav-link" href="05-pamet-cache-numa.html">další: Paměť a cache →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="page-head">
+    <div class="lecnum">Přednáška 4 · <span class="badge badge-c">C/C++ část</span></div>
+    <h1>Škálovatelná synchronizace</h1>
+    <p class="perex">Proč je synchronizace na vícejádrových (a do budoucna mnohajádrových) CPU nutná
+    a zároveň velkým zdrojem výkonnostních problémů. Postupně si od naivního (rozbitého) zámku ukážeme
+    šest způsobů, jak se to může pokazit, a jak je opraví atomické operace, <code>volatile</code>,
+    kompilátorové a paměťové bariéry. Pak přijdou reálné zámky (mutex, futex, RW-lock) a jejich režie
+    na cache-koherentním hardwaru. Závěrem pro <strong>read-mostly</strong> zátěže odvodíme a vysvětlíme
+    <strong>Read-Copy-Update (RCU)</strong>: škálovatelnou čtecí stranu bez atomických instrukcí, která
+    „převádí problém škálovatelnosti na problém garbage collectoru“. Doplňkem je transakční paměť.</p>
+  </header>
+
+  <div class="toc">
+    <strong>Obsah stránky</strong>
+    <ol>
+      <li><a href="#proc">Proč je synchronizace složitá</a></li>
+      <li><a href="#naivni">Naivní zámek a jeho 6 problémů</a></li>
+      <li><a href="#atomic">Atomické operace a jejich cena</a></li>
+      <li><a href="#kompilator">Kompilátorové optimalizace a bariéry</a></li>
+      <li><a href="#hw-reorder">HW přeskupování a paměťové uspořádání</a></li>
+      <li><a href="#deadlock">Deadlock a spinlock</a></li>
+      <li><a href="#mutex">Mutex, semafory, futex</a></li>
+      <li><a href="#rezie">Režie zamykání a škálování</a></li>
+      <li><a href="#readmostly">Read-mostly zátěž a RW-lock</a></li>
+      <li><a href="#rcu">RCU – princip a grace period</a></li>
+      <li><a href="#rcu-api">RCU API a pravidla pro čtenáře</a></li>
+      <li><a href="#qsbr">QSBR a general-purpose RCU</a></li>
+      <li><a href="#porovnani">RCU vs RW-lock vs reference counting</a></li>
+      <li><a href="#tm">Transakční paměť</a></li>
+      <li><a href="#otazky">Zkouškové otázky</a></li>
+    </ol>
+  </div>
+
+  <h2 id="proc">Proč na synchronizaci záleží a proč je složitá</h2>
+  <p>Vícejádrové CPU jsou dnes normou a mnohajádrové přijdou zítra. Aby program takový hardware využil,
+  musí běžet <strong>paralelně (vícevláknově)</strong>. Naprosto nezávislá vlákna jsou ale k ničemu –
+  vlákna spolu musí <strong>komunikovat (synchronizovat se)</strong>. Právě synchronizace přitom bývá velkým
+  zdrojem výkonnostních problémů.</p>
+
+  <div class="box poznamka">
+    <p class="box-title">💬 Paul McKenney</p>
+    <p>„Naprogramovat korektní synchronizační primitivum je jako spáchat dokonalý zločin. Existuje
+    nejméně 50 věcí, které se mohou pokazit, a jste-li mimořádně zkušený génius, možná zvládnete předvídat
+    a ošetřit 25 z nich.“</p>
+  </div>
+
+  <p>Vícejádrový systém je ve skutečnosti <strong>distribuovaný systém</strong>. Každé CPU má vlastní
+  cache a <strong>store buffer</strong> a s ostatními komunikuje přes sdílený interconnect (sběrnici).</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">CPU0</span><span class="db-sub">store buf. · L1$ · L2$</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU1</span><span class="db-sub">store buf. · L1$ · L2$</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU2</span><span class="db-sub">store buf. · L1$ · L2$</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU3</span><span class="db-sub">store buf. · L1$ · L2$</span></div>
+    </div>
+    <div class="diag-stack">
+      <div class="diag-layer"><span class="dl-title">CPU interconnect</span> <span class="dl-sub">– sdílená sběrnice mezi všemi CPU</span></div>
+      <div class="diag-layer"><span class="dl-title">Paměť</span> <span class="dl-sub">– sdílená hlavní paměť</span></div>
+    </div>
+    <div class="diag-cap">Vícejádrový systém jako distribuovaný systém: každé CPU má vlastní store buffer a cache (L1$/L2$), komunikuje přes sběrnici.</div>
+  </div>
+  <ul>
+    <li>Data jsou cachována na mnoha místech (<strong>distribuovaný systém</strong>).</li>
+    <li>Ostatní CPU nevidí změny okamžitě.</li>
+    <li>Mimopořadové (out-of-order) vykonávání.</li>
+    <li>Protokoly cache koherence (např. <strong>MESIF</strong>).</li>
+  </ul>
+
+  <h3>Uspořádání událostí v distribuovaných systémech</h3>
+  <ul>
+    <li><strong>Událost</strong> = operace čtení nebo zápisu do paměti.</li>
+    <li>Události lze uspořádat relací <strong>happens before</strong> („stalo se dříve“).</li>
+    <li>Události v jednom vlákně mají <strong>úplné (totální)</strong> uspořádání – vždy lze říct, která byla první.</li>
+    <li>Relace „happens before“ je obecně jen <strong>částečné uspořádání</strong>: mohou existovat dvě události P a Q, kde ani jedna nepředchází druhé.</li>
+    <li>Události v různých vláknech lze uspořádat, jen pokud mezi nimi existuje relace <em>happens before</em>. Tu poskytují jen <strong>některé</strong> CPU instrukce – viz atomické operace s <strong>release a acquire</strong> sémantikou.</li>
+  </ul>
+  <p>Příklad happens-before řetězce vytvořeného mutexem: <code>mutex.unlock()</code> ve vlákně 1 se stane
+  dříve než <code>mutex.lock()</code> ve vlákně 2, takže vlákno 2 vidí změny vlákna 1.</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-title">Thread 1: mutex.lock()</span></div>
+      <div class="diag-arrow"><span class="lbl">happens before</span></div>
+      <div class="diag-node c-blue"><span class="dn-title">Thread 1: data++;</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">Thread 1: mutex.unlock()</span></div>
+      <div class="diag-arrow"><span class="lbl">happens before</span></div>
+      <div class="diag-node c-purple"><span class="dn-title">Thread 2: mutex.lock()</span><span class="dn-sub">vidí změny vlákna 1</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">Thread 2: data++;</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-title">Thread 2: mutex.unlock()</span></div>
+    </div>
+    <div class="diag-cap">Mutex vytváří happens-before řetězec: unlock ve vlákně 1 předchází lock ve vlákně 2.</div>
+  </div>
+
+  <h2 id="naivni">Naivní synchronizace a její 6 problémů</h2>
+  <p>Data má v jeden okamžik měnit nanejvýš jedno vlákno. Naivní pokus o zámek vypadá takto:</p>
+  <pre><code>bool locked = false;
+void func() {
+  while (locked == true)
+  { /* busy wait */ }
+  locked = true;
+  data++;
+  locked = false;
+}</code></pre>
+  <p>Kód v „zamčené“ oblasti se nazývá <strong>kritická sekce</strong>. Tento kód má <strong>šest</strong> problémů:</p>
+  <ol>
+    <li>Kontrola a nastavení zámku <strong>není atomická</strong>.</li>
+    <li>Kompilátor může všechny přístupy k <code>locked</code> <strong>optimalizovat pryč</strong>.</li>
+    <li>Kompilátor může <strong>přesunout přístup k <code>data</code> mimo kritickou sekci</strong>.</li>
+    <li><strong>Hardware může přeskupit</strong> paměťové přístupy, i když to kompilátor neudělá.</li>
+    <li>Snadno vznikne <strong>deadlock</strong>.</li>
+    <li><strong>Aktivní čekání (busy waiting) plýtvá energií.</strong></li>
+  </ol>
+  <p>Každý z těchto problémů přednáška postupně řeší.</p>
+
+  <h2 id="atomic">Atomické operace a jejich cena</h2>
+  <p>Problém 1 ukazuje neatomický inkrement. <code>data++;</code> se v assembleru přeloží na <code>inc ($data)</code>,
+  což je atomické (nepřerušitelné) <strong>jen v rámci jednoho CPU</strong>. Hardwarově jde o čtení sběrnice → ALU → zápis sběrnice.
+  Když dvě CPU dělají <code>data++</code> najednou, dojde k <strong>ztracenému zápisu</strong> (výsledek je 1 místo 2):</p>
+  <table>
+    <thead><tr><th>CPU0</th><th>CPU1</th><th>data</th></tr></thead>
+    <tbody>
+      <tr><td>bus read</td><td></td><td>0</td></tr>
+      <tr><td>ALU</td><td>bus read</td><td>0</td></tr>
+      <tr><td>bus write</td><td>ALU</td><td>1</td></tr>
+      <tr><td></td><td>bus write</td><td>1</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Atomické operace</strong> zajišťují, že operace (typicky <strong>read-modify-write</strong>) je
+  atomická <strong>i na úrovni hardwaru (sběrnice)</strong>. Typická atomická operace je <strong>compare-and-swap
+  (CAS)</strong>, na x86 instrukce <code>cmpxchg</code>. V C: <code>TYPE __atomic_exchange_n(TYPE *ptr, TYPE val, int memorder)</code>
+  – atomicky nastaví <code>*ptr</code> na <code>val</code> a vrátí starou hodnotu. Naivní zámek se s atomickou výměnou opraví:</p>
+  <pre><code>void lock() {
+  while (__atomic_exchange_n(&locked, true, …) == true)
+  { /* busy wait */ }
+}</code></pre>
+
+  <h3>Atomické operace v C a C++</h3>
+  <ul>
+    <li>Dlouho nebyly atomické operace v C/C++ <strong>standardizované</strong> (nekompatibilní rozšíření, inline assembler).</li>
+    <li><strong>C11 a C++11</strong> zavedly paměťový model s vědomím vláken a platformově nezávislé atomické operace.</li>
+    <li><strong>C11:</strong> <code>#include &lt;stdatomic.h&gt;</code>, funkce <code>atomic_*</code>.</li>
+    <li><strong>C++11:</strong> <code>#include &lt;atomic&gt;</code>, šablona <code>std::atomic</code>:
+      <pre><code>std::atomic&lt;int&gt; x;
+x++; // atomický inkrement</code></pre>
+    </li>
+  </ul>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Atomické operace jsou pomalé</p>
+    <p>Atomické operace jsou <strong>pomalejší než neatomické</strong>! CPU provádějící atomickou operaci
+    musí zajistit, že <strong>žádné jiné CPU nemá stejnou hodnotu v cache</strong>. To vyžaduje komunikaci
+    (synchronizaci) s ostatními CPU. Atomická operace totiž potřebuje <strong>výhradní přístup</strong>
+    (z pohledu protokolu cache koherence) k paměťovému místu, což v nejhorším případě znamená
+    <strong>broadcast</strong> přes interconnect.</p>
+  </div>
+
+  <h3>Cena atomických operací a bariér</h3>
+  <p>Měřeno na systému <strong>16-CPU 2,8 GHz Intel X5550 (Nehalem)</strong>:</p>
+  <table>
+    <thead><tr><th>Operace</th><th>Cena (ns)</th><th>Poměr</th></tr></thead>
+    <tbody>
+      <tr><td>Perioda hodin (clock period)</td><td>0,4</td><td>1,0</td></tr>
+      <tr><td>„Best-case“ CAS</td><td>12,2</td><td>33,8</td></tr>
+      <tr><td>Best-case lock</td><td>25,6</td><td>71,2</td></tr>
+      <tr><td>Single cache miss</td><td>12,9</td><td>35,8</td></tr>
+      <tr><td>CAS cache miss</td><td>7,0</td><td>19,4</td></tr>
+      <tr><td>Single cache miss (off-core)</td><td>31,2</td><td>86,6</td></tr>
+      <tr><td>CAS cache miss (off-core)</td><td>31,2</td><td>86,5</td></tr>
+      <tr><td>Single cache miss (off-socket)</td><td>92,4</td><td>256,7</td></tr>
+      <tr><td>CAS cache miss (off-socket)</td><td>95,9</td><td>266,4</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>Atomické operace jsou <strong>nákladné</strong> (zde 19–266× pomalejší než neatomické).</li>
+    <li><strong>Bariéry bývají levnější</strong> (slabé bariéry více než plné).</li>
+    <li><strong>Bariéra:</strong> strojová instrukce, která uspořádává paměťové operace v jednom vlákně.</li>
+  </ul>
+
+  <h2 id="kompilator">Kompilátorové optimalizace a kompilátorové bariéry</h2>
+  <p>Naivní kód (vlevo) je rozbitý a kompilátor ho může rozbít ještě víc. Oprava (vpravo) přidá
+  <code>volatile</code> a kompilátorové bariéry:</p>
+  <pre><code>bool locked;
+
+while (locked) {}
+locked = true;
+data++;
+locked = false;</code></pre>
+  <p>→</p>
+  <pre><code>#define barrier() asm volatile("" : : : "memory")
+
+volatile bool locked;
+
+while (locked) {}
+locked = true;
+barrier();
+data++;
+barrier();
+locked = false;</code></pre>
+  <ul>
+    <li>Kompilátor předpokládá, že paměť mění <strong>jen</strong> jednovláknový program, který právě překládá (pokud nepoužívá atomiky).</li>
+    <li>Proměnná <code>locked</code> se jeví <strong>zbytečná → optimalizována pryč</strong>. Brání tomu klíčové slovo <code>volatile</code>.</li>
+    <li>Kompilátor smí <strong>přeskupovat operace</strong>, dokud zůstane stejný výsledek jednovláknového výpočtu. <code>barrier()</code> mu brání přesouvat paměťové operace přes bariéru.</li>
+  </ul>
+
+  <h3>Jen vybrané přístupy jako volatile</h3>
+  <p>Označit proměnnou <code>volatile</code> učiní <strong>všechny</strong> přístupy „volatile“, tedy pomalé.
+  Někdy potřebujeme volatile sémantiku jen u <strong>určitých</strong> přístupů:</p>
+  <pre><code>#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
+#define LOAD_SHARED(p) ACCESS_ONCE(p)
+#define STORE_SHARED(x, v) ({ ACCESS_ONCE(x) = (v); })
+#define barrier() asm volatile("" : : : "memory")</code></pre>
+  <div class="box pozor">
+    <p class="box-title">⚠️ barrier() je jen kompilátorová bariéra</p>
+    <p>Makro <code>barrier()</code> je <strong>pouze kompilátorová bariéra, nikoli hardwarová</strong> –
+    kompilátor sice instrukce nepřeskupí, ale <strong>CPU je při běhu přeskupit může</strong>.</p>
+  </div>
+
+  <h2 id="hw-reorder">Hardwarové přeskupování a paměťové uspořádání</h2>
+  <p>Různé architektury implementují různé <strong>modely paměťové konzistence</strong>. Problém: některé
+  operace lze přeskupit vůči jiným. Tabulka (Wikipedia, <strong>Y</strong> = přeskupení může nastat, <strong>N</strong> = nemůže):</p>
+  <table>
+    <thead><tr><th>Typ</th><th>Alpha</th><th>ARMv7</th><th>ARMv8</th><th>PA-RISC</th><th>POWER</th><th>SPARC RMO</th><th>SPARC PSO</th><th>SPARC TSO</th><th>x86</th><th>x86 oostore</th><th>AMD64</th><th>IA-64</th><th>z/Arch</th></tr></thead>
+    <tbody>
+      <tr><td>Loads → loads</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>N</td><td>N</td><td>N</td><td>Y</td><td>N</td><td>Y</td><td>N</td></tr>
+      <tr><td>Loads → stores</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>N</td><td>N</td><td>N</td><td>Y</td><td>N</td><td>Y</td><td>N</td></tr>
+      <tr><td>Stores → stores</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>N</td><td>N</td><td>Y</td><td>N</td><td>Y</td><td>N</td></tr>
+      <tr><td>Stores → loads</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+      <tr><td>Atomic → loads</td><td>Y</td><td>Y</td><td>Y</td><td>N</td><td>Y</td><td>Y</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td><td>Y</td><td>N</td></tr>
+      <tr><td>Atomic → stores</td><td>Y</td><td>Y</td><td>Y</td><td>N</td><td>Y</td><td>Y</td><td>Y</td><td>N</td><td>N</td><td>N</td><td>N</td><td>Y</td><td>N</td></tr>
+      <tr><td>Dependent loads</td><td>Y</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td><td>N</td></tr>
+      <tr><td>Incoherent inst. cache pipeline</td><td>Y</td><td>Y</td><td>Y</td><td>N</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>N</td><td>Y</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>Důsledek na x86: <strong>x86 může přeskupit stores za loads</strong>, takže proměnná <code>data</code>
+  může být <strong>přečtena dřív, než ostatní CPU uvidí <code>locked</code> nastavené na <code>true</code></strong>!
+  Proč? Zápisy mohou ve store bufferu čekat na vlastnictví cache-line; nečekat s následnými čteními zvyšuje
+  <strong>výkon</strong>. Řešením je vložit <strong>instrukce paměťové bariéry</strong>.</p>
+
+  <h3>Bariéry (fence) – instrukce</h3>
+  <ul>
+    <li>Zajistí, že <strong>všechny paměťové operace zadané před bariérou dokončí dřív, než se zadá libovolná operace za bariérou</strong>.</li>
+    <li><strong>Plné bariéry</strong> brání přeskupení <strong>všech</strong> paměťových operací.</li>
+    <li><strong>Slabé bariéry</strong> brání přeskupení <strong>jen loadů, nebo jen storeů</strong>.</li>
+    <li>Příklady: <code>mfence</code> (plná bariéra), <code>lfence</code> (slabá) na x86, <code>dmb</code> na ARM.</li>
+    <li>Implementace RCU používají <strong>platformově nezávislý obal <code>smp_mb()</code></strong>.</li>
+  </ul>
+
+  <h3>Specifikace paměťového uspořádání (memory ordering) v C/C++</h3>
+  <p>Parametr <code>order</code> u <code>atomic::load</code>/<code>store</code> určuje, jak se kolem atomické
+  operace uspořádají běžné (neatomické) paměťové přístupy:</p>
+  <dl class="pojmy-list">
+    <dt>relaxed</dt><dd>Žádná režie, žádná záruka pořadí (jen atomicita).</dd>
+    <dt>consume</dt><dd>Mezistupeň závislého uspořádání.</dd>
+    <dt>acquire</dt><dd>Žádné čtení ani zápisy aktuálního vlákna nelze přeskupit <strong>před tento load</strong>. Všechny zápisy z jiných vláken, která <em>release</em> stejnou atomickou proměnnou, jsou viditelné.</dd>
+    <dt>release</dt><dd>Žádné čtení ani zápisy aktuálního vlákna nelze přeskupit <strong>za tento store</strong>. Všechny zápisy aktuálního vlákna jsou viditelné ve vláknech, která <em>acquire</em> stejnou proměnnou.</dd>
+    <dt>acq_rel</dt><dd>Kombinace acquire i release.</dd>
+    <dt>seq_cst</dt><dd>Vysoká režie, sekvenční konzistence.</dd>
+  </dl>
+  <p>Podle architektury způsobí různý <code>order</code> vygenerování bariérových instrukcí (např. <code>lfence</code> na x86).</p>
+  <p>Příklad happens-before vytvořeného acquire/release: <code>release</code> store ve vlákně 1 se stane
+  dříve než odpovídající <code>acquire</code> load ve vlákně 2, takže vlákno 2 garantovaně vidí <code>data == 1</code>:</p>
+  <pre><code>int data;
+std::atomic&lt;int&gt; owner;
+
+// Thread 1                                          // Thread 2
+data = 1;
+owner.store(2, std::memory_order_release);  -------->  if (owner.load(std::memory_order_acquire) == 2)
+                                                       read(data);</code></pre>
+
+  <h2 id="deadlock">Deadlock a spinlock</h2>
+  <p>Příklad deadlocku: jednojádrový systém, aktivně čekající (spinning) zámek, dvě vlákna – nízkoprioritní (LP)
+  a vysokoprioritní (HP).</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-title">LP_thread: lock()</span><span class="dn-sub">nízká priorita získá spinlock</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">LP_thread: data++;</span></div>
+      <div class="diag-arrow"><span class="lbl">preempce</span></div>
+      <div class="diag-node c-red"><span class="dn-title">HP_thread: lock()</span><span class="dn-sub">deadlock – donekonečna spinuje na zámku, který drží neběžící LP</span></div>
+    </div>
+    <div class="diag-cap">Jednojádro + spinlock: vysokoprioritní HP preemptuje LP držící zámek a navždy spinuje.</div>
+  </div>
+  <p>LP vlákno drží spinlock; je preemptováno vysokoprioritním HP vláknem, které donekonečna spinuje na zámku,
+  jejž drží (teď neběžící) LP vlákno.</p>
+  <p><strong>Řešení:</strong> když zámek není dostupný, požádej <strong>plánovač OS</strong>, ať tě uspí a probudí,
+  jakmile bude zámek volný. Problém: atomicita kontroly zámku a uspání → vyžaduje implementaci v <strong>jádře OS</strong>.</p>
+
+  <h3>Spinlocky</h3>
+  <ul>
+    <li>Zámek, který <strong>nezapojuje plánovač OS</strong> a čeká spinováním (busy waiting), je <strong>spin lock</strong>.</li>
+    <li>Aplikace spinlocky <strong>téměř nikdy nepotřebují</strong> – plýtvají energií, CPU časem a hrozí deadlock.</li>
+    <li>Používají se v <strong>jádrech OS</strong> tam, kde se nesmí spát:
+      <ul>
+        <li>Spát mohou jen <strong>vlákna</strong> (úlohy, procesy).</li>
+        <li><strong>Obsluhy přerušení</strong> spát nemohou → ovladače zařízení často používají spinlocky.</li>
+        <li>Spinlock musí použít i <strong>plánovač OS</strong>, protože nemůže uspat sám sebe.</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h2 id="mutex">Reálná synchronizace: mutex, semafory, futex</h2>
+  <h3>Mutex</h3>
+  <ul>
+    <li>Nejčastější synchronizační primitivum, jednoduché API (<code>lock</code>/<code>unlock</code>).</li>
+    <li>Lze implementovat různě: kernel semafor, futex, …</li>
+    <li>Všechny implementace (aspoň na vícejádrech) zapojují <strong>atomické instrukce</strong> – a ty mohou být pomalé!</li>
+    <li>Spaní se realizuje interakcí s <strong>plánovačem OS</strong>.</li>
+  </ul>
+
+  <h3>Kernel semafory</h3>
+  <ul>
+    <li>Implementace zámku <strong>uvnitř jádra OS</strong>.</li>
+    <li>Každé systémové volání přidává režii (<strong>≈ 100 hodinových cyklů</strong> na moderním HW).</li>
+    <li>Vyplatí se <strong>jemné (fine-grain) zamykání</strong> – zámky chrání co nejméně dat, aby se předešlo <strong>lock contention</strong>.</li>
+    <li>I když je jemné zamykání účinné a vlákna málokdy spí, <strong>vždy se platí režie syscallu</strong>! Řešením v Linuxu je <strong>futex</strong>.</li>
+  </ul>
+
+  <h3>Futex</h3>
+  <ul>
+    <li><strong>Nezahlcený (uncontended) mutex nikdy nejde do jádra.</strong></li>
+    <li>Futex = <strong>atomický čítač v uživatelské paměti</strong> + <strong>fronta čekajících v jádře</strong>.</li>
+    <li>Čítač se aktualizuje atomickými instrukcemi v user-space: <code>cmpxchg(val, expct, new) → prev</code>.</li>
+    <li><code>futex_wait()</code> a <code>futex_wake()</code> jsou syscally volané <strong>jen při kolizi (contention)</strong>, kdy je nutné spát.</li>
+  </ul>
+  <pre><code>class mutex {
+public:
+  mutex() : val (0) { }
+
+  void lock() {
+    int c;
+    if ((c = cmpxchg (val, 0, 1)) != 0) {
+      if (c != 2)
+        c = xchg (val, 2);
+      while (c != 0) {
+        futex_wait (&val, 2);
+        c = xchg (val, 2);
+      }
+    }
+  }
+  void unlock() {
+    if (atomic_dec (val) != 1) {
+      val = 0;
+      futex_wake (&val, 1);
+    }
+  }
+private:
+  int val;
+};</code></pre>
+  <p>Reference: U. Drepper, <em>Futexes Are Tricky</em>, 2011.</p>
+  <p>Futex je primitivum, ze kterého se staví: <strong>mutexy, semafory, podmínkové proměnné, thread barriers,
+  read-write locky</strong>. Dnešní <code>pthread_mutex_t</code> v Linuxu je implementovaný přes futex; synchronizace
+  v JVM přes <strong>Mark word</strong> a thin/fat locking je koncepčně totéž co futex.</p>
+  <div class="box poznamka">
+    <p class="box-title">💬 Proč jsou futexy záludné</p>
+    <p>Co když je futex sdílený mezi procesy a jeden proces nečekaně spadne, zatímco drží zamčený mutex?
+    <strong>Deadlock!</strong> User-space čítač zůstane zamčený, protože jediný, kdo ho mohl odemknout, spadl.
+    Jádro o zamčení (v uncontended případě) <strong>neví</strong>. Linux to řeší tzv. <strong>„Robust futex“</strong>:
+    adresy čítačů se registrují u jádra; když proces spadne, jádro <strong>prohledá jeho user-space paměť po zamčených
+    mutexech a odemkne je</strong>.</p>
+  </div>
+
+  <h2 id="rezie">Cena atomik (fyzika), režie zamykání a škálování</h2>
+  <p>Jeden sdílený atomický řádek serializuje stroj a je omezen fyzikou šíření signálu:</p>
+  <ul>
+    <li><strong>Světlo</strong> za 1 cyklus @ 3 GHz urazí round-trip jen <strong>5 cm</strong>.</li>
+    <li><strong>Rychlost elektronů v tranzistorech: 0,03–0,3 C</strong> (zlomek rychlosti světla).</li>
+  </ul>
+  <p>Dva scénáře na NUMA topologii (4 packages × 4 CPU):</p>
+  <ul>
+    <li><strong>Všechna CPU atomicky inkrementují globální proměnnou:</strong> každé CPU má <strong>cache miss</strong> (ostatní k proměnné také sahají) ⇒ <strong>sekvenční vykonání</strong>, žádné škálování.</li>
+    <li><strong>Všechna CPU atomicky inkrementují per-cpu proměnnou:</strong> <strong>žádný cache miss</strong> ⇒ mnohem rychlejší a paralelní.</li>
+  </ul>
+  <p>Pointa: kolize na jediném sdíleném cache-line serializuje stroj a je omezena fyzikou; <strong>per-CPU data
+  cache miss nevolají a škálují</strong>.</p>
+
+  <h3>Režie zamykání</h3>
+  <p>Klasické zámky se implementují atomickými instrukcemi a brání přeskupení manipulace se zámkem vůči obsahu kritické sekce:</p>
+  <pre><code>pthread_mutex_lock(mutex);
+x++;
+pthread_mutex_unlock(mutex);</code></pre>
+  <ul>
+    <li><strong>Uncontended (nezahlcený) případ:</strong> při <code>lock()</code> není mutex v cache; při <code>unlock()</code> už v cache je.</li>
+    <li><strong>Contended (zahlcený) případ:</strong> mutex není v cache <strong>ani při <code>unlock</code></strong>, protože pravděpodobně jiné CPU se snaží mutex zamknout a „krade“ ho z cache vlastníka.</li>
+  </ul>
+  <p>Časování pro <strong>jednoinstrukční kritickou sekci</strong> (vlastní práce <code>x++</code> je 1 cyklus, dominuje jí provoz cache kolem lock/unlock):</p>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-amber"><span class="dn-title">Lock</span><span class="dn-sub">~257 cyklů (cache miss dominuje)</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">x++</span><span class="dn-sub">1 cyklus</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-blue"><span class="dn-title">Unlock</span><span class="dn-sub">levný – mutex už v cache</span></div>
+    </div>
+    <div class="diag-cap">Uncontended (nezahlcený): drahý Lock + 1cyklový x++ + levný Unlock.</div>
+  </div>
+  <div class="diag">
+    <div class="diag-flow">
+      <div class="diag-node c-amber"><span class="dn-title">Lock</span><span class="dn-sub">~257 cyklů</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-green"><span class="dn-title">x++</span><span class="dn-sub">1 cyklus</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-red"><span class="dn-title">Unlock</span><span class="dn-sub">~257 cyklů – mutex „ukraden“ z cache</span></div>
+    </div>
+    <div class="diag-cap">Contended (zahlcený, bez spinování): drahý Lock i Unlock, mezi nimi 1cyklový x++.</div>
+  </div>
+  <ul>
+    <li>Uncontended: Lock ≈ <strong>257 cyklů</strong> (worst case) + <code>x++</code> ≈ <strong>1 cyklus</strong> + levný Unlock.</li>
+    <li>Contended (bez spinování): Lock ≈ 257 cyklů i Unlock ≈ 257 cyklů, mezi nimi <code>x++</code> ≈ 1 cyklus.</li>
+  </ul>
+
+  <h2 id="readmostly">Read-mostly zátěž a Read-Write lock</h2>
+  <p>Vzájemné vyloučení v masivně paralelní <strong>read-mostly</strong> zátěži má dvě ceny:</p>
+  <ol>
+    <li><strong>Režie lock/unlock.</strong></li>
+    <li><strong>Mrtvý čas (dead time) během aktualizací.</strong></li>
+  </ol>
+  <p>Jediný mutex pustí do kritické sekce vždy jen jedno CPU, takže i čistí čtenáři se serializují a vzniká nečinný „Dead Time“:</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">CPU 0</span><span class="db-sub">Reader → čekání / blokováno</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 1</span><span class="db-sub">blokováno → Reader</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 2</span><span class="db-sub">Reader → Dead Time!!! → Reader</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 3</span><span class="db-sub">blokováno → Updater</span></div>
+    </div>
+    <div class="diag-cap">Jediný mutex serializuje i čisté čtenáře → vzniká nečinný „Dead Time“.</div>
+  </div>
+  <p>Mnoho reálných zátěží je „read-mostly“: <strong>cachování</strong> (web cache, CDN, souborový systém, DNS) –
+  většina uživatelů jen čte a cache se aktualizuje jen občas.</p>
+
+  <h3>Read-Write lock</h3>
+  <ul>
+    <li>Klasické řešení: <strong>read-write lock</strong>.</li>
+    <li><strong>Více čtenářů může číst současně.</strong></li>
+    <li><strong>Aktualizace blokuje všechny čtenáře.</strong></li>
+    <li>Lze postavit nad mutexem; <strong>škáluje špatně</strong> kvůli atomickým instrukcím v lock/unlock.</li>
+  </ul>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">CPU 0</span><span class="db-sub">lock/Reader/unlock … → Wait → lock/Reader(updated)/unlock</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 1</span><span class="db-sub">lock/Reader/unlock … → Wait → Reader(updated)</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 2</span><span class="db-sub">lock/Reader/unlock … → Wait → Reader(updated)/unlock</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 3</span><span class="db-sub">lock/Reader/unlock → Wait → lock/Updater/unlock → lock/Reader(updated)/unlock</span></div>
+    </div>
+    <div class="diag-cap">RW-lock: více čtenářů paralelně, ale aktualizace (Updater) blokuje všechny čtenáře (Wait).</div>
+  </div>
+  <p>Jednoduchá implementace RW-locku přes semafor – <strong>první</strong> čtenář získá semafor (zablokuje zapisovatele),
+  <strong>poslední</strong> ho uvolní:</p>
+  <pre><code>struct rwlock {
+  semaphore_t sem;
+  mutex_t readers_lock;
+  unsigned readers_active;
+};
+
+void write_lock(rwlock &rwl) {
+  rwl.sem.wait();
+}
+void write_unlock(rwlock &rwl) {
+  rwl.sem.post();
+}
+
+void read_lock(rwlock &rwl) {
+  rwl.readers_lock.lock();
+  rwl.readers_active++;
+  if (rwl.readers_active == 1)
+    rwl.sem.wait();
+  rwl.readers_lock.unlock();
+}
+void read_unlock(rwlock &rwl) {
+  rwl.readers_lock.lock();
+  rwl.readers_active--;
+  if (rwl.readers_active == 0)
+    rwl.sem.post();
+  rwl.readers_lock.unlock();
+}</code></pre>
+  <p>Varianta přes mutex + podmínkovou proměnnou s <strong>preferencí zapisovatele</strong> (<code>read_lock</code> čeká, dokud je <code>wr_waiting</code> nebo <code>wr_active</code>):</p>
+  <pre><code>struct rwlock {
+  mutex_t lock;
+  cond_t cond;
+  unsigned rd_active;
+  unsigned wr_waiting;
+  bool wr_active;
+};
+
+void write_lock(rwlock &rwl) {
+  rwl.lock.wait();
+  rwl.wr_waiting++;
+  while (rwl.rd_active || rwl.wr_active)
+    cond_wait(rwl.cond, rwl.lock);
+  rwl.wr_waiting--;
+  rwl.wr_active = true;
+  rwl.lock.unlock();
+}
+void write_unlock(rwlock &rwl) {
+  rwl.lock.wait();
+  rwl.wr_active = false;
+  cond_broadcast(rwl.cond);
+  rwl.lock.unlock();
+}
+
+void read_lock(rwlock &rwl) {
+  rwl.lock.lock();
+  while (rwl.wr_waiting || rwl.wr_active)
+    cond_wait(rwl.cond, rwl.lock);
+  rwl.rd_active++;
+  rwl.lock.unlock();
+}
+void read_unlock(rwlock &rwl) {
+  rwl.lock.lock();
+  rwl.rd_active--;
+  if (rwl.rd_active == 0)
+    cond_broadcast(rwl.cond);
+  rwl.lock.unlock();
+}</code></pre>
+
+  <h3>Co bychom chtěli</h3>
+  <p>Ideál: čtenáři běží <strong>bez režie</strong> a aktualizátor <strong>neblokuje čtenáře</strong>. Čtenáři, kteří
+  začali před aktualizací, vidí starou verzi; ti po aktualizaci vidí novou; obě skupiny i aktualizátor mohou běžet
+  <strong>souběžně</strong>. Je to možné? <strong>Ano</strong> – přesně to poskytuje RCU.</p>
+  <div class="diag">
+    <div class="diag-grid">
+      <div class="diag-box accent"><span class="db-title">CPU 0</span><span class="db-sub">Reader / Reader / Reader</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 1</span><span class="db-sub">Reader / Reader / Reader / Reader(updated)</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 2</span><span class="db-sub">Reader / Reader / Reader</span></div>
+      <div class="diag-box accent"><span class="db-title">CPU 3</span><span class="db-sub">Reader / Reader / Updater / Reader(updated)</span></div>
+    </div>
+    <div class="diag-cap">Ideál RCU: čtenáři běží bez režie a aktualizátor (Updater) je neblokuje – vše souběžně.</div>
+  </div>
+
+  <h2 id="rcu">Read-Copy-Update (RCU)</h2>
+  <div class="box pisnicka" id="pisen-cti-bez-zamku">
+    <p class="box-title">🎵 Zapamatuj si písničkou</p>
+    <p><strong>Čti bez zámku</strong> — zazpívej si tohle téma a snáz si ho zafixuj. <a href="videos/pisnicky.html#s03">▶ Otevřít píseň + immersive video</a></p>
+  </div>
+  <h3>Škálovatelnost čtecí strany</h3>
+  <p>Graf <strong>počet jader (0–70)</strong> vs <strong>počet čtení/s (0 až ~9×10⁹)</strong> řadí primitiva od nejlepší
+  po nejhorší škálovatelnost čtecí strany:</p>
+  <ol>
+    <li><strong>QSBRCU</strong> – quiescent-state-based RCU</li>
+    <li><strong>Signal-based RCU</strong></li>
+    <li><strong>General-purpose RCU</strong></li>
+    <li><strong>Per-thread mutex</strong></li>
+    <li><strong>pthread mutex</strong></li>
+    <li><strong>pthread reader-writer lock</strong></li>
+  </ol>
+  <ul>
+    <li><strong>RCU škáluje</strong> – typicky <strong>téměř lineárně</strong> do stovek až tisíců CPU (křivky RCU strmě rostou, dosahují miliard čtení/s).</li>
+    <li>Je to možné, protože RCU <strong>na čtecí straně nepoužívá atomické instrukce</strong>.</li>
+    <li>Atomiky nejsou nutné, protože <strong>žádná dvě vlákna nezapisují do stejné proměnné</strong>.</li>
+    <li><strong>Zamykání neškáluje</strong> – křivky pthread mutex / RW-lock zůstávají u dna. Po přiblížení (y do 9×10⁶) obě <strong>spadnou z pár milionů čtení/s na ~1×10⁶</strong>, jakmile soutěží víc jader, a zůstanou ploché. RW-lock je trvale nejníž. Zamykání se s více jádry <strong>zhoršuje</strong>, ne zlepšuje.</li>
+  </ul>
+
+  <h3>Aktualizace RCU-chráněného seznamu</h3>
+  <p>Aktualizace jednosměrného seznamu <code>A → B → C</code>, kde prvek <strong>B</strong> nahradíme aktualizovaným
+  prvkem <strong>D</strong>, probíhá v 5 krocích:</p>
+  <div class="diag">
+    <div class="diag-flow vert">
+      <div class="diag-node c-blue"><span class="dn-num">1</span><span class="dn-title">Původní seznam</span><span class="dn-sub">A → B → C</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-purple"><span class="dn-num">2</span><span class="dn-title">Zkopíruj B</span><span class="dn-sub">A → B → C; kopie B(copy) → C</span></div>
+      <div class="diag-arrow"></div>
+      <div class="diag-node c-amber"><span class="dn-num">3</span><span class="dn-title">Uprav kopii na D</span><span class="dn-sub">A → B → C; D(updated copy) → C</span></div>
+      <div class="diag-arrow"><span class="lbl">rcu_assign_pointer</span></div>
+      <div class="diag-node c-teal"><span class="dn-num">4</span><span class="dn-title">Publikuj D</span><span class="dn-sub">A → D → C (ukazatel A přehozen z B na D)</span></div>
+      <div class="diag-arrow"><span class="lbl">grace period</span></div>
+      <div class="diag-node c-green"><span class="dn-num">5</span><span class="dn-title">Uvolni B</span><span class="dn-sub">A → D → C</span></div>
+    </div>
+    <div class="diag-cap">Aktualizace RCU-chráněného seznamu: B nahrazeno prvkem D; B se uvolní až po grace period.</div>
+  </div>
+  <ol>
+    <li><strong>Původní seznam</strong> <code>A → B → C</code>.</li>
+    <li><strong>Zkopíruj B</strong> – alokuj nový uzel a zkopíruj obsah B; jeho <code>next</code> už ukazuje na C.</li>
+    <li><strong>Uprav kopii na D</strong> – kopii změň na novou hodnotu D (stále <code>D → C</code>); B je nezměněné a stále dosažitelné.</li>
+    <li><strong>Zviditelni D čtenářům</strong> – atomicky přehoď ukazatel z A z B na D (<code>A → D → C</code>). Noví čtenáři vidí D; ti, co už načetli ukazatel na B, dál používají B.</li>
+    <li><strong>Počkej, až všichni čtenáři přestanou používat B, a uvolni ho</strong> – po grace period uvolni B, zůstane <code>A → D → C</code>.</li>
+  </ol>
+  <div class="box insight">
+    <p class="box-title">💡 Klíčový poznatek</p>
+    <p>Kroky 1–4 jsou triviální; učinit efektivním <strong>krok 5</strong> je důvod, proč RCU existuje!
+    <strong>RCU převádí problém škálovatelnosti na problém garbage collectoru.</strong></p>
+  </div>
+
+  <h3>Jak RCU pozná, že žádný čtenář už nepřistupuje ke starým datům?</h3>
+  <ul>
+    <li><strong>Žádné explicitní (a drahé) sledování každého čtenáře</strong> – žádné reference counting, žádné zámky ve čtenářích.</li>
+    <li>RCU používá <strong>nepřímý</strong> způsob určení konce všech čtecích sekcí.</li>
+    <li>V některých implementacích (<strong>QSBR</strong>) má čtecí strana <strong>nulovou režii</strong>.</li>
+  </ul>
+
+  <h3>Tři hlavní mechanismy RCU</h3>
+  <ol>
+    <li><strong>Publikace aktualizací (krok 3→4)</strong> – zajistit, že aktualizovaná data se dostanou do paměti
+      <strong>dříve</strong> než aktualizovaný ukazatel. Realizuje kompilátorová + paměťová bariéra (<strong>bez atomik</strong>) v <code>rcu_assign_pointer()</code>.</li>
+    <li><strong>Přístup k novým verzím dat</strong> – zajistit, že uvidíme všechny aktualizace před publikací. Kompilátorová + paměťová bariéra v <code>rcu_dereference()</code>.</li>
+    <li><strong>Čekání, až všichni čtenáři skončí</strong> – <strong>ta záludná část!</strong> ⇒ <code>synchronize_rcu()</code>.</li>
+  </ol>
+  <div class="box poznamka">
+    <p class="box-title">💬 RCU a Java</p>
+    <p>Má smysl používat RCU v Javě? <strong>Ne.</strong> JVM rozhoduje o uvolnění objektů <strong>trasovacím
+    garbage collectorem</strong>, který má mnohem vyšší režii než RCU (stop-the-world, režie značkování, …).</p>
+  </div>
+
+  <h2 id="rcu-api">RCU API, grace period a pravidla pro čtenáře</h2>
+  <p>Terminologie RCU:</p>
+  <dl class="pojmy-list">
+    <dt>Read-side critical section</dt><dd>Ohraničená <code>rcu_read_lock()</code> / <code>rcu_read_unlock()</code>; uvnitř se ukazatele načítají přes <code>rcu_dereference()</code>.</dd>
+    <dt>Quiescent state (klidový stav)</dt><dd>Jakýkoli kód <strong>mimo</strong> čtecí kritickou sekci.</dd>
+    <dt>rcu_assign_pointer()</dt><dd>Aktualizátor jím publikuje novou verzi.</dd>
+    <dt>Grace period</dt><dd>Interval <strong>spuštěný a vyčkaný funkcí <code>synchronize_rcu()</code></strong>. Začíná po publikaci a končí, jakmile každé CPU prošlo aspoň jedním klidovým stavem, tj. žádný čtenář už nemůže držet odkaz na stará data.</dd>
+    <dt>„Must not happen!“</dt><dd>Čtecí kritická sekce nesmí přesáhnout přes celou grace period tak, aby ještě odkazovala na uvolněná data po <code>Free</code>. Čtenář, který začal před publikací, musí skončit před koncem grace period – design garantuje, že grace period čeká dost dlouho.</dd>
+  </dl>
+  <p>Abstraktní rozhraní RCU:</p>
+  <pre><code>void rcu_read_lock();
+void rcu_read_unlock();
+void synchronize_rcu();
+void rcu_assign_pointer(type *ptr, type *new_ptr);
+type *rcu_dereference(type *ptr);</code></pre>
+
+  <h3>Strana čtenáře</h3>
+  <pre><code>rcu_read_lock(); /* Start kritické sekce. */
+p = rcu_dereference(cptr);
+/* *p garantovaně existuje. */
+do_something_with(p);
+rcu_read_unlock(); /* Konec kritické sekce. */
+/* Od teď může aktualizátor *p uvolnit!!! */</code></pre>
+  <ul>
+    <li><code>rcu_read_lock()</code>/<code>unlock()</code> a <code>rcu_dereference()</code> jsou <strong>levné, někdy prázdné funkce (nop)</strong>.</li>
+    <li><strong>Aktualizátoři jsou výrazně těžší.</strong></li>
+  </ul>
+  <p>Proč <code>rcu_dereference()</code> a ne prosté čtení ukazatele? Naivní čtení je nebezpečné ze tří důvodů:</p>
+  <ol>
+    <li>Na <strong>DEC Alpha</strong> se může čtení ukazatele provést <strong>až po</strong> čtení skrz něj (dependent-load reordering).</li>
+    <li>Kompilátor může <strong>vynechat opětovné načtení</strong> a znovu použít starou hodnotu.</li>
+    <li>Kompilátor může <code>cptr</code> <strong>načíst vícekrát</strong> – pokud se mezi přístupy změní, použijí různou hodnotu <code>p</code>.</li>
+  </ol>
+
+  <h3>Strana aktualizátora</h3>
+  <pre><code>pthread_mutex_lock(&updater_lock);
+old_p = cptr;
+*new_p = *old_p;                 // kopie, je-li třeba
+new_p->... = ...;
+rcu_assign_pointer(cptr, new_p); // aktualizace
+pthread_mutex_unlock(&updater_lock);
+synchronize_rcu();               // počkej na konec grace period
+free(old_p);</code></pre>
+  <ul>
+    <li>Aktualizátor <strong>může používat zámky</strong>, protože jde o read-mostly zátěž s vzácnými aktualizacemi.</li>
+    <li><strong>Při jediném aktualizátoru zámky nejsou potřeba.</strong></li>
+    <li><code>synchronize_rcu()</code> lze nahradit <strong>neblokujícím <code>call_rcu()</code></strong>, který po konci grace period zavolá callback.</li>
+  </ul>
+
+  <h2 id="qsbr">Implementace finální fáze: QSBR a general-purpose RCU</h2>
+  <p>Možných implementací je mnoho; RCU je populární díky použití v <strong>jádře Linuxu</strong>. Následují
+  <strong>user-space</strong> implementace, mezi nimiž je <strong>kompromis mezi režií čtecí strany a omezeními
+  struktury aplikace</strong>: <strong>QSBR</strong> a <strong>general-purpose</strong>.</p>
+
+  <h3>Quiescent-state based reclamation (QSBR)</h3>
+  <p>Globální čítač <strong><code>rcu_gp_ctr</code></strong> inkrementují aktualizátoři; per-thread čítače
+  <strong><code>rcu_reader.ctr</code></strong> aktualizují čtenáři v <code>rcu_quiescent_state</code>. Vlákno
+  se registruje, periodicky volá <code>rcu_quiescent_state</code> (zkopíruje globální čítač do lokálního) a
+  aktualizátor v <code>synchronize_rcu</code> čeká, až všechny per-thread čítače dohoní novou globální hodnotu.</p>
+  <pre><code>// Chrání registry před souběžnými přístupy
+pthread_mutex_t rcu_gp_lock =
+    PTHREAD_MUTEX_INITIALIZER;
+LIST_HEAD(registry);
+
+struct rcu_reader {
+  // bit 0 = online, bity 1-63 = čítač
+  unsigned long ctr;
+  struct list_head node;
+  pthread_t tid;
+};
+
+// per-thread proměnná
+struct rcu_reader __thread rcu_reader;
+
+void rcu_register_thread(void) {
+  rcu_reader.tid = pthread_self();
+  mutex_lock(&rcu_gp_lock);
+  list_add(&rcu_reader.node, &registry);
+  mutex_unlock(&rcu_gp_lock);
+  rcu_thread_online();
+}
+
+void rcu_unregister_thread(void) {
+  rcu_thread_offline();
+  mutex_lock(&rcu_gp_lock);
+  list_del(&rcu_reader.node);
+  mutex_unlock(&rcu_gp_lock);
+}
+
+#define RCU_GP_ONLINE 0x1
+#define RCU_GP_CTR    0x2
+
+// globální čítač - pozn.: nepřistupuje se atomickými instr.
+unsigned long rcu_gp_ctr = RCU_GP_ONLINE;
+
+static inline void rcu_read_lock(void) {}
+static inline void rcu_read_unlock(void) {}
+
+// Každé vlákno musí tuto funkci volat periodicky
+// mimo čtecí kritickou sekci.
+// Pozn. 1: Žádná atomická instrukce, bariéry jsou
+//          levnější než atomické instrukce.
+// Pozn. 2: Nevolá se na každou čtecí sekci, jen
+//          "čas od času", např. v hlavní smyčce programu.
+static inline void rcu_quiescent_state(void) {
+  smp_mb();
+  STORE_SHARED(rcu_reader.ctr, LOAD_SHARED(rcu_gp_ctr));
+  smp_mb();
+}</code></pre>
+  <p>Funkce <code>rcu_read_lock()</code>/<code>rcu_read_unlock()</code> jsou <strong>prázdné</strong> – čtecí
+  strana QSBR má skutečně <strong>nulovou režii</strong>.</p>
+  <p>Kolem blokujících syscallů (např. <code>epoll_wait()</code>) se vlákno musí označit jako offline. Hodnota
+  čítače <code>0</code> značí <strong>offline</strong> (vlákno nemůže držet odkazy), takže grace period na něj nemusí čekat:</p>
+  <pre><code>// volej před blokujícím systémovým voláním
+static inline void rcu_thread_offline(void) {
+  smp_mb();
+  STORE_SHARED(rcu_reader.ctr, 0);
+}
+// volej po návratu z blokujícího systémového volání
+static inline void rcu_thread_online(void) {
+  STORE_SHARED(rcu_reader.ctr, LOAD_SHARED(rcu_gp_ctr));
+  smp_mb();
+}</code></pre>
+  <p>Finální fáze synchronizace – <code>synchronize_rcu</code> a <code>update_counter_and_wait</code>:</p>
+  <pre><code>// Toto volá aktualizátor
+void synchronize_rcu(void) {
+  unsigned long was_online = rcu_reader.ctr;
+  smp_mb();
+  if (was_online) STORE_SHARED(rcu_reader.ctr, 0);
+  mutex_lock(&rcu_gp_lock);
+  update_counter_and_wait();
+  mutex_unlock(&rcu_gp_lock);
+  if (was_online) STORE_SHARED(rcu_reader.ctr, LOAD_SHARED(rcu_gp_ctr));
+  smp_mb();
+}
+
+static void update_counter_and_wait(void) {
+  struct rcu_reader *index;
+  STORE_SHARED(rcu_gp_ctr, rcu_gp_ctr + RCU_GP_CTR);
+  barrier();
+  list_for_each_entry(index, &registry, node) {
+    while (rcu_gp_ongoing(&index->ctr))
+      msleep(10);
+  }
+}
+
+static inline int rcu_gp_ongoing(unsigned long *ctr) {
+  unsigned long v = LOAD_SHARED(*ctr);
+  return v && (v != rcu_gp_ctr);
+}</code></pre>
+  <p>Aktualizátor zvýší globální čítač, pak <strong>cyklicky kontroluje</strong> každého registrovaného čtenáře
+  (mezi kontrolami spí 10 ms), dokud každý čtenář není buď offline (<code>v == 0</code>), nebo neuvidí novou
+  hodnotu globálního čítače (<code>v == rcu_gp_ctr</code>).</p>
+  <div class="box pozor">
+    <p class="box-title">⚠️ Vlastnosti a omezení QSBR</p>
+    <ul>
+      <li><code>synchronize_rcu</code> <strong>nemusí skončit ihned</strong>, jakmile poslední CPU zavolá <code>rcu_quiescent_state</code>! Tolerujeme režii aktualizátorů, abychom <strong>snížili režii čtenářů</strong>.</li>
+      <li>Vlákna musí <code>rcu_quiescent_state()</code> volat čas od času (např. v hlavní smyčce) a kolem blokujících volání volat <code>rcu_thread_off/online</code>. Jinak <strong>grace period nikdy neskončí</strong>.</li>
+      <li>Grace periody se <strong>nesdílejí</strong>; dlouhé čekání → <strong>vyšší spotřeba paměti</strong>.</li>
+      <li>Funguje jen na <strong>64bitových architekturách</strong> – čítač nesmí přetéct.</li>
+    </ul>
+  </div>
+
+  <h3>General-purpose RCU</h3>
+  <p>Vlastnosti: <strong>neomezuje strukturu aplikace</strong>, není třeba volat <code>rcu_quiescent_state</code>
+  ani <code>rcu_thread_(on|off)line</code>, nemá problém s přetečením (jiný mechanismus s pouhým <strong>1bitovým</strong>
+  čítačem fáze), podporuje <strong>vnořování</strong> čtecích sekcí (16bitový nesting counter). Cena: <strong>vyšší
+  režie čtecí strany</strong> – jedna <strong>paměťová bariéra</strong> (stále méně než atomické instrukce u zámků).</p>
+  <pre><code>// bit 16 = 1bitový čítač fáze
+#define RCU_GP_CTR_PHASE 0x10000
+// bity 0-15 = 16bitový čítač vnoření
+#define RCU_NEST_MASK 0x0ffff
+#define RCU_NEST_COUNT 0x1
+unsigned long rcu_gp_ctr = RCU_NEST_COUNT;
+
+static inline void rcu_read_lock(void)
+{
+  unsigned long tmp;
+  tmp = rcu_reader.ctr;
+  if (!(tmp & RCU_NEST_MASK)) {
+    STORE_SHARED(rcu_reader.ctr, LOAD_SHARED(rcu_gp_ctr));
+    smp_mb(); // instrukce paměťové bariéry (fence)
+  } else {
+    // Vnořená kritická sekce nepotřebuje bariéru
+    STORE_SHARED(rcu_reader.ctr, tmp + RCU_NEST_COUNT);
+  }
+}
+
+static inline void rcu_read_unlock(void)
+{
+  smp_mb(); // instrukce paměťové bariéry
+  STORE_SHARED(rcu_reader.ctr, rcu_reader.ctr - RCU_NEST_COUNT);
+}</code></pre>
+  <p>Grace period má <strong>dvě fáze</strong> – <code>synchronize_rcu</code> dvakrát překlopí 1bitovou fázi a počká na čtenáře:</p>
+  <pre><code>void synchronize_rcu(void)
+{
+  // Grace period má dvě fáze
+  smp_mb(); // instrukce paměťové bariéry
+  mutex_lock(&rcu_gp_lock);
+  update_counter_and_wait(); // fáze 1
+  barrier(); // kompilátorová bariéra
+  update_counter_and_wait();
+  mutex_unlock(&rcu_gp_lock); // fáze 2
+  smp_mb(); // instrukce paměťové bariéry
+}
+
+static void update_counter_and_wait(void)
+{
+  struct rcu_reader *index;
+  STORE_SHARED(rcu_gp_ctr, rcu_gp_ctr ^ RCU_GP_CTR_PHASE); // překlop bit fáze (^ = XOR)
+  barrier(); // kompilátorová bariéra
+  list_for_each_entry(index, &registry, node) {
+    while (rcu_gp_ongoing(&index->ctr))
+      msleep(10);
+  }
+}
+
+static inline int rcu_gp_ongoing(unsigned long *ctr)
+{
+  unsigned long v;
+  v = LOAD_SHARED(*ctr);
+  // GP fáze probíhá = čítač vnoření > 0 a globální (1bit) čítač != lokální čítač
+  // => GP fáze končí když čítač vnoření == 0 (klidový stav) nebo globální (1bit) čítač == lokální
+  return (v & RCU_NEST_MASK) > 0 && ((v ^ rcu_gp_ctr) & RCU_GP_CTR_PHASE);
+}</code></pre>
+  <p><strong>Proč nestačí jediná fáze?</strong> Synchronizace by selhala v jednom okrajovém případě (viz str. 7 supplemental material URCU paperu).</p>
+
+  <h2 id="porovnani">Porovnání: RCU vs RW-lock vs reference counting</h2>
+
+  <h3>RCU vs RW-lock</h3>
+  <table>
+    <thead><tr><th>Hledisko</th><th>RW-lock</th><th>RCU</th></tr></thead>
+    <tbody>
+      <tr><td>Čtecí strana – atomiky</td><td>Ano (lock/unlock) → cache provoz na sdílený zámek</td><td><strong>Ne</strong> (QSBR nulová režie, general-purpose jen bariéra)</td></tr>
+      <tr><td>Čtecí strana – škálování</td><td><strong>Špatné</strong>, padá z pár M na ~1×10⁶ čtení/s; s více jádry se zhoršuje</td><td><strong>Téměř lineární</strong> do stovek/tisíců CPU, miliardy čtení/s</td></tr>
+      <tr><td>Čtenář vs aktualizátor</td><td>Aktualizace <strong>blokuje všechny čtenáře</strong> (Dead Time)</td><td>Aktualizátor <strong>neblokuje čtenáře</strong>, běží souběžně</td></tr>
+      <tr><td>Write-side</td><td>Zápis je přímý, ale výhradní (blokuje čtenáře)</td><td>Těžší: copy + publish + <strong>čekání na grace period</strong> + free; vhodné jen pro vzácné aktualizace</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Na 1024 CPU</strong> při častých čteních je RCU výhodné, protože čtecí strana nepoužívá atomické
+  instrukce na sdílenou cache-line – nevznikají cache miss a koordinace přes interconnect, takže čtení škálují
+  téměř lineárně, kdežto RW-lock se serializuje na atomikách v lock/unlock a propustnost s rostoucím počtem CPU klesá.</p>
+
+  <h3>RCU vs reference counting</h3>
+  <table>
+    <thead><tr><th>Hledisko</th><th>Reference counting</th><th>RCU</th></tr></thead>
+    <tbody>
+      <tr><td>Čtení (read-side)</td><td>Každý čtenář <strong>atomicky inkrementuje/dekrementuje</strong> sdílený čítač → cache provoz, špatné škálování</td><td><strong>Žádné atomiky</strong> na čtenáři → škáluje téměř lineárně</td></tr>
+      <tr><td>Aktualizace (write-side)</td><td>Levnější – objekt se uvolní hned, jakmile čítač klesne na 0</td><td>Dražší – nutno počkat na <strong>grace period</strong></td></tr>
+      <tr><td>Kdy se uvolní objekt</td><td>Když <strong>počet odkazů klesne na 0</strong></td><td>Po <strong>grace period</strong> (až všechna CPU prošla klidovým stavem, žádný čtenář nedrží odkaz)</td></tr>
+      <tr><td>Další</td><td>Jednoduché, ale sdílený čítač je bod kontence; riziko cyklů</td><td>„Převádí škálovatelnost na garbage collection“; čtenáři nesmí blokovat grace period</td></tr>
+    </tbody>
+  </table>
+  <p>Shrnutí update benchmarků (logaritmické grafy z URCU paperu, 8-core Intel Xeon a 64-core POWER5): RCU má
+  na <strong>čtecí straně</strong> trvale vysokou propustnost, do značné míry necitlivou na aktivitu aktualizací,
+  kdežto zámkové schéma degraduje. RCU <strong>aktualizace</strong> nesou těžší cenu (čekání na grace period),
+  což je u read-mostly zátěží přijatelné.</p>
+
+  <h2 id="tm">Transakční paměť (HW/SW)</h2>
+  <p>Transakční paměť přenáší myšlenku databázových transakcí do přístupu k paměti: blok kódu se provede jako
+  <strong>atomická transakce</strong> – buď se promítnou všechny jeho paměťové změny najednou, nebo se transakce
+  <strong>zruší (abort) a zopakuje</strong> při konfliktu s jiným vláknem. Programátor tak nemusí ručně skládat
+  zámky a vyhne se deadlockům; jde o <strong>optimistickou</strong> synchronizaci (předpokládá, že ke konfliktu
+  obvykle nedojde).</p>
+  <ul>
+    <li><strong>HW transakční paměť (HTM)</strong> – konflikty mezi transakcemi detekuje hardware pomocí protokolu cache koherence (sledují se přečtené a zapsané cache-line). Příkladem je Intel TSX. Je rychlá, ale velikost transakce je omezena kapacitou cache a transakce může selhat z vnějšího důvodu (přerušení, příliš velký working set).</li>
+    <li><strong>SW transakční paměť (STM)</strong> – konflikty řeší knihovna/runtime softwarově (verzování, logy, ověření při commitu). Nemá HW limity, ale má vyšší režii.</li>
+  </ul>
+
+  <h2 id="otazky">Zkouškové otázky k tématu</h2>
+  <p class="kv">Rozbal odpověď až poté, co si ji zkusíš sám zformulovat.</p>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> RCU vs RW-lock: v čem se liší? Porovnej výkonnost a škálování a) read-side b) write-side.</summary>
+    <div class="odpoved">
+      <p><strong>Princip:</strong> RW-lock dovolí více čtenářů současně, ale aktualizace <strong>blokuje všechny
+      čtenáře</strong>; lock/unlock na obou stranách používá <strong>atomické instrukce</strong>. RCU naopak
+      umožní čtenářům i aktualizátorovi běžet <strong>souběžně</strong> – aktualizátor zkopíruje, upraví,
+      publikuje a starý objekt uvolní až po <strong>grace period</strong>.</p>
+      <p><strong>a) Read-side:</strong> RW-lock škáluje <strong>špatně</strong> – kvůli atomikám na sdílené
+      cache-line padá z pár milionů na ~1×10⁶ čtení/s a s rostoucím počtem jader se zhoršuje. RCU na čtecí
+      straně <strong>nepoužívá atomiky</strong> (QSBR má nulovou režii, general-purpose jen paměťovou bariéru),
+      takže škáluje <strong>téměř lineárně</strong> do stovek/tisíců CPU (miliardy čtení/s).</p>
+      <p><strong>b) Write-side:</strong> RW-lock zapisuje přímo, ale výhradně (blokuje čtenáře). RCU má zápis
+      <strong>dražší</strong> – aktualizátor musí počkat na konec grace period (<code>synchronize_rcu</code>),
+      což zvyšuje latenci a spotřebu paměti. Proto je RCU výhodné jen pro <strong>read-mostly</strong> zátěže
+      se vzácnými aktualizacemi.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> RCU: popiš, jak implementovat finální fázi synchronizace, co nesmí čtenáři dělat, aby RCU dobře škálovalo, a jak je daná implementace efektivní.</summary>
+    <div class="odpoved">
+      <p><strong>Finální fáze = <code>synchronize_rcu()</code></strong>, která čeká na konec <strong>grace period</strong>
+      (až každé CPU projde aspoň jedním klidovým stavem). V <strong>QSBR</strong>: aktualizátor zvýší globální
+      <code>rcu_gp_ctr</code> a v <code>update_counter_and_wait()</code> <strong>cyklicky kontroluje</strong>
+      každého registrovaného čtenáře (mezi kontrolami <code>msleep(10)</code>), dokud každý není buď offline
+      (<code>ctr == 0</code>), nebo nedohnal novou hodnotu globálního čítače (<code>ctr == rcu_gp_ctr</code>).
+      Teprve pak lze starý objekt uvolnit. (General-purpose RCU dělá totéž ve <strong>dvou fázích</strong> s 1bitovým
+      překlápěným čítačem fáze.)</p>
+      <p><strong>Co čtenáři NESMÍ:</strong> aby grace period vůbec skončila a režie čtenářů zůstala nulová, vlákna
+      musí periodicky procházet <strong>klidovým stavem</strong> – v QSBR volat <code>rcu_quiescent_state()</code>
+      (např. v hlavní smyčce) a kolem <strong>blokujících syscallů</strong> volat <code>rcu_thread_offline/online</code>.
+      Čtenář tedy <strong>nesmí setrvat „věčně“ v čtecí kritické sekci</strong> bez návratu do klidového stavu,
+      jinak by grace period nikdy neskončila a paměť by se nemohla uvolnit. Uvnitř sekce také nesmí spoléhat na
+      to, že <code>*p</code> zůstane platné po <code>rcu_read_unlock()</code>.</p>
+      <p><strong>Proč je to efektivní:</strong> čtecí strana <strong>nepoužívá atomické instrukce</strong> (jen
+      levné bariéry, nebo v QSBR nic), takže žádná dvě vlákna nezapisují do stejné proměnné a nevzniká cache
+      kontence. Vědomě tolerujeme <strong>vyšší režii aktualizátorů</strong> (čekání na grace period), abychom
+      <strong>minimalizovali režii častých čtenářů</strong> – to je důvod, proč RCU škáluje na stovky/tisíce CPU.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Reference counting vs RCU: porovnej výkon čtení i aktualizace, výhody/nevýhody a kdy RCU uvolňuje objekty. (5 b)</summary>
+    <div class="odpoved">
+      <p><strong>Čtení:</strong> reference counting na každém čtenáři <strong>atomicky inkrementuje a dekrementuje
+      sdílený čítač</strong> → cache provoz na společné cache-line, špatné škálování. RCU čtenář <strong>nedělá
+      žádné atomiky</strong> → škáluje téměř lineárně.</p>
+      <p><strong>Aktualizace:</strong> reference counting je <strong>levnější</strong> – objekt se uvolní okamžitě,
+      jakmile čítač klesne na 0. RCU je <strong>dražší</strong> – musí počkat na grace period.</p>
+      <p><strong>Kdy RCU uvolňuje objekty:</strong> až <strong>po skončení grace period</strong>, tedy když každé
+      CPU prošlo aspoň jedním klidovým stavem a žádný čtenář už nemůže držet odkaz na starou verzi (krok 5
+      aktualizace seznamu / po <code>synchronize_rcu()</code> nebo callbackem <code>call_rcu()</code>).</p>
+      <p><strong>Výhody/nevýhody:</strong> RCU má skvělé škálování čtení a neblokuje čtenáře, ale draží aktualizace
+      a větší spotřebu paměti při dlouhém čekání; reference counting je jednoduchý a uvolňuje hned, ale sdílený
+      atomický čítač je bodem kontence a hrozí cykly.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">zkoušková otázka</span> Porovnání RCU vs RW-lock na 1024 CPU – proč je RCU výhodné při častých čteních.</summary>
+    <div class="odpoved">
+      <p>Při 1024 CPU a <strong>častých čteních</strong> RW-lock kolabuje: každé <code>read_lock</code>/<code>read_unlock</code>
+      provádí <strong>atomickou operaci na sdílené cache-line</strong>, což vyvolá cache miss a koordinaci přes
+      interconnect (v nejhorším broadcast). Stroj se tím fakticky <strong>serializuje</strong> a propustnost čtení
+      s počtem CPU neroste, spíš klesá. RCU naopak na čtecí straně <strong>nepoužívá žádné atomiky</strong> – žádná
+      dvě vlákna nezapisují do téhož místa, takže nevznikají cache miss a čtení škálují <strong>téměř lineárně</strong>
+      i na tisíce CPU. Cenu platí jen vzácní aktualizátoři (grace period), což u read-mostly zátěže nevadí.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P4</span> Jakých 6 problémů má naivní busy-wait zámek?</summary>
+    <div class="odpoved">
+      <p>1) Kontrola a nastavení zámku není atomická; 2) kompilátor optimalizuje <code>locked</code> pryč;
+      3) kompilátor přesune <code>data</code> mimo kritickou sekci; 4) hardware přeskupí paměťové přístupy;
+      5) snadný deadlock (jednojádro + priority); 6) busy waiting plýtvá energií. Opravy: atomická výměna
+      (CAS), <code>volatile</code> + <code>barrier()</code>, paměťové bariéry (<code>mfence</code>/<code>smp_mb()</code>),
+      uspání přes plánovač OS.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P4</span> Proč jsou atomické operace pomalé a o kolik?</summary>
+    <div class="odpoved">
+      <p>CPU musí získat <strong>výhradní přístup</strong> k cache-line (z pohledu cache koherence), tj. zajistit,
+      že stejnou hodnotu nemá v cache žádné jiné CPU – to v nejhorším vyžaduje <strong>broadcast</strong> přes
+      interconnect. Na Intel X5550 (Nehalem) jsou atomiky <strong>19–266× pomalejší</strong> než neatomické
+      přístupy (off-socket CAS ~96 ns vs 0,4 ns clock period). Bariéry bývají levnější, zvlášť slabé.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P4</span> Co je memory ordering (acquire/release) a paměťová bariéra?</summary>
+    <div class="odpoved">
+      <p>Parametr <code>order</code> určuje uspořádání běžných přístupů kolem atomické operace: <code>relaxed</code>
+      (jen atomicita) &lt; <code>consume</code> &lt; <code>acquire</code>/<code>release</code> (vytvoří happens-before
+      hranu) &lt; <code>acq_rel</code> &lt; <code>seq_cst</code> (nejvyšší režie). <code>acquire</code> brání
+      přeskupení čtení/zápisů <strong>před</strong> load, <code>release</code> <strong>za</strong> store.
+      <strong>Bariéra</strong> je instrukce, která zajistí, že operace před ní dokončí dřív než operace za ní:
+      plná (<code>mfence</code>) brání přeskupení všeho, slabá (<code>lfence</code>) jen loadů/storeů; <code>smp_mb()</code>
+      je platformově nezávislý obal. <code>barrier()</code> je jen <strong>kompilátorová</strong> bariéra.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P4</span> Jak funguje futex a proč je rychlejší než kernel semafor?</summary>
+    <div class="odpoved">
+      <p>Kernel semafor platí <strong>režii syscallu (~100 cyklů)</strong> i v nezahlceném případě. Futex má
+      <strong>atomický čítač v user-space</strong> + <strong>frontu čekajících v jádře</strong>: nezahlcený mutex
+      vyřeší vše atomickou instrukcí v user-space a <strong>nikdy nejde do jádra</strong>; syscally
+      <code>futex_wait/wake</code> volá jen při kontenci. „Robust futex“ navíc odemkne mutex, když jeho vlastník spadne.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P4</span> Vysvětli 5 kroků aktualizace RCU-chráněného seznamu.</summary>
+    <div class="odpoved">
+      <p>Pro <code>A → B → C</code> a nahrazení B prvkem D: 1) původní seznam; 2) zkopíruj B; 3) uprav kopii na D
+      (<code>D → C</code>); 4) <strong>publikuj</strong> – atomicky přehoď ukazatel A z B na D (<code>A → D → C</code>),
+      noví čtenáři vidí D, staří dál B; 5) po <strong>grace period</strong> uvolni B. Kroky 1–4 jsou triviální,
+      těžký je krok 5 – RCU „převádí škálovatelnost na garbage collection“.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P4</span> Proč se ke čtení ukazatele používá rcu_dereference() místo prostého čtení?</summary>
+    <div class="odpoved">
+      <p>Prosté čtení je nebezpečné: 1) na <strong>DEC Alpha</strong> může proběhnout dependent-load reordering
+      (čtení ukazatele až po čtení skrz něj); 2) kompilátor může vynechat opětovné načtení a použít starou hodnotu;
+      3) kompilátor může <code>cptr</code> načíst vícekrát a použít různé hodnoty. <code>rcu_dereference()</code>
+      všem třem hazardům brání kompilátorovou a paměťovou bariérou.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P4</span> Rozdíl QSBR vs general-purpose RCU.</summary>
+    <div class="odpoved">
+      <p><strong>QSBR:</strong> prázdné <code>rcu_read_lock/unlock</code> → <strong>nulová režie čtení</strong>,
+      ale vlákna musí periodicky procházet klidovým stavem a značit se offline kolem blokujících volání; funguje
+      jen na <strong>64 bitech</strong> (čítač nesmí přetéct). <strong>General-purpose:</strong> <strong>neomezuje
+      strukturu aplikace</strong>, nepotřebuje <code>rcu_quiescent_state</code> ani off/online, podporuje <strong>vnořování</strong>,
+      nemá problém s přetečením (1bitový čítač fáze, dvoufázová grace period kvůli jednomu rohovému případu), ale
+      platí <strong>jednu paměťovou bariéru</strong> na čtecí sekci.</p>
+    </div>
+  </details>
+
+  <details class="otazka">
+    <summary><span class="q-tag">P4</span> Co je transakční paměť a jaký je rozdíl HTM vs STM?</summary>
+    <div class="odpoved">
+      <p>Blok kódu se provede jako <strong>atomická transakce</strong> – buď se promítnou všechny změny, nebo se
+      transakce zruší a zopakuje při konfliktu (optimistická synchronizace, bez ručního skládání zámků a bez
+      deadlocků). <strong>HTM</strong> detekuje konflikty hardwarem přes cache koherenci (Intel TSX) – rychlé, ale
+      omezené kapacitou cache; <strong>STM</strong> řeší konflikty softwarově (verzování, logy) – bez HW limitů, ale s vyšší režií.</p>
+    </div>
+  </details>
+
+  <div class="box pojmy">
+    <p class="box-title">🔑 Klíčové pojmy</p>
+    <dl class="pojmy-list">
+      <dt>Kritická sekce</dt><dd>Kód, který smí v jeden okamžik vykonávat nanejvýš jedno vlákno.</dd>
+      <dt>Atomická operace (CAS)</dt><dd>Read-modify-write atomický i na úrovni sběrnice (<code>cmpxchg</code>); 19–266× pomalejší než neatomický přístup.</dd>
+      <dt>Memory ordering</dt><dd>relaxed &lt; consume &lt; acquire/release &lt; acq_rel &lt; seq_cst; acquire/release vytváří happens-before.</dd>
+      <dt>Bariéra (fence)</dt><dd>Instrukce uspořádávající paměťové operace; plná (<code>mfence</code>) vs slabá (<code>lfence</code>); <code>smp_mb()</code> obal; <code>barrier()</code> jen kompilátorová.</dd>
+      <dt>Spinlock vs mutex</dt><dd>Spinlock busy-waituje (jádro OS, přerušení); mutex umí uspat přes plánovač.</dd>
+      <dt>Futex</dt><dd>Atomický čítač v user-space + fronta v jádře; do jádra jen při kontenci.</dd>
+      <dt>Uncontended vs contended</dt><dd>Nezahlcený: drahý Lock (~257 cyklů), levný Unlock. Zahlcený: drahý Lock i Unlock.</dd>
+      <dt>RW-lock</dt><dd>Více čtenářů současně, zápis blokuje všechny; škáluje špatně kvůli atomikám.</dd>
+      <dt>RCU</dt><dd>Read-side bez atomik; copy → publish → grace period → free; „škálovatelnost → garbage collection“.</dd>
+      <dt>Grace period</dt><dd>Interval čekaný <code>synchronize_rcu()</code>; končí, až každé CPU prošlo klidovým stavem.</dd>
+      <dt>QSBR / general-purpose</dt><dd>QSBR: nulová režie čtení, ale klidové stavy a 64 bitů. General-purpose: jedna bariéra, vnořování, bez omezení struktury.</dd>
+      <dt>Transakční paměť</dt><dd>Atomická transakce s abort/retry; HTM (HW přes cache koherenci) vs STM (SW).</dd>
+    </dl>
+  </div>
+
+  <div class="box shrnuti">
+    <p class="box-title">📌 Co si zapamatovat</p>
+    <ul>
+      <li>Naivní busy-wait zámek je rozbitý <strong>6 způsoby</strong>; opravují ho atomiky (CAS), <code>volatile</code>, kompilátorové a paměťové bariéry, uspání přes OS.</li>
+      <li>Atomiky jsou <strong>19–266× pomalejší</strong> (potřebují výhradní cache-line, případně broadcast); jeden sdílený řádek serializuje stroj, per-CPU data škálují.</li>
+      <li><code>barrier()</code> = jen kompilátorová bariéra; <code>mfence</code>/<code>lfence</code>/<code>smp_mb()</code> = hardwarové. x86 přeskupuje stores za loads (TSO).</li>
+      <li>Mutex = atomiky; kernel semafor platí ~100cyklový syscall vždy → Linux používá <strong>futex</strong> (do jádra jen při kontenci).</li>
+      <li>Pro read-mostly zátěž: mutex serializuje i čtenáře, RW-lock <strong>škáluje špatně</strong> (padá na ~1×10⁶ čtení/s).</li>
+      <li><strong>RCU</strong>: čtenáři bez režie a bez atomik, aktualizátor neblokuje čtenáře; uvolnění objektu až po <strong>grace period</strong>.</li>
+      <li><strong>QSBR</strong> = nulová režie čtení (klidové stavy, 64 bitů); <strong>general-purpose</strong> = jedna bariéra, vnořování, dvoufázová grace period.</li>
+      <li>RCU škáluje téměř lineárně na stovky/tisíce CPU; vs RW-lock i vs reference counting vyhrává na čtecí straně, prohrává na write-side (čeká na grace period).</li>
+    </ul>
+  </div>
+
+  <footer class="page-foot">
+    <span><a href="03-benchmarking-statistika-wcet.html">← Předchozí: Benchmarking, statistika, WCET</a></span>
+    <span><a href="05-pamet-cache-numa.html">Další: Paměť a cache →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

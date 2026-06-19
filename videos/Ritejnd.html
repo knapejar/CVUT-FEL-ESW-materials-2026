@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Ritejnd — immersive video</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg-top:#13243a; --bg-bot:#070d12; --panel:#0e2230; --text:#f2f6ee; --muted:#9bb39a;
+    --accent:#FFC247; --accent2:#FF8A3D; --reachable:#7fe0c0; --shared:#9fb0c8; --retained:#ffd86b;
+    --danger:#FF5A5A; --tracing:#ff7b5c; --sampling:#6fc9ff; --ink:#101c12; --border:#1b3a30;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg-bot);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center}
+  #topbar{width:100%;display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:13px}
+  #topbar .title{font-weight:800}
+  #topbar .badge{background:rgba(255,194,71,.16);border:1px solid rgba(255,194,71,.4);color:var(--accent);padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  #topbar .hints{margin-left:auto;color:var(--muted);font-size:12px}
+  #stagewrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+  #stage{position:relative;width:min(96vw,calc((100vh - 150px)*16/9));aspect-ratio:16/9;background:#04090e;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  #stage canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+  #subtitle{position:absolute;left:0;right:0;bottom:0;padding:0 6% 4.5%;min-height:20%;display:flex;align-items:flex-end;justify-content:center;text-align:center;
+    background:linear-gradient(to top,rgba(0,0,0,.78),rgba(0,0,0,.34) 55%,transparent);
+    font-weight:800;font-size:clamp(15px,2.45vw,30px);line-height:1.25;text-shadow:0 2px 10px rgba(0,0,0,.85);pointer-events:none}
+  .kw{position:relative;display:inline-block;white-space:nowrap;margin:0 .14em;transition:transform .12s ease}
+  .kw .wb{opacity:.5}
+  .kw .wf{position:absolute;left:0;top:0;width:0;overflow:hidden;color:var(--accent);text-shadow:0 0 16px rgba(255,194,71,.9)}
+  .kw.active{transform:scale(1.06) translateY(-1px)}
+  .kw.active .wf{text-shadow:0 0 16px rgba(255,194,71,.95)}
+  #seclabel{position:absolute;top:3.5%;left:4%;color:#cdebb9;font-weight:700;font-size:clamp(11px,1.5vw,18px);letter-spacing:2px;text-transform:uppercase;opacity:0;text-shadow:0 2px 8px #000;transition:opacity .5s}
+  #bigplay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:radial-gradient(circle at 50% 42%,rgba(30,48,40,.85),rgba(4,9,12,.93));transition:opacity .5s;text-align:center;padding:6%}
+  #bigplay.hidden{opacity:0;pointer-events:none}
+  #bigplay .pbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(90deg,#FFC247,#FF8A3D);color:#070d12;display:flex;align-items:center;justify-content:center;font-size:38px;box-shadow:0 10px 44px rgba(255,138,61,.5)}
+  #bigplay .hint{max-width:600px;font-size:14px;color:#e7f4dd} #bigplay .hint small{display:block;margin-top:6px;color:var(--muted)}
+  #controls{width:min(96vw,calc((100vh - 150px)*16/9));display:flex;align-items:center;gap:10px;padding:9px 4px}
+  #controls button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;width:38px;height:34px;font-size:15px;cursor:pointer}
+  #controls .time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  #seek{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,0%),#234255 var(--p,0%));outline:none}
+  #seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  #err{position:absolute;left:8px;top:8px;z-index:9;color:#ff9b9b;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="title">Ritejnd</span>
+    <span class="badge">IMMERSIVE VIDEO 🌴</span>
+    <span class="hints">space = play/pauza · ←/→ = ±5s · R = restart</span>
+  </div>
+  <div id="stagewrap"><div id="stage">
+    <div id="seclabel"></div>
+    <div id="subtitle"></div>
+    <div id="bigplay">
+      <div class="pbtn">▶</div>
+      <div class="hint">Retained vs shallow size, dominator tree a profiling — výuková lyric-video k B4M36ESW. Zlatý heap-yard, kde objekty visí na řetězech ke GC rootům; co viselo jen na tobě, padá s tebou.<small>~3 min 14 s · zpívaná videolekce · PixiJS</small></div>
+    </div>
+    <div id="err"></div>
+  </div></div>
+  <div id="controls">
+    <button id="btnPlay">▶</button><button id="btnRestart">⟲</button>
+    <span class="time" id="tCur">0:00</span>
+    <input type="range" id="seek" min="0" max="193.560" step="0.01" value="0">
+    <span class="time" id="tDur">3:14</span>
+  </div>
+  <audio id="player" preload="auto"></audio>
+
+  <script src="vendor/pixi.min.js"></script>
+  <script src="vendor/pixi-filters.js"></script>
+  <script src="karaoke-ritejnd.js"></script>
+  <script>(function(){ 'use strict';
+  const showErr=(m)=>{const e=document.getElementById('err');if(!e)return;e.style.display='block';e.textContent+=m+"\n";};
+  window.addEventListener('error',e=>showErr('ERR: '+(e&&e.message?e.message:e)));
+  if(!window.PIXI){showErr('PixiJS failed to load');return;}
+  if(!PIXI.filters||!PIXI.filters.GlowFilter){showErr('pixi-filters not loaded after pixi');}
+
+  // ============================================================
+  //  0) AUDIO + KARAOKE DATA
+  // ============================================================
+  const player=document.getElementById('player');
+  try{ player.src=encodeURI('../pisnicky/Ritejnd.mp3'); }catch(e){ showErr('audio src: '+e.message); }
+  const KARAOKE=window.KARAOKE||{duration_ms:186700,lines:[]};
+  const LINES=KARAOKE.lines||[];
+  const STAGE_DUR=193.560;            // MP3 / stage length (fallback when audio.duration unavailable)
+
+  // ============================================================
+  //  1) MATH / EASING HELPERS (§2 single source of truth)
+  // ============================================================
+  const TAU=Math.PI*2;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+  const lerp=(a,b,p)=>a+(b-a)*p;
+  function lerp2(p0,p1,p){ return [p0[0]+(p1[0]-p0[0])*p, p0[1]+(p1[1]-p0[1])*p]; }
+  const ph=(t,a,b)=> (b===a)?(t>=b?1:0):clamp01((t-a)/(b-a));
+  const easeOut=p=>{p=clamp01(p);return 1-(1-p)*(1-p);};            // quadratic out
+  const easeOutCubic=p=>{p=clamp01(p);return 1-Math.pow(1-p,3);};
+  const easeIn=p=>{p=clamp01(p);return p*p;};
+  const easeInOut=p=>{p=clamp01(p);return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+  function easeOutBack(p){p=clamp01(p);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);}
+  function triWave(t,a,b){const u=ph(t,a,b);return 1-Math.abs(2*u-1);}
+  function lerpColor(a,b,p){const ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
+    return((lerp(ar,(b>>16)&255,p)|0)<<16)|((lerp(ag,(b>>8)&255,p)|0)<<8)|(lerp(ab,b&255,p)|0);}
+  // Reggae groove / SKANK (74 BPM laid-back)
+  const BPM=74;
+  const beat=t=>0.5+0.5*Math.sin(t*TAU*BPM/60);
+  const skank=t=>0.5+0.5*Math.sin(t*TAU*BPM/60 - Math.PI/2);  // off-beat 2-and-4
+  // GLOBAL groove gates (default 1.0; S22b ramps both to 0 over 186.70->189.5)
+  function beatAmp(t){ return 1-easeInOut(ph(t,186.70,189.5)); }
+  function skankAmp(t){ return 1-easeInOut(ph(t,186.70,189.5)); }
+  function swaySkank(t){ return skankAmp(t)*Math.sin(t*TAU*BPM/60 - Math.PI/2); }
+
+  // ============================================================
+  //  2) PALETTE
+  // ============================================================
+  const C={
+    bgTop:0x13243a, bgBot:0x070d12, bgTopCold:0x102234, bgBotCold:0x070d12, bgTopDusk:0x2a1d22,
+    panel:0x0e2230, accent:0xFFC247, accent2:0xFF8A3D, reachable:0x7fe0c0, shared:0x9fb0c8,
+    retained:0xffd86b, danger:0xff5a5a, tracing:0xff7b5c, sampling:0x6fc9ff,
+    text:0xf2f6ee, muted:0x9bb39a, ink:0x101c12, white:0xffffff
+  };
+  // Canonical world coords (§2 recurring motifs)
+  const W=1280,H=720;
+  const HERO_POS=[520,300];
+  const ROOT_L=[300,70], ROOT_M=[640,70], ROOT_R=[980,70];
+  const N_OWNED=12, N_ROOTS=3, N_THREADS=12, N_LEDGER=8;
+  const SHARED=7;                 // owned cabin 7 has a 2nd chain up to ROOT_R
+  const SAG=18;
+  const ownX=j=>360+(j%6)*120;    // cols 360,480,600,720,840,960
+  const ownY=j=>(j<6?470:580);
+  const ownPos=j=>[ownX(j),ownY(j)];
+  const threadX=j=>150+j*88;
+  const NONPIN=[0,1,2,3,4,5,6,8,9,10,11]; // all owned except shared(7) — the "falling" set j!=7
+
+  // ============================================================
+  //  3) PIXI APP + LAYERS (REFERENCE §1)
+  // ============================================================
+  const app=new PIXI.Application({width:W,height:H,antialias:true,backgroundColor:C.bgBot,backgroundAlpha:1,resolution:1,powerPreference:'high-performance'});
+  app.ticker.maxFPS=60;
+  document.getElementById('stage').insertBefore(app.view, document.getElementById('seclabel'));
+
+  const cameraRoot=new PIXI.Container();
+  const bgLayer=new PIXI.Container();
+  const sceneLayer=new PIXI.Container();
+  const fxLayer=new PIXI.Container();
+  const overlayFx=new PIXI.Container();
+  cameraRoot.addChild(bgLayer,sceneLayer,fxLayer,overlayFx);
+  app.stage.addChild(cameraRoot);
+  cameraRoot.pivot.set(W/2,H/2);
+  cameraRoot.position.set(W/2,H/2);
+  overlayFx.filterArea=new PIXI.Rectangle(0,0,W,H);
+  overlayFx.filters=[];
+
+  // ---------- F-guard helper (REFERENCE §7) ----------
+  const F=(window.PIXI&&PIXI.filters)||{};
+  function hasF(name){ return !!F[name]; }
+
+  // overlayFx: ordered name-keyed owned filter list (§2 carried-filter ownership)
+  const _ofx=[];
+  function addOverlayFx(name,filter){
+    if(!filter) return;
+    if(_ofx.some(o=>o.name===name)) return;
+    _ofx.push({name,filter});
+    overlayFx.filters.push(filter);
+  }
+  function removeOverlayFx(name){
+    const i=_ofx.findIndex(o=>o.name===name);
+    if(i<0) return;
+    const f=_ofx[i].filter;
+    _ofx.splice(i,1);
+    const j=overlayFx.filters.indexOf(f);
+    if(j>=0) overlayFx.filters.splice(j,1);
+  }
+  function hasOverlayFx(name){ return _ofx.some(o=>o.name===name); }
+
+  // ============================================================
+  //  3b) NULL-SAFE HERO IMAGE PIPELINE (storyboard §8)
+  //  Optional keyed PNGs layer low-alpha ON TOP of always-drawn vector actors. With NO
+  //  images (window.ASSETS undefined — no assets-ritejnd.js tag) the video is a COMPLETE
+  //  vector masterpiece. Loader is fire-and-forget; the GOLDEN RULE is unaffected.
+  // ============================================================
+  const IMG={};
+  function tryLoad(slug){
+    return new Promise(res=>{
+      try{
+        const src=(window.ASSETS&&window.ASSETS[slug]);
+        if(!src){ res(null); return; }
+        const img=new Image(); img.decoding='async';
+        img.onload=()=>{ try{ res(PIXI.Texture.from(img)); }catch(e){ res(null); } };
+        img.onerror=()=>res(null);
+        img.src=src;
+      }catch(e){ res(null); }
+    });
+  }
+  function heroSprite(parent,slug,x,y,targetW,alpha){
+    if(!IMG[slug]) return null;
+    const tex=IMG[slug]; const s=new PIXI.Sprite(tex); s.anchor.set(0.5);
+    s.position.set(x,y);
+    const tw=tex.width||1; let sc=targetW/tw; s.scale.set(sc);
+    s.alpha=(alpha==null?0.95:alpha);
+    parent.addChild(s);
+    return s;
+  }
+  (function loadHeroImages(){
+    if(!window.PIXI) return;
+    const SLUGS=['object-cabin','gc-root-post','hanging-chain','heap-dump-slab','hourglass-deadtag','yard-bg'];
+    SLUGS.forEach(slug=>{ tryLoad(slug).then(tex=>{ if(tex) IMG[slug]=tex; }); });
+  })();
+
+  // ============================================================
+  //  4) TEXTURES + TEXT FACTORY
+  // ============================================================
+  function radialTex(hex){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,col);gr.addColorStop(.45,col+'aa');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,128,128);return PIXI.Texture.from(c);}
+  const GLOW={gold:radialTex(0xFFE2A0),amber:radialTex(0xFFB85C),green:radialTex(0x7fe0c0),retained:radialTex(0xffd86b),white:radialTex(0xffffff),red:radialTex(0xff8a8a),blue:radialTex(0x6fc9ff),shared:radialTex(0x9fb0c8)};
+  function glow(texKey,x,y,scale,alpha,tint){const s=new PIXI.Sprite(GLOW[texKey]);s.anchor.set(.5);s.x=x;s.y=y;s.scale.set(scale);s.alpha=alpha;s.blendMode=PIXI.BLEND_MODES.ADD;if(tint!=null)s.tint=tint;return s;}
+  function lineTex(hex){const c=document.createElement('canvas');c.width=64;c.height=8;const g=c.getContext('2d');
+    const col='#'+hex.toString(16).padStart(6,'0');const gr=g.createLinearGradient(0,0,0,8);
+    gr.addColorStop(0,col+'00');gr.addColorStop(.5,col);gr.addColorStop(1,col+'00');g.fillStyle=gr;g.fillRect(0,0,64,8);return PIXI.Texture.from(c);}
+  const TRAIL={gold:lineTex(0xFFD86B),retained:lineTex(0xffd86b),red:lineTex(0xff6a6a),blue:lineTex(0x6fc9ff),shared:lineTex(0x9fb0c8)};
+  const _dotG=new PIXI.Graphics().beginFill(0xffffff,1).drawCircle(0,0,8).endFill();
+  const DOT_TEX=app.renderer.generateTexture(_dotG,{resolution:2}); _dotG.destroy();
+  const _cabG=new PIXI.Graphics().beginFill(0xffffff,1).drawRoundedRect(0,0,14,10,2).endFill();
+  const CAB_TEX=app.renderer.generateTexture(_cabG,{resolution:2}); _cabG.destroy();
+  function noiseTex(){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+    const img=g.createImageData(256,256);for(let i=0;i<img.data.length;i+=4){img.data[i]=Math.random()*255;img.data[i+1]=Math.random()*255;img.data[i+2]=128;img.data[i+3]=255;}
+    g.putImageData(img,0,0);return PIXI.Texture.from(c);}
+  const NOISE_TEX=noiseTex();
+
+  function txt(str,size,color,weight){const t=new PIXI.Text(str,{fontFamily:'Arial, Helvetica, sans-serif',fontSize:size,fill:color,fontWeight:weight||'700',align:'center',
+    dropShadow:true,dropShadowColor:0x000000,dropShadowBlur:4,dropShadowAlpha:.5,dropShadowDistance:2});t.anchor.set(.5);t.resolution=2;return t;}
+  function legible(t){
+    const arr=[];
+    if(hasF('OutlineFilter')) arr.push(new F.OutlineFilter(2,C.ink,0.25));
+    if(hasF('DropShadowFilter')) arr.push(new F.DropShadowFilter({offset:{x:2,y:2},blur:4,alpha:0.5,color:0x000000,quality:2}));
+    if(arr.length) t.filters=arr;
+    return t;
+  }
+
+  // ============================================================
+  //  5) BACKGROUND (sky gradient + far cabins + dust + reflection)
+  // ============================================================
+  const skyG=new PIXI.Graphics(); bgLayer.addChild(skyG);
+  let _skyKey='';
+  function drawSky(topCol,botCol){const key=topCol+'_'+botCol;if(key===_skyKey)return;_skyKey=key;
+    skyG.clear();const N=40;for(let i=0;i<N;i++){const tt=i/(N-1);const cc=lerpColor(topCol,botCol,tt);
+      skyG.beginFill(cc,1).drawRect(0,H*i/N,W,H/N+1).endFill();}}
+  drawSky(C.bgTop,C.bgBot);
+  const bgGrade=new PIXI.ColorMatrixFilter(); bgLayer.filters=[bgGrade];
+  const bgIntent={godray:false,kawase:false};
+
+  // optional low-alpha yard-bg image behind the gradient (null-safe; attaches when loaded)
+  (function(){ const tryAttach=()=>{ if(IMG['yard-bg']&&!bgLayer.__yardBg){ const s=heroSprite(bgLayer,'yard-bg',W/2,H/2,W,0.22); if(s){ bgLayer.setChildIndex(s,1); bgLayer.__yardBg=s; } } };
+    let n=0; const iv=setInterval(()=>{ tryAttach(); if(bgLayer.__yardBg||++n>40) clearInterval(iv); },200); })();
+
+  // static far-cabin horizon silhouette (cacheAsBitmap)
+  const farCabins=new PIXI.Graphics();
+  for(let x=100;x<=1180;x+=78){ const w=34+(x%40); farCabins.lineStyle(0).beginFill(0x102a1e,0.5).drawRoundedRect(x,118,w,22,3).endFill();
+    farCabins.lineStyle(1.4,0x163826,0.5).moveTo(x,118).lineTo(x+w/2,108).lineTo(x+w,118); }
+  bgLayer.addChild(farCabins); farCabins.cacheAsBitmap=true;
+
+  // tiling dust band (slow upward drift)
+  const dustTile=new PIXI.TilingSprite(GLOW.gold,W,H);
+  dustTile.alpha=0.05; dustTile.blendMode=PIXI.BLEND_MODES.ADD; dustTile.tint=0xFFE2A0;
+  dustTile.tileScale.set(2.2,2.2);
+  bgLayer.addChild(dustTile);
+
+  // reflection band (bottom)
+  const reflStrip=new PIXI.Graphics();
+  reflStrip.beginFill(0x13243a,0.18).drawRect(0,640,W,80).endFill();
+  bgLayer.addChild(reflStrip);
+  let reflF=null;
+  if(hasF('ReflectionFilter')){ reflF=new F.ReflectionFilter({mirror:true,boundary:0.0,amplitude:[0,4],waveLength:[40,120],alpha:[0.3,0.3],time:0}); reflStrip.filters=[reflF]; reflStrip.filterArea=new PIXI.Rectangle(0,640,W,80); }
+
+  // ============================================================
+  //  6) AMBIENT MOTES (persistent ParticleContainer)
+  // ============================================================
+  const MOTE_COUNT=220;
+  const motePC=new PIXI.ParticleContainer(MOTE_COUNT,{position:true,rotation:false,scale:true,alpha:true,tint:false},MOTE_COUNT,true);
+  fxLayer.addChild(motePC);
+  const motes=[];
+  for(let i=0;i<MOTE_COUNT;i++){const s=new PIXI.Sprite(GLOW.gold);s.anchor.set(0.5);s.tint=0xFFE2A0;s.blendMode=PIXI.BLEND_MODES.ADD;
+    s.x=Math.random()*W;s.y=Math.random()*H;s.scale.set(0.06+Math.random()*0.16);s.alpha=0;motePC.addChild(s);
+    motes.push({s,vx:(Math.random()-.5)*8,vy:-(5+Math.random()*16),phs:Math.random()*TAU,sp:0.5+Math.random()});}
+  let RT=0;
+  let moteEnvelope=0;
+  let moteVisibleRatio=1;
+
+  // spark bursts (recycled pool)
+  const sparks=[];
+  function burst(x,y,tint,count,speed,size){
+    for(let i=0;i<count;i++){const s=glow('white',x,y,(size||0.18),0.9,tint);fxLayer.addChild(s);
+      const a=Math.random()*TAU,v=speed*(0.4+Math.random());
+      sparks.push({s,vx:Math.cos(a)*v,vy:-Math.abs(Math.sin(a)*v)-v*0.4,life:0,max:0.8+Math.random()*1.0});}
+  }
+
+  // ============================================================
+  //  7) SHARED VECTOR ACTOR BUILDERS
+  // ============================================================
+  // an object "cabin": header eave (trapezoid) + a row of field windows, in a Graphics
+  function drawCabin(g,tone,rim,sc,fields,litFrac){
+    g.clear();
+    const w=46*sc,h=34*sc;
+    // body
+    g.beginFill(C.ink,0.92).lineStyle(2.2,rim,1).drawRoundedRect(-w,-h*0.4,w*2,h*1.1,5).endFill();
+    // header eave (top trapezoid)
+    g.beginFill(tone,0.95).lineStyle(2,rim,1);
+    g.moveTo(-w-4,-h*0.4).lineTo(w+4,-h*0.4).lineTo(w-2,-h*0.78).lineTo(-w+2,-h*0.78).closePath().endFill();
+    // stilts
+    g.lineStyle(2.4,rim,0.85).moveTo(-w*0.7,h*0.7).lineTo(-w*0.7,h*1.05); g.moveTo(w*0.7,h*0.7).lineTo(w*0.7,h*1.05);
+    // field windows row
+    const nf=fields||4; const fw=(w*1.7)/nf;
+    for(let i=0;i<nf;i++){ const fx=-w*0.85+i*fw+fw*0.5;
+      const lit=(litFrac==null?1:(i/nf<litFrac?1:0.18));
+      g.lineStyle(1.2,rim,0.8).beginFill(i%3===2?C.ink:tone, i%3===2?0.5:0.85*lit).drawRoundedRect(fx-fw*0.32,-h*0.2,fw*0.64,h*0.42,1.5).endFill();
+    }
+  }
+  // GC-root post (anchor at top)
+  function drawRootPost(g,glowOn){
+    g.clear();
+    g.beginFill(0x2a2418,1).lineStyle(2.4,C.accent2,1).drawRoundedRect(-14,-14,28,40,4).endFill();
+    g.beginFill(C.accent2,0.9).drawRoundedRect(-20,-22,40,12,3).endFill();
+    g.lineStyle(2,C.accent2,0.7).moveTo(0,26).lineTo(0,40);
+  }
+  // hanging chain rope (SimpleRope of 8 pts), top->bottom with sag + skank sway
+  function makeChain(tint){
+    const pts=[]; for(let i=0;i<8;i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(TRAIL.gold,pts); r.blendMode=PIXI.BLEND_MODES.ADD; r.tint=tint||C.accent; r.alpha=0.85;
+    r._pts=pts; return r;
+  }
+  function setChain(rope,from,to,t,sagMul){
+    const p=rope._pts; const sw=swaySkank(t)*6;
+    for(let i=0;i<p.length;i++){ const f=i/(p.length-1);
+      p[i].x=lerp(from[0],to[0],f)+sw*Math.sin(Math.PI*f);
+      p[i].y=lerp(from[1],to[1],f)+(SAG*(sagMul==null?1:sagMul))*Math.sin(Math.PI*f);
+    }
+  }
+  // SimpleRope arbitrary path trail
+  function makeTrail(tint,n){
+    const tx = tint===0xff6a6a?TRAIL.red : tint===0x6fc9ff?TRAIL.blue : tint===0x9fb0c8?TRAIL.shared : TRAIL.gold;
+    const pts=[]; for(let i=0;i<(n||10);i++) pts.push(new PIXI.Point(0,0));
+    const r=new PIXI.SimpleRope(tx,pts); r.blendMode=PIXI.BLEND_MODES.ADD; r.tint=tint; r.alpha=0;
+    r._pts=pts; return r;
+  }
+  function setRopeAlongPath(rope,path){
+    const p=rope._pts; const segs=path.length-1;
+    for(let i=0;i<p.length;i++){
+      const f=i/(p.length-1)*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si;
+      p[i].x=lerp(path[si][0],path[si+1][0],lf); p[i].y=lerp(path[si][1],path[si+1][1],lf);
+    }
+  }
+  function pathPos(path,fr){ const segs=path.length-1; const f=fr*segs; const si=Math.min(segs-1,Math.floor(f)); const lf=f-si; return [lerp(path[si][0],path[si+1][0],lf),lerp(path[si][1],path[si+1][1],lf)]; }
+  // hourglass vector
+  function drawHourglass(g,sc,fill,dead){
+    g.clear(); const w=22*sc,h=34*sc;
+    g.lineStyle(3,dead?0x6b5a3a:C.accent,1).beginFill(0x13243a,0.3);
+    g.moveTo(-w,-h).lineTo(w,-h).lineTo(2,0).lineTo(w,h).lineTo(-w,h).lineTo(-2,0).closePath().endFill();
+    g.lineStyle(0).beginFill(dead?0x6b5a3a:C.accent,0.85);
+    const bf=clamp01(fill); g.moveTo(-w*0.85*bf,h*0.9).lineTo(w*0.85*bf,h*0.9).lineTo(1,h*0.1).lineTo(-1,h*0.1).closePath();
+    g.endFill();
+    if(!dead){ const tf=clamp01(1-fill); g.beginFill(C.accent,0.85);
+      g.moveTo(-w*0.85*tf,-h*0.9).lineTo(w*0.85*tf,-h*0.9).lineTo(1,-h*0.05*tf).lineTo(-1,-h*0.05*tf).closePath().endFill(); }
+    if(dead){ g.lineStyle(1,0x6b5a3a,0.6); for(let i=0;i<3;i++){ g.moveTo(-w,-h).lineTo(-w+8+i*4,-h+12+i*4); } } // cobweb
+    g.lineStyle(4,dead?0x6b5a3a:C.accent2,1).moveTo(-w-2,-h-3).lineTo(w+2,-h-3); g.moveTo(-w-2,h+3).lineTo(w+2,h+3);
+  }
+  // a worker-thread figure with a stack of plates
+  function drawThread(g,tone,plates){
+    g.clear();
+    g.beginFill(tone,1).drawCircle(0,-14,9).endFill();
+    g.beginFill(tone,0.9).lineStyle(0).moveTo(-14,6).quadraticCurveTo(0,-6,14,6).lineTo(12,14).lineTo(-12,14).closePath().endFill();
+    const np=plates==null?3:plates;
+    for(let i=0;i<np;i++){ g.beginFill(C.sampling,0.7).lineStyle(1,C.white,0.4).drawEllipse(0,-26-i*6,12,3).endFill(); }
+  }
+
+  // ============================================================
+  //  8) PERSISTENT YARD (yardLayer) — root posts, hero, 12 owned cabins, chains
+  // ============================================================
+  const yardLayer=new PIXI.Container(); sceneLayer.addChild(yardLayer);
+  const sceneRoot=new PIXI.Container(); sceneLayer.addChild(sceneRoot);
+
+  // chains drawn under cabins (world space)
+  const chainLayer=new PIXI.Container(); yardLayer.addChild(chainLayer);
+  // master chain ROOT_L -> HERO
+  const masterChain=makeChain(C.accent); chainLayer.addChild(masterChain);
+  // owned chains HERO -> ownPos(j)
+  const ownedChains=[]; for(let j=0;j<N_OWNED;j++){ const ch=makeChain(j===SHARED?C.shared:C.accent); chainLayer.addChild(ch); ownedChains.push(ch); }
+  // shared 2nd chain ROOT_R -> cabin7
+  const sharedChain=makeChain(C.shared); chainLayer.addChild(sharedChain);
+
+  // root posts
+  const rootPosts=[]; [ROOT_L,ROOT_M,ROOT_R].forEach((rp,i)=>{ const cont=new PIXI.Container(); cont.position.set(rp[0],rp[1]); yardLayer.addChild(cont);
+    const g=new PIXI.Graphics(); drawRootPost(g); cont.addChild(g); const gl=glow('amber',0,-4,0.7,0.7,0xFFB85C); cont.addChild(gl);
+    const lbl=txt('GC root',12,C.muted,'700'); lbl.position.set(0,-34); cont.addChild(lbl); rootPosts.push({cont,g,gl,lbl}); });
+
+  // hero cabin
+  const hero=new PIXI.Container(); hero.position.set(HERO_POS[0],HERO_POS[1]); yardLayer.addChild(hero);
+  const heroG=new PIXI.Graphics(); hero.addChild(heroG);
+  hero._tone=C.accent; hero._sc=0.9; hero._fields=5;
+  if(hasF('GlowFilter')){ hero._glow=new F.GlowFilter({distance:16,outerStrength:1.5,innerStrength:0,color:C.accent,quality:0.3}); hero.filters=[hero._glow]; }
+  const heroTag=txt('',16,C.accent,'800'); heroTag.position.set(0,-44); hero.addChild(heroTag);
+
+  // 12 owned cabins
+  const owned=[]; for(let j=0;j<N_OWNED;j++){ const cont=new PIXI.Container(); cont.position.set(ownX(j),ownY(j)); yardLayer.addChild(cont);
+    const g=new PIXI.Graphics(); cont.addChild(g); owned.push({j,cont,g,tone:(j===SHARED?C.shared:C.accent),sc:0.55,fields:3,baseY:ownY(j)}); }
+
+  // godray on bg
+  let godrayF=null;
+  if(hasF('GodrayFilter')){ godrayF=new F.GodrayFilter({angle:35,gain:0.4,lacunarity:2.2,time:0,parallel:true}); }
+
+  // analysis console HUD (docked right)
+  const consoleHUD=new PIXI.Container(); yardLayer.addChild(consoleHUD); consoleHUD.position.set(1320,0); consoleHUD.alpha=0;
+  const consoleG=new PIXI.Graphics(); consoleHUD.addChild(consoleG);
+  const consTitle=txt('MAT / VisualVM / YourKit',13,C.muted,'700'); consTitle.anchor.set(0,0.5); consTitle.position.set(990,124); consoleHUD.addChild(consTitle);
+  const consShallow=txt('Shallow',14,C.reachable,'800'); consShallow.anchor.set(0,0.5); consShallow.position.set(990,150); consoleHUD.addChild(consShallow);
+  const consRetained=txt('Retained',14,C.retained,'800'); consRetained.anchor.set(0,0.5); consRetained.position.set(1120,150); consoleHUD.addChild(consRetained);
+  const consBars=new PIXI.Graphics(); consoleHUD.addChild(consBars);
+  let consoleDock=0;     // 0..1 dock progress (set per scene)
+  let consoleMode='bars'; // 'bars' | 'ledger'
+  let consoleShallowFrac=0.15, consoleRetainedFrac=0.6, consoleRetainedPending=false;
+
+  // heap-dump slab HUD (top-left)
+  const slabHUD=new PIXI.Container(); yardLayer.addChild(slabHUD); slabHUD.position.set(140,120); slabHUD.alpha=0;
+  const slabG=new PIXI.Graphics(); slabHUD.addChild(slabG);
+  const slabLbl=txt('heap dump',13,C.muted,'700'); slabLbl.position.set(0,58); slabHUD.addChild(slabLbl);
+  let slabThumb=null;
+
+  // scale (hanging measuring scale, left)
+  const scaleHUD=new PIXI.Container(); yardLayer.addChild(scaleHUD); scaleHUD.position.set(180,260); scaleHUD.alpha=0;
+  const scaleG=new PIXI.Graphics(); scaleHUD.addChild(scaleG);
+  const scaleNum=txt('—',20,C.accent,'900'); scaleNum.position.set(0,44); scaleHUD.addChild(scaleNum);
+
+  // ============================================================
+  //  9) CAMERA RIG (all camera state is f(audio.currentTime))
+  // ============================================================
+  let camDollyScale=1;
+  let camPivotX=W/2,camPivotY=H/2;
+  const SHAKE_DECAY=0.0009;
+  function shakeEnv(t,t0,amp){ return t<t0?0:amp*Math.pow(SHAKE_DECAY,t-t0); }
+  function shakeAmp(t){
+    let a=0;
+    a+=shakeEnv(t,150.84,4);    // S19 max-režie pin
+    return a<0.05?0:a;
+  }
+  function hash01(n){ const s=Math.sin(n)*43758.5453123; return s-Math.floor(s); }
+  function shakeJitter(t,axis){ const n=Math.floor(t*1000)*0.001*137.13+axis*57.31; return hash01(n)-0.5; }
+  function updateCamera(t,dt){
+    const bAmp=beatAmp(t);
+    let sc=(1+bAmp*0.010*beat(t))*camDollyScale;
+    cameraRoot.scale.set(sc);
+    cameraRoot.pivot.set(camPivotX,camPivotY);
+    let px=camPivotX, py=camPivotY;
+    const sa=shakeAmp(t);
+    if(sa>0){ px+=shakeJitter(t,0)*sa; py+=shakeJitter(t,1)*sa; }
+    cameraRoot.position.set(px,py);
+  }
+
+  // ============================================================
+  //  10) SCENE MANAGER
+  // ============================================================
+  const SC=[];
+  function scene(t0,t1,name,sec,build){ SC.push({t0,t1,name,sec,build,inst:null,lastLocal:-1,fired:null}); }
+  let activeIdx=-1;
+  function setSceneByIndex(i){
+    if(i===activeIdx) return;
+    const prev=SC[activeIdx];
+    if(prev&&prev.inst){ try{ if(prev.inst.destroy) prev.inst.destroy(); sceneRoot.removeChild(prev.inst.c);prev.inst.c.destroy({children:true});}catch(e){} prev.inst=null; }
+    activeIdx=i;
+    const s=SC[i];
+    if(s&&!s.inst){ s.fired=new Set(); s.lastLocal=-1; s.inst=s.build(s); s.inst.c.alpha=0; sceneRoot.addChild(s.inst.c); }
+  }
+
+  // ============================================================
+  //  11) SHARED FILTER INSTANCES (built once)
+  // ============================================================
+  const FILT={};
+  FILT._shockFire=0;
+  if(hasF('ShockwaveFilter')) FILT.shock=new F.ShockwaveFilter([640,360],{amplitude:24,wavelength:140,speed:520,brightness:1.1,radius:-1},0);
+  if(hasF('ColorOverlayFilter')) FILT.flash=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashRed=new F.ColorOverlayFilter(C.danger,0);
+  if(hasF('ColorOverlayFilter')) FILT.flashWarm=new F.ColorOverlayFilter(C.accent2,0);
+  if(hasF('ColorOverlayFilter')) FILT.strobe=new F.ColorOverlayFilter(0xffffff,0);
+  if(hasF('ZoomBlurFilter')) FILT.zoom=new F.ZoomBlurFilter({strength:0,center:[640,360],innerRadius:0});
+  if(hasF('ZoomBlurFilter')) FILT.zoomHeld=new F.ZoomBlurFilter({strength:0,center:[520,300],innerRadius:60});
+  if(hasF('TwistFilter')) FILT.twist=new F.TwistFilter({radius:600,angle:0,offset:[640,360],padding:20});
+  else FILT.twistDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('BulgePinchFilter')) FILT.bulge=new F.BulgePinchFilter({center:[0.75,0.5],radius:300,strength:0});
+  else FILT.bulgeDisp=new PIXI.DisplacementFilter(new PIXI.Sprite(NOISE_TEX),0);
+  if(hasF('KawaseBlurFilter')) FILT.kawase=new F.KawaseBlurFilter({strength:0,quality:3,pixelSize:1});
+  if(hasF('CRTFilter')) FILT.crt=new F.CRTFilter({curvature:1.0,lineWidth:1.1,lineContrast:0.25,vignetting:0.3,noise:0.1,time:0});
+  if(hasF('RGBSplitFilter')) FILT.rgb=new F.RGBSplitFilter({red:[0,0],green:[0,0],blue:[0,0]});
+
+  function sceneFlash(filter,enable){
+    if(!filter) return;
+    if(enable){ if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0)return; sceneRoot.filters=[filter]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);}
+    else { if(sceneRoot.filters && sceneRoot.filters.indexOf(filter)>=0) sceneRoot.filters=null; }
+  }
+
+  // ============================================================
+  //  YARD STATE (drop/retained cascade owned by scenes via flags)
+  // ============================================================
+  // dropEnv(j,t): 0 = home (hanging), 1 = fully fallen. Cabins j!=7 fall together on a cut.
+  // Each chorus / verse sets cutAt + cutBack windows. We expose a global function the
+  // active scene mutates via yardDrop.{active,cutAt,reformAt,reformEnd}.
+  const yardDrop={active:false,cutAt:0,dropDur:0.9,reformAt:0,reformEnd:0,heroFalls:true,includeShared:false,houseMode:false};
+  function dropEnvFor(j,t){
+    if(!yardDrop.active) return 0;
+    if(j===SHARED && !yardDrop.includeShared) return 0; // shared cabin never falls (dominator proof)
+    // re-form?
+    if(yardDrop.reformEnd>0 && t>=yardDrop.reformAt){
+      return 1-easeOut(ph(t,yardDrop.reformAt+j*0.05,yardDrop.reformAt+j*0.05+0.5));
+    }
+    if(t<yardDrop.cutAt) return 0;
+    return easeOutBack(ph(t,yardDrop.cutAt+j*0.02,yardDrop.cutAt+j*0.02+yardDrop.dropDur));
+  }
+
+  // hero re-skin state (HashMap fob etc.)
+  let heroSkin='cabin';  // 'cabin' | 'fob'
+  let heroFieldsLit=1;   // 0..1 for S3 field reveal
+
+  // ============================================================
+  //  RENDER HELPERS for persistent yard
+  // ============================================================
+  function renderYard(t,sec){
+    const sw=swaySkank(t);
+    // hero
+    drawCabin(heroG,hero._tone, C.accent2, hero._sc, hero._fields, heroFieldsLit);
+    if(hero._glow){ hero._glow.outerStrength=1.2+0.8*beat(t); }
+    heroTag.text = heroSkin==='fob' ? 'HashMap' : '';
+    heroTag.alpha = heroSkin==='fob'?1:0;
+    // hero bob on skank
+    hero.position.set(HERO_POS[0], HERO_POS[1]+sw*2);
+    // root posts glow on beat
+    rootPosts.forEach((rp,i)=>{ rp.gl.scale.set(0.6+0.15*beat(t-i*0.1)); });
+    // owned cabins (fall on cut)
+    for(const o of owned){ const j=o.j;
+      const de=dropEnvFor(j,t);
+      const bx=ownX(j), by=o.baseY;
+      o.cont.position.set(bx+sw*3*Math.sin(j), by + de*280 + sw*1.5);
+      o.cont.alpha=clamp01(1-de);
+      // shared cabin: grey when retained set is highlighted gold (during a drop window)
+      let tone=o.tone;
+      if(j===SHARED && yardDrop.active){ tone=C.shared; }
+      drawCabin(o.g, tone, j===SHARED?C.shared:C.accent2, o.sc, o.fields, 1);
+    }
+    // chains
+    setChain(masterChain,ROOT_L,[HERO_POS[0],HERO_POS[1]+sw*2],t,1);
+    masterChain.alpha = yardDrop.active && (t>=yardDrop.cutAt) && !(yardDrop.reformEnd>0&&t>=yardDrop.reformAt) ? clamp01(1-ph(t,yardDrop.cutAt,yardDrop.cutAt+0.4)) : 0.85;
+    for(let j=0;j<N_OWNED;j++){ const de=dropEnvFor(j,t); const oc=ownedChains[j];
+      setChain(oc,[HERO_POS[0],HERO_POS[1]+sw*2],[ownX(j),o_by(j)+de*280],t,1);
+      oc.alpha=clamp01((1-de)*0.85)*(j===SHARED?0.7:1);
+      oc.tint=(j===SHARED)?C.shared:C.accent;
+    }
+    setChain(sharedChain,ROOT_R,[ownX(SHARED),ownY(SHARED)],t,1.2);
+    sharedChain.alpha = yardDrop.active? 0.8 : 0.55;  // visible esp. during drop (it holds cabin7)
+    // console HUD
+    consoleHUD.position.set(lerp(1320,0,consoleDock),0); consoleHUD.alpha=consoleDock;
+    drawConsole(t);
+    // scale HUD drawn by scenes via scaleHUD.alpha + scaleNum
+    drawScale(t);
+    // slab thumbnail
+    if(slabHUD.alpha>0.01){ drawSlab(t); }
+  }
+  function o_by(j){ return ownY(j); }
+
+  function drawConsole(t){
+    if(consoleDock<0.01) return;
+    consoleG.clear();
+    consoleG.beginFill(C.panel,0.86).lineStyle(2,C.border,1).drawRoundedRect(980,108,260,252,10).endFill();
+    consoleG.lineStyle(1,C.border,0.7).moveTo(980,168).lineTo(1240,168);
+    if(consoleMode==='bars'){
+      consBars.clear();
+      // hero shallow (small) vs retained (large) preview bars
+      consBars.beginFill(C.reachable,0.9).drawRoundedRect(990,176,Math.max(4,120*consoleShallowFrac),12,3).endFill();
+      consBars.beginFill(consoleRetainedPending?lerpColor(C.retained,C.panel,0.4):C.retained, consoleRetainedPending?0.55:0.92).drawRoundedRect(990,196,Math.max(4,230*consoleRetainedFrac),12,3).endFill();
+      // 12 faint owned retained sub-bars
+      for(let j=0;j<12;j++){ const yy=216+j*11; consBars.beginFill(j===SHARED?C.shared:C.accent,0.4).drawRoundedRect(990,yy,40+(j*7)%120,7,2).endFill(); }
+    }
+  }
+  let ledgerBars=null;   // set by S12/S13 scenes
+  function drawScale(t){
+    if(scaleHUD.alpha<0.01) return;
+    scaleG.clear();
+    scaleG.lineStyle(2,C.accent2,0.9).moveTo(0,-30).lineTo(0,0);
+    scaleG.lineStyle(2,C.accent2,0.9).moveTo(-40,0).lineTo(40,0);
+    scaleG.lineStyle(2,C.accent,0.8).moveTo(-40,0).lineTo(-50,28); scaleG.moveTo(40,0).lineTo(50,28);
+    scaleG.lineStyle(2,C.accent,0.7).drawEllipse(-50,30,20,6); scaleG.drawEllipse(50,30,20,6);
+  }
+  function drawSlab(t){
+    slabG.clear();
+    slabG.beginFill(0x0e2230,0.7).lineStyle(2,C.sampling,0.7).drawRoundedRect(-44,-40,88,80,8).endFill();
+    // frozen mini yard thumbnail (vector)
+    slabG.lineStyle(1,C.accent,0.5);
+    slabG.beginFill(C.accent,0.5).drawRect(-6,-12,12,8).endFill();
+    for(let j=0;j<6;j++){ const x=-34+j*12; slabG.beginFill(C.accent,0.35).drawRect(x,12,8,6).endFill(); slabG.moveTo(0,-4).lineTo(x+4,12); }
+  }
+
+  // ============================================================
+  //  SCENES S0 .. S22b
+  // ============================================================
+
+  // ---------- S0 : COLD OPEN 0.00-0.17 ----------
+  scene(0,0.17,'',' intro',(S)=>{
+    const c=new PIXI.Container();
+    return {c,update(lt,t){
+      const a=easeOutCubic(ph(t,0,0.6));
+      hero.alpha=a;
+      rootPosts.forEach(rp=>rp.cont.alpha=easeOut(ph(t,0,0.17)));
+      for(const o of owned){ o.cont.alpha=0; }
+      moteEnvelope=0.3*ph(t,0,1.0);
+      consoleDock=0; slabHUD.alpha=0; scaleHUD.alpha=0;
+      yardDrop.active=false; heroSkin='cabin'; heroFieldsLit=1;
+    }};
+  });
+
+  // ---------- S1 : INTRO 0.17-9.74 (heap dump + console) ----------
+  scene(0.17,9.74,'INTRO','intro',(S)=>{
+    const c=new PIXI.Container();
+    hero.alpha=1; rootPosts.forEach(rp=>rp.cont.alpha=1);
+    const title=txt('RITEJND',64,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('retained · co se uvolní se mnou',24,C.muted,'700'); sub.position.set(640,382); legible(sub);
+    c.addChild(title,sub);
+    const shutter=txt('◼ snapshot',18,C.muted,'700'); shutter.position.set(220,150); shutter.alpha=0; legible(shutter); c.addChild(shutter);
+    const sortAff=txt('sort: retained ▾',13,C.accent,'700'); sortAff.position.set(1110,330); sortAff.alpha=0; legible(sortAff); c.addChild(sortAff);
+    // magnifier
+    const mag=new PIXI.Graphics(); c.addChild(mag);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      // STOP-THE-WORLD flash @0.17 (one-shot)
+      if(t>=0.17 && !S.fired.has('stw')){ S.fired.add('stw'); if(FILT.flash){ FILT.flash.color=0xffffff; FILT.flash.alpha=0.7; sceneFlash(FILT.flash,true);} }
+      if(FILT.flash && S.fired.has('stw')){ FILT.flash.alpha=0.7*(1-ph(t,0.17,0.47)); if(t>0.48) sceneFlash(FILT.flash,false); }
+      shutter.alpha=easeOut(ph(t,0.17,0.5))*(1-ph(t,1.4,2.0));
+      // heap-dump slab materialize
+      slabHUD.alpha=easeOut(ph(t,0.17,1.2)); slabHUD.scale.set(easeOutBack(ph(t,0.17,1.2)));
+      // owned cabins drop into place staggered
+      for(const o of owned){ const j=o.j; const dropAt=1.0+j*0.18;
+        o.cont.alpha=ph(t,dropAt,dropAt+0.4); }
+      // title
+      const tin=easeOut(ph(t,0.6,2.4));
+      title.alpha=tin*(1-ph(t,7.6,9.6)); title.y=340-tin*10; sub.alpha=title.alpha;
+      if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      // console opens @3.62
+      consoleDock=easeOut(ph(t,3.62,5.0)); consoleMode='bars'; consoleShallowFrac=0.15; consoleRetainedFrac=0.6; consoleRetainedPending=false;
+      sortAff.alpha=(t>=6.86)?(0.5+0.5*Math.sin(t*8))*(1-ph(t,8.5,9.5)):0;
+      // magnifier sweep @6.86 -> parks over biggest retained cabin (j=3)
+      mag.clear();
+      const mp=ph(t,6.86,8.03);
+      if(mp>0.001){ const tgt=ownPos(3); const mx=lerp(ownX(0),tgt[0],easeInOut(mp)), my=lerp(420,tgt[1],easeInOut(mp));
+        mag.lineStyle(3,C.accent,0.8*(1-ph(t,8.6,9.4))).drawCircle(mx,my,22); mag.moveTo(mx+16,my+16).lineTo(mx+30,my+30);
+        if(mp>0.95){ mag.lineStyle(2,C.retained,0.6+0.4*beat(t)).drawCircle(tgt[0],tgt[1],28); } }
+    }};
+  });
+
+  // ---------- S2 : VERSE 1a 9.74-28.22 (shallow = one object) ----------
+  scene(9.74,28.22,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    let tiltF=null;
+    if(hasF('TiltShiftFilter')){ tiltF=new F.TiltShiftFilter({blur:0,gradientBlur:500,start:new PIXI.Point(0,300),end:new PIXI.Point(W,300)}); }
+    const lbl=txt('shallow = jen já',20,C.accent,'800'); lbl.position.set(180,330); lbl.alpha=0; legible(lbl); c.addChild(lbl);
+    const plusGhost=new PIXI.Graphics(); c.addChild(plusGhost);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      consoleDock=1; consoleMode='bars'; consoleShallowFrac=0.15; consoleRetainedFrac=0.6; consoleRetainedPending=true;
+      // tilt-shift focus band on hero @9.74 (subtree blurs, hero sharp)
+      if(tiltF){ const band=easeOut(ph(t,9.74,11.0)); tiltF.blur=70*band;
+        if(band>0.01 && (!sceneRoot.filters||sceneRoot.filters.indexOf(tiltF)<0)){ sceneRoot.filters=[tiltF]; sceneRoot.filterArea=new PIXI.Rectangle(0,0,W,H);} }
+      // scale weighs hero @20.79 -> small number settling on sám@25.21
+      scaleHUD.alpha=easeOut(ph(t,20.79,21.6))*(1-ph(t,27.5,28.2));
+      const sn=Math.round(lerp(0,48,easeOut(ph(t,20.79,25.21))));
+      scaleNum.text=sn+' B';
+      lbl.alpha=easeOut(ph(t,20.79,21.6))*(1-ph(t,27.0,28.0));
+      // "+0" ghosts rising off the dangling chains (shallow adds zero)
+      plusGhost.clear();
+      if(t>=21.0 && t<27.0){ const ga=(0.5+0.5*Math.sin(t*3))*(1-ph(t,26.0,27.0));
+        for(let j=0;j<4;j++){ const p=ownPos(j*3); const yy=p[1]-40-((t*30+j*40)%60);
+          plusGhost.lineStyle(2,C.muted,ga*0.5).moveTo(p[0]-6,yy).lineTo(p[0]+6,yy).moveTo(p[0],yy-6).lineTo(p[0],yy+6); } }
+      // hero header+fields pulse (pre-label for S3): heroFieldsLit stays 1
+      heroFieldsLit=1; heroSkin='cabin';
+    },destroy(){ if(sceneRoot.filters) sceneRoot.filters=null; }};
+  });
+
+  // ---------- S3 : VERSE 1b 28.22-31.40 (header + own fields) ----------
+  scene(28.22,31.40,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const lEave=txt('hlavička (header)',18,C.accent,'800'); lEave.position.set(720,250); lEave.alpha=0; legible(lEave); c.addChild(lEave);
+    const lFields=txt('vlastní pole',18,C.accent,'800'); lFields.position.set(720,330); lFields.alpha=0; legible(lFields); c.addChild(lFields);
+    const lead=new PIXI.Graphics(); c.addChild(lead);
+    return {c,update(lt,t){
+      // zoom into hero @28.22
+      camDollyScale=lerp(1.0,1.10,easeInOut(ph(t,28.22,29.4))); camPivotX=520; camPivotY=300;
+      // "Hlavička" eave @28.22
+      lEave.alpha=easeOut(ph(t,28.22,28.7))*(1-ph(t,30.9,31.4));
+      // "pole" fields reveal @29.36 (window-by-window via heroFieldsLit wipe)
+      heroFieldsLit = ph(t,29.36,30.6);
+      lFields.alpha=easeOut(ph(t,29.36,29.9))*(1-ph(t,30.9,31.4));
+      lead.clear();
+      lead.lineStyle(2,C.accent,lEave.alpha*0.7).moveTo(560,272).lineTo(640,254);
+      lead.lineStyle(2,C.accent,lFields.alpha*0.7).moveTo(560,318).lineTo(640,330);
+      heroSkin='cabin';
+    },destroy(){ camDollyScale=1; camPivotX=640; camPivotY=360; }};
+  });
+
+  // ---------- S4 : VERSE 1c 31.40-35.58 (NOT what it points to) ----------
+  scene(31.40,35.58,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    heroFieldsLit=1;
+    const bracket=new PIXI.Graphics(); c.addChild(bracket);
+    const xs=new PIXI.Graphics(); c.addChild(xs);
+    const cap=txt('nic z toho se nepočítá',18,C.danger,'800'); cap.position.set(640,250); cap.alpha=0; legible(cap); c.addChild(cap);
+    // outgoing arrows fire down chains j=0,3,6,9
+    const arrows=[]; [0,3,6,9].forEach(j=>{ const tr=makeTrail(C.retained,10); c.addChild(tr); arrows.push({j,tr}); });
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.10,1.0,easeInOut(ph(t,34.0,35.58))); camPivotX=520; camPivotY=300;
+      // measuring bracket hugs hero box
+      bracket.clear();
+      bracket.lineStyle(3,C.retained,0.9*easeOut(ph(t,31.4,32.0))*(1-ph(t,35.0,35.58)));
+      bracket.moveTo(460,250).lineTo(450,250).lineTo(450,360).lineTo(460,360);
+      bracket.moveTo(580,250).lineTo(590,250).lineTo(590,360).lineTo(580,360);
+      // arrows @33.71 -> reach @34.87
+      xs.clear();
+      arrows.forEach(a=>{ const j=a.j; const p=ph(t,33.71,34.87); const from=[HERO_POS[0],HERO_POS[1]+10]; const to=ownPos(j);
+        setRopeAlongPath(a.tr,[from,[lerp(from[0],to[0],0.5),lerp(from[1],to[1],0.5)+20],pathPos([from,to],p)]);
+        a.tr.alpha=(p>0.02&&p<1)?0.8:(p>=1?0.5*(1-ph(t,35.0,35.58)):0);
+        // ✕ at bracket crossing
+        if(p>0.15){ const cx=lerp(from[0],to[0],0.2), cy=lerp(from[1],to[1],0.2);
+          xs.lineStyle(3,C.danger,0.9*(1-ph(t,35.0,35.58))).moveTo(cx-7,cy-7).lineTo(cx+7,cy+7).moveTo(cx+7,cy-7).lineTo(cx-7,cy+7); }
+      });
+      if(t>=33.71 && !S.fired.has('xblink')){ S.fired.add('xblink'); if(FILT.flashRed){ FILT.flashRed.alpha=0.22; sceneFlash(FILT.flashRed,true);} }
+      if(FILT.flashRed && S.fired.has('xblink')){ FILT.flashRed.alpha=0.22*(1-ph(t,33.71,34.11)); if(t>34.12) sceneFlash(FILT.flashRed,false); }
+      cap.alpha=easeOut(ph(t,33.71,34.2))*(1-ph(t,35.0,35.4));
+    },destroy(){ camDollyScale=1; camPivotX=640; camPivotY=360; if(FILT.flashRed) sceneFlash(FILT.flashRed,false); }};
+  });
+
+  // ---------- S5 : VERSE 1d 35.58-41.10 (iceberg payoff) ----------
+  scene(35.58,41.10,'VERSE 1','verse',(S)=>{
+    const c=new PIXI.Container();
+    const malyTxt=txt('malý',22,C.accent,'900'); malyTxt.position.set(180,210); malyTxt.alpha=0; legible(malyTxt); c.addChild(malyTxt);
+    const needle=txt('needle: +0',14,C.muted,'700'); needle.position.set(180,300); needle.alpha=0; legible(needle); c.addChild(needle);
+    // vast subtree cloud (200 faint sub-cabin dots)
+    const cloudPC=new PIXI.ParticleContainer(200,{position:true,scale:true,alpha:true,tint:true},200,true); c.addChild(cloudPC);
+    const cloud=[]; for(let i=0;i<200;i++){ const s=new PIXI.Sprite(CAB_TEX); s.anchor.set(0.5); s.tint=C.accent;
+      s.x=200+Math.random()*880; s.y=470+Math.random()*230; s.scale.set(0.5+Math.random()*0.6); s.alpha=0; cloudPC.addChild(s); cloud.push(s); }
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.0,0.96,easeInOut(ph(t,40.01,41.0))); camPivotX=640; camPivotY=360;
+      scaleHUD.alpha=easeOut(ph(t,35.58,36.2))*(1-ph(t,40.6,41.1)); scaleNum.text='48 B';
+      malyTxt.alpha=easeOut(ph(t,37.34,37.9))*(1-ph(t,40.0,40.8));
+      // world hangs beneath @40.01->@40.53 but needle pinned
+      const cloudA=easeOut(ph(t,40.01,41.0));
+      for(let i=0;i<cloud.length;i++){ cloud[i].alpha=cloudA*0.5*(0.6+0.4*Math.sin(t*2+i)); }
+      needle.alpha=easeOut(ph(t,40.01,40.5))*(1-ph(t,40.8,41.1));
+      heroSkin='cabin'; heroFieldsLit=1;
+    },destroy(){ camDollyScale=1; }};
+  });
+
+  // ---------- S6 : PRE-CHORUS 41.10-45.83 (collection setup) ----------
+  scene(41.10,45.83,'PRE-CHORUS','verse',(S)=>{
+    const c=new PIXI.Container();
+    const sweep=new PIXI.Graphics(); c.addChild(sweep);
+    const gcGlyph=txt('GC',28,C.reachable,'900'); gcGlyph.position.set(640,60); gcGlyph.alpha=0; legible(gcGlyph); c.addChild(gcGlyph);
+    const ell=txt('…',30,C.muted,'800'); ell.position.set(520,250); ell.alpha=0; legible(ell); c.addChild(ell);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      consoleDock=1; consoleMode='bars'; consoleRetainedPending=true; consoleShallowFrac=0.15; consoleRetainedFrac=0.6;
+      // GC sweep bar @43.55 crosses top->down
+      sweep.clear();
+      const sp=easeInOut(ph(t,43.55,45.0));
+      if(t>=43.55){ const y=lerp(60,300,sp); sweep.beginFill(C.reachable,0.18*(1-ph(t,45.0,45.6))).drawRect(140,y-6,1000,12).endFill();
+        gcGlyph.y=y; gcGlyph.alpha=easeOut(ph(t,43.55,43.9))*(1-ph(t,45.0,45.6)); }
+      // hero glow dims slightly in anticipation
+      if(hero._glow && t>=43.55){ hero._glow.outerStrength=(1.2+0.8*beat(t))*lerp(1,0.85,ph(t,43.55,45.0)); }
+      // chain tightens @44.04
+      ell.alpha=easeOut(ph(t,44.04,44.4))*(1-ph(t,45.2,45.7));
+      heroSkin='cabin'; heroFieldsLit=1;
+    }};
+  });
+
+  // ---------- S7 : PRE-CHORUS 45.83-48.86 (the question) ----------
+  scene(45.83,48.86,'PRE-CHORUS','verse',(S)=>{
+    const c=new PIXI.Container();
+    const q=txt('Kolik se uvolní?',30,C.accent,'900'); q.position.set(640,210); q.alpha=0; legible(q); c.addChild(q);
+    if(hasF('GlowFilter')){ q._g=new F.GlowFilter({distance:14,outerStrength:2,color:C.accent,quality:0.4}); q.filters=(q.filters||[]).concat([q._g]); }
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.0,1.05,easeInOut(ph(t,45.83,48.86))); camPivotX=520; camPivotY=300;
+      consoleDock=1; consoleMode='bars'; consoleRetainedPending=true;
+      consoleRetainedFrac=lerp(0.6,0.85,easeOut(ph(t,47.93,48.86)));
+      // big question stamp @45.83 + shockwave
+      if(t>=45.83 && !S.fired.has('q')){ S.fired.add('q');
+        if(FILT.shock){ FILT.shock.center=[640,210]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s7shock',FILT.shock);} }
+      if(FILT.shock && hasOverlayFx('s7shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s7shock'); }
+      q.alpha=easeOut(ph(t,45.83,46.3))*(1-ph(t,48.2,48.8));
+      if(q._g) q._g.outerStrength=2+1.5*beat(t);
+      heroSkin='cabin'; heroFieldsLit=1;
+    },destroy(){ camDollyScale=1; camPivotX=640; camPivotY=360; }};
+  });
+
+  // ---------- CHORUS (reusable §4) ----------
+  function buildChorus(occ,S){
+    const c=new PIXI.Container();
+    const bloomGain={1:0.5,2:0.7}[occ];
+    const occFactor={1:1.0,2:1.3}[occ];
+    const echoCopies={1:3,2:4}[occ];
+    const recycleDensity={1:1,2:1.5}[occ];
+    let bloomF=null;
+    if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.35,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    // dub-echo ghost cluster trails (additive)
+    const echoes=[]; for(let e=0;e<echoCopies;e++){ const g=new PIXI.Graphics(); g.blendMode=PIXI.BLEND_MODES.ADD; c.addChild(g); echoes.push(g); }
+    // dominator tag for cabin 7
+    const tag7=txt('drží druhý root',13,C.shared,'700'); tag7.position.set(480,615); tag7.alpha=0; legible(tag7); c.addChild(tag7);
+    const tagJen=txt('jen na mně, ne sdílené',14,C.shared,'700'); tagJen.position.set(480,615); tagJen.alpha=0; legible(tagJen); c.addChild(tagJen);
+    // L3 dominator caption + root-edge traces
+    const domCap=txt('dosažitelné jen skrz tebe = dominované',14,C.retained,'700'); domCap.position.set(640,250); domCap.alpha=0; legible(domCap); c.addChild(domCap);
+    const rootEdges=[]; for(let j=0;j<N_OWNED;j++){ const tr=makeTrail(j===SHARED?C.shared:C.retained,10); c.addChild(tr); rootEdges.push(tr); }
+    c._chorus={occ,bloomGain,occFactor,echoCopies,recycleDensity,bloomF,echoes,tag7,tagJen,domCap,rootEdges};
+    return c;
+  }
+  function updateChorus(c,t,LS,occ,S){
+    const X=c._chorus;
+    const {bloomF,echoes,tag7,tagJen,domCap,rootEdges}=X;
+    const L1=LS.L1,L2=LS.L2,L3=LS.L3,L4=LS.L4,L5=LS.L5;
+    camDollyScale=1; camPivotX=640; camPivotY=360;
+    consoleDock=1; consoleMode='bars';
+    if(godrayF) godrayF.gain=0.5;
+    if(bloomF) bloomF.bloomScale=1.0+X.bloomGain*beat(t);
+    if(hero._glow) hero._glow.outerStrength=1.2+X.bloomGain*beat(t);
+
+    // ---- L1 : retained-cascade DROP ----
+    // ZoomBlur punch on "Retained"
+    if(t>=L1 && !S.fired.has('drop'+occ)){ S.fired.add('drop'+occ);
+      if(FILT.zoom){ FILT.zoom.center=HERO_POS.slice(); FILT.zoom.strength=0.26; addOverlayFx('chDrop'+occ,FILT.zoom);} }
+    if(FILT.zoom && hasOverlayFx('chDrop'+occ)){ FILT.zoom.strength=0.26*(1-ph(t,L1,L1+0.25)); if(t>L1+0.26) removeOverlayFx('chDrop'+occ); }
+    // cut on "uvolní"
+    const uvolni={1:54.03,2:106.00}[occ];
+    const mnou1={1:54.52,2:106.33}[occ];
+    yardDrop.active=true; yardDrop.cutAt=uvolni; yardDrop.dropDur=0.9; yardDrop.reformAt=0; yardDrop.reformEnd=0; yardDrop.includeShared=false; yardDrop.heroFalls=true;
+    // recycle burst once on the cut
+    if(t>=uvolni && !S.fired.has('rec'+occ)){ S.fired.add('rec'+occ); burst(HERO_POS[0],HERO_POS[1]+120,C.retained,Math.round(60*X.recycleDensity),3,0.2); }
+    // dub-echo ghost copies of the falling cluster
+    echoes.forEach((g,e)=>{ g.clear(); const off=0.09*(e+1); const tp=t-off;
+      const al=[0.4,0.25,0.12,0.06][e];
+      if(tp>=uvolni){ for(let j=0;j<N_OWNED;j++){ if(j===SHARED) continue; const de=easeOutBack(ph(tp,uvolni+j*0.02,uvolni+j*0.02+0.9));
+        if(de>0&&de<1){ g.beginFill(C.retained,al*(1-de)).drawCircle(ownX(j),ownY(j)+de*280,8).endFill(); } } } });
+    // cabin 7 stays lit + tag
+    tag7.alpha=(t>=uvolni && t<uvolni+0.6)? easeOut(ph(t,uvolni,uvolni+0.2)):0;
+    // "mnou" hero swell
+    if(t>=mnou1){ const swell=1.0+0.5*beat(t); if(hero._glow) hero._glow.outerStrength=(1.2+X.bloomGain*beat(t))*swell; }
+
+    // ---- L2 : dominator guard on "jen" ----
+    const jenT={1:59.76,2:110.52}[occ];
+    tagJen.alpha=(t>=jenT && t<jenT+1.0)? easeOut(ph(t,jenT,jenT+0.2))*(1-ph(t,jenT+0.7,jenT+1.0)):0;
+
+    // ---- L3 : dominator definition root-edge traces ----
+    const dosT={1:63.76,2:114.76}[occ];
+    domCap.alpha=(t>=dosT && t<L4)? easeOut(ph(t,dosT,dosT+0.4))*(1-ph(t,L4-0.4,L4)):0;
+    rootEdges.forEach((tr,j)=>{ const p=ph(t,dosT+j*0.04,dosT+j*0.04+0.6);
+      if(t>=dosT && t<L4){ const path=(j===SHARED)? [ROOT_R,[ownX(j),ownY(j)]] : [ROOT_L,HERO_POS,ownPos(j)];
+        setRopeAlongPath(tr,[path[0], pathPos(path,Math.min(0.5,p)), pathPos(path,p)]);
+        tr.alpha=0.55*p*(1-ph(t,L4-0.4,L4))*(j===SHARED?0.6:1); }
+      else tr.alpha=0; });
+
+    // ---- L4 : collapse on collection ; re-fire cascade ----
+    const padaT={1:66.88,2:118.60}[occ];
+    const gcT={1:70.77,2:122.16}[occ];
+    if(t>=L4){
+      // tree re-formed by L4? keep drop active; small echo
+      yardDrop.active=true; yardDrop.cutAt=padaT; yardDrop.reformAt=0; yardDrop.reformEnd=0;
+      if(t>=gcT && bloomF) bloomF.bloomScale=1.0+(X.bloomGain+0.3)*beat(t);
+    }
+
+    // ---- L5 : held resolve ----
+    if(t>=L5){ const swell=1.0+(0.5*X.occFactor)*beat(t); if(hero._glow) hero._glow.outerStrength=(1.2+X.bloomGain*beat(t))*swell; }
+  }
+  function chorusScene(occ,LS){
+    return (S)=>{ const c=buildChorus(occ,S); return {c,update(lt,t){ updateChorus(c,t,LS,occ,S); },destroy(){ yardDrop.active=false; }}; };
+  }
+
+  // ---------- S8 : CHORUS 1 48.86-72.10 ----------
+  scene(48.86,72.10,'CHORUS','chorus',chorusScene(1,{L1:48.86,L2:55.56,L3:61.02,L4:66.60,L5:72.10}));
+
+  // ---------- S9 : HashMap set-up 72.10-78.62 (hook tail) ----------
+  scene(72.10,78.62,'CHORUS','chorus',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:6,quality:4}); c.filters=[bloomF]; }
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=lerp(640,640,1); camPivotY=360;
+      consoleDock=1; consoleMode='bars';
+      // tree re-forms (fallen cabins fade back up)
+      yardDrop.active=true; yardDrop.cutAt=66.88; yardDrop.reformAt=73.0; yardDrop.reformEnd=76.5; yardDrop.includeShared=false;
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      if(FILT.kawase){ const k=3*ph(t,72.10,73.2)*(1-ph(t,73.2,74.0)); FILT.kawase.strength=k; bgIntent.kawase=(k>0.05); }
+      // L5 hook held "mnou" @77.62 swell already via chorus residual; keep hero glow swelling
+      if(t>=77.62 && hero._glow){ hero._glow.outerStrength=1.2+0.7*beat(t); }
+      heroSkin='cabin';
+    },destroy(){ bgIntent.kawase=false; yardDrop.active=false; }};
+  });
+
+  // ---------- S10 : VERSE 2a 78.62-85.76 (HashMap fob -> mansion) ----------
+  scene(78.62,85.76,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const sLbl=txt('shallow maličký',18,C.reachable,'800'); sLbl.position.set(180,330); sLbl.alpha=0; legible(sLbl); c.addChild(sLbl);
+    const rLbl=txt('retained jak dům',20,C.retained,'800'); rLbl.position.set(640,250); rLbl.alpha=0; legible(rLbl); c.addChild(rLbl);
+    const house=new PIXI.Graphics(); c.addChild(house);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.05,0.92,easeInOut(ph(t,83.58,85.0))); camPivotX=640; camPivotY=360;
+      yardDrop.active=false;
+      // recast hero as fob @78.62
+      heroSkin=(t>=78.62)?'fob':'cabin'; hero._fields=2; hero._sc=(t>=78.62)?0.7:0.9; heroFieldsLit=1;
+      consoleDock=1; consoleMode='bars';
+      // weigh shallow @80.65 tiny
+      scaleHUD.alpha=easeOut(ph(t,80.65,81.3))*(1-ph(t,85.2,85.76)); scaleNum.text=(t>=83.58)?'12 KB':'24 B';
+      consoleShallowFrac=0.08; consoleRetainedFrac=lerp(0.4,0.95,easeOut(ph(t,83.58,85.09))); consoleRetainedPending=false;
+      sLbl.alpha=easeOut(ph(t,80.65,81.3))*(1-ph(t,83.3,83.9));
+      // mansion reveal @83.58 -> house outline around dominated subtree
+      house.clear();
+      const hp=easeOut(ph(t,83.58,85.09));
+      if(hp>0.01){ house.lineStyle(3,C.retained,0.8*hp);
+        house.moveTo(330,460).lineTo(330,600).lineTo(990,600).lineTo(990,460); // walls
+        house.moveTo(310,460).lineTo(660,400).lineTo(1010,460); // roof
+        house.beginFill(C.retained,0.06*hp).drawRect(330,460,660,140).endFill(); }
+      rLbl.alpha=easeOut(ph(t,83.58,84.1))*(1-ph(t,85.3,85.76));
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t)*easeOut(ph(t,83.58,84.2));
+    },destroy(){ camDollyScale=1; heroSkin='cabin'; hero._fields=5; hero._sc=0.9; }};
+  });
+
+  // ---------- S11 : VERSE 2b 85.76-92.12 (entries/keys/values -> collapse) ----------
+  scene(85.76,92.12,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    heroSkin='fob'; hero._fields=2; hero._sc=0.7;
+    const subCab=new PIXI.Graphics(); c.addChild(subCab);
+    const cap=txt('to celé zmizí',20,C.retained,'800'); cap.position.set(640,250); cap.alpha=0; legible(cap); c.addChild(cap);
+    const lblE=txt('entry',13,C.accent,'700'); lblE.position.set(360,440); lblE.alpha=0; legible(lblE); c.addChild(lblE);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      heroSkin='fob'; hero._fields=2; hero._sc=0.7;
+      consoleDock=1; consoleMode='bars'; consoleShallowFrac=0.08; consoleRetainedFrac=0.95;
+      // entries @86.45 (arc-0 lights), keys @87.05 (left drawers), values @87.93 (right safes)
+      subCab.clear();
+      const ent=ph(t,86.45,87.05), key=ph(t,87.05,87.93), val=ph(t,87.93,89.0);
+      for(let j=0;j<6;j++){ const p=ownPos(j); const lit=(j/6<ent)?1:0.18;
+        if(lit>0.5){ subCab.beginFill(C.accent,0.35).lineStyle(1.4,C.retained,0.7).drawRoundedRect(p[0]-26,p[1]-22,52,16,3).endFill();
+          // key drawer
+          if(j/6<key) subCab.beginFill(C.accent,0.7).drawRoundedRect(p[0]-30,p[1]-2,12,12,2).endFill();
+          // value safe
+          if(j/6<val) subCab.beginFill(C.retained,0.8).drawRoundedRect(p[0]+18,p[1]-2,12,12,2).endFill();
+        } }
+      lblE.alpha=easeOut(ph(t,86.45,87.0))*(1-ph(t,89.0,89.6));
+      // collapse @89.66 -> @90.52 : whole house drops
+      yardDrop.active=(t>=89.66); yardDrop.cutAt=89.66; yardDrop.dropDur=0.9; yardDrop.reformAt=0; yardDrop.reformEnd=0; yardDrop.includeShared=true; // house has single owner
+      if(t>=89.66 && !S.fired.has('housedrop')){ S.fired.add('housedrop'); burst(640,480,C.retained,80,3,0.2);
+        if(FILT.zoom){ FILT.zoom.center=[640,360]; FILT.zoom.strength=0.24; addOverlayFx('s11zoom',FILT.zoom);} }
+      if(FILT.zoom && hasOverlayFx('s11zoom')){ FILT.zoom.strength=0.24*(1-ph(t,89.66,89.91)); if(t>89.92) removeOverlayFx('s11zoom'); }
+      cap.alpha=easeOut(ph(t,89.66,90.2))*(1-ph(t,91.6,92.1));
+      if(bloomF) bloomF.bloomScale=1.0+0.5*beat(t)*easeOut(ph(t,89.66,90.4));
+    },destroy(){ yardDrop.active=false; yardDrop.includeShared=false; heroSkin='cabin'; hero._fields=5; hero._sc=0.9; }};
+  });
+
+  // ---------- S12 : VERSE 2c 92.12-98.68 (leak hunt — leaderboard) ----------
+  scene(92.12,98.68,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    heroSkin='cabin'; hero._fields=5; hero._sc=0.9;
+    const board=new PIXI.Graphics(); c.addChild(board);
+    const lbl=txt('velký retained',18,C.danger,'800'); lbl.position.set(1115,110); lbl.alpha=0; legible(lbl); c.addChild(lbl);
+    const mag=new PIXI.Graphics(); c.addChild(mag);
+    const ledgerVals=[1.0,0.72,0.58,0.49,0.4,0.33,0.25,0.18];
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      consoleDock=1; consoleMode='ledger';
+      // leaderboard 8 bars @92.12
+      board.clear();
+      const ba=easeOut(ph(t,92.12,93.0));
+      board.beginFill(C.panel,0.86*ba).lineStyle(2,C.border,ba).drawRoundedRect(980,108,260,252,10).endFill();
+      for(let i=0;i<N_LEDGER;i++){ const yy=120+i*30; const wv=ledgerVals[i]*230;
+        const col=(i===0)?C.danger:C.retained;
+        board.beginFill(col,(i===0?0.9:0.7)*ba).drawRoundedRect(990,yy,wv,20,3).endFill(); }
+      // magnifier hunt @92.90 -> lock-on bar0 @95.50
+      mag.clear();
+      const mp=ph(t,92.90,95.50);
+      if(mp>0.001){ const sx=lerp(700,1100,easeInOut(mp)), sy=lerp(300,128,easeInOut(mp));
+        mag.lineStyle(3,C.accent,0.85).drawCircle(sx,sy,22); mag.moveTo(sx+16,sy+16).lineTo(sx+30,sy+30); }
+      if(t>=95.50){ mag.lineStyle(2,C.danger,0.6+0.4*beat(t)).drawCircle(1100,128,30); }
+      lbl.alpha=easeOut(ph(t,95.50,96.0))*(1-ph(t,98.2,98.7));
+    },destroy(){ consoleMode='bars'; }};
+  });
+
+  // ---------- S13 : VERSE 2d 98.68-101.84 (should-be-dead tag) ----------
+  scene(98.68,101.84,'VERSE 2','verse',(S)=>{
+    const c=new PIXI.Container();
+    const board=new PIXI.Graphics(); c.addChild(board);
+    const hour=new PIXI.Graphics(); c.addChild(hour); hour.position.set(1115,90); hour.alpha=0;
+    const tag=txt('mělo dávno umřít',16,C.danger,'800'); tag.position.set(1115,150); tag.alpha=0; legible(tag); c.addChild(tag);
+    const strayEdge=new PIXI.Graphics(); c.addChild(strayEdge);
+    if(IMG['hourglass-deadtag']) heroSprite(hour,'hourglass-deadtag',0,0,40,0.95);
+    const ledgerVals=[1.0,0.72,0.58,0.49,0.4,0.33,0.25,0.18];
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      consoleDock=1; consoleMode='ledger';
+      board.clear();
+      board.beginFill(C.panel,0.86).lineStyle(2,C.border,1).drawRoundedRect(980,108,260,252,10).endFill();
+      for(let i=0;i<N_LEDGER;i++){ const yy=120+i*30; const wv=ledgerVals[i]*230; const col=(i===0)?C.danger:C.retained;
+        board.beginFill(col,(i===0?0.9:0.7)).drawRoundedRect(990,yy,wv,20,3).endFill(); }
+      // burnt-out hourglass over bar0 @99.44
+      hour.alpha=easeOut(ph(t,99.44,100.0));
+      drawHourglass(hour,0.7,1.0,true);
+      tag.alpha=easeOut(ph(t,99.44,100.0))*(1-ph(t,101.4,101.8));
+      // danger blink stamp @100.54
+      if(t>=100.54 && !S.fired.has('umrit')){ S.fired.add('umrit'); if(FILT.flashRed){ FILT.flashRed.alpha=0.3; sceneFlash(FILT.flashRed,true);} }
+      if(FILT.flashRed && S.fired.has('umrit')){ FILT.flashRed.alpha=0.3*(1-ph(t,100.54,100.74)); if(t>100.75) sceneFlash(FILT.flashRed,false); }
+      // stray red root-edge @100.54 (forgotten reference)
+      strayEdge.clear();
+      if(t>=100.54){ const a=0.6+0.4*beat(t); strayEdge.lineStyle(3,C.danger,a*(1-ph(t,101.4,101.8)));
+        setRopeSimple(strayEdge,ROOT_M,ownPos(3)); }
+    },destroy(){ if(FILT.flashRed) sceneFlash(FILT.flashRed,false); consoleMode='bars'; }};
+  });
+  function setRopeSimple(g,a,b){ g.moveTo(a[0],a[1]); g.bezierCurveTo(a[0],a[1]+120,b[0],b[1]-120,b[0],b[1]); }
+
+  // ---------- S14 : CHORUS 2 101.84-129.86 ----------
+  scene(101.84,129.86,'CHORUS','chorus',(S)=>{
+    const c=buildChorus(2,S);
+    // leak-anchor ghost cabin (falls WITH the cluster this time)
+    const leakGhost=new PIXI.Graphics(); leakGhost.blendMode=PIXI.BLEND_MODES.ADD; c.addChild(leakGhost);
+    return {c,update(lt,t){
+      updateChorus(c,t,{L1:101.84,L2:107.04,L3:112.42,L4:118.06,L5:123.52},2,S);
+      // leak ghost falls with cluster on the cut
+      leakGhost.clear();
+      const de=easeOutBack(ph(t,106.00,106.9));
+      if(de>0&&de<1){ leakGhost.beginFill(C.danger,0.5*(1-de)).drawRoundedRect(ownX(3)-26,ownY(3)-16+de*280,52,30,4).endFill(); }
+      // held "mnou" @129.10-129.86 ZoomBlur pull carried into BRIDGE ('zoomHeld' on overlayFx)
+      if(t>=129.10 && !hasOverlayFx('zoomHeld') && t<130.20){ if(FILT.zoomHeld){ FILT.zoomHeld.center=HERO_POS.slice(); addOverlayFx('zoomHeld',FILT.zoomHeld);} }
+      if(FILT.zoomHeld && hasOverlayFx('zoomHeld')){
+        let st; if(t<130.20) st=0.18*easeInOut(ph(t,129.10,129.86)); else st=0.18*(1-ph(t,130.20,131.00));
+        FILT.zoomHeld.strength=clamp01(st);
+        if(t>=131.00) removeOverlayFx('zoomHeld');
+      }
+    },destroy(){ yardDrop.active=false; }};
+  });
+
+  // ---------- S15 : BRIDGE intro 129.86-133.58 (the fork) ----------
+  scene(129.86,133.58,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const divider=new PIXI.Graphics(); c.addChild(divider);
+    const lSamp=txt('SAMPLING',20,C.sampling,'900'); lSamp.position.set(320,120); lSamp.alpha=0; legible(lSamp); c.addChild(lSamp);
+    const rTrace=txt('TRACING',20,C.tracing,'900'); rTrace.position.set(960,120); rTrace.alpha=0; legible(rTrace); c.addChild(rTrace);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.0,1.05,easeInOut(ph(t,132.0,133.58))); camPivotX=640; camPivotY=360;
+      // set transition @129.86: twist warp + kawase edge creep on overlayFx
+      if(t>=129.86){
+        if(!hasOverlayFx('bridgeTwist')){ if(FILT.twist) addOverlayFx('bridgeTwist',FILT.twist); else if(FILT.twistDisp) addOverlayFx('bridgeTwist',FILT.twistDisp); }
+        if(FILT.kawase && !hasOverlayFx('kawase')) addOverlayFx('kawase',FILT.kawase);
+        if(FILT.crt && !hasOverlayFx('crt')) addOverlayFx('crt',FILT.crt);
+      }
+      if(hasOverlayFx('bridgeTwist')){ let ang; if(t<131.0) ang=0.6*easeInOut(ph(t,129.86,131.0)); else ang=0.6*(1-ph(t,131.0,132.0));
+        if(FILT.twist) FILT.twist.angle=ang; else if(FILT.twistDisp) FILT.twistDisp.scale.x=FILT.twistDisp.scale.y=ang*40;
+        if(t>=132.0) removeOverlayFx('bridgeTwist'); }
+      if(FILT.kawase && hasOverlayFx('kawase')){ FILT.kawase.strength=2*ph(t,129.86,131.0); }
+      if(FILT.crt){ FILT.crt.time=t; }
+      // fork @132.54 -> @132.86
+      divider.clear();
+      const da=ph(t,132.54,133.2);
+      if(da>0.001){ divider.lineStyle(3,C.muted,0.6*da).moveTo(640,140).lineTo(640,640);
+        divider.beginFill(C.sampling,0.04*da).drawRect(120,140,500,480).endFill();
+        divider.beginFill(C.tracing,0.04*da).drawRect(660,140,500,480).endFill(); }
+      lSamp.alpha=easeOut(ph(t,132.54,133.0)); rTrace.alpha=easeOut(ph(t,132.86,133.3));
+    },destroy(){ ['bridgeTwist','kawase'].forEach(removeOverlayFx); }};
+  });
+
+  // ---------- S16 : BRIDGE 133.58-137.04 (sampling strobe all threads) ----------
+  scene(133.58,137.04,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const threads=[]; for(let j=0;j<N_THREADS;j++){ const cont=new PIXI.Container(); cont.position.set(threadX(j),520); c.addChild(cont);
+      const g=new PIXI.Graphics(); drawThread(g,C.reachable,2+ (j%3)); cont.addChild(g); threads.push({j,cont,g}); }
+    const histo=new PIXI.Graphics(); c.addChild(histo); const tally=new Array(6).fill(0);
+    const cap=txt('vzorek zásobníku všech vláken',16,C.muted,'700'); cap.position.set(320,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    const bracket=new PIXI.Graphics(); c.addChild(bracket);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      if(FILT.crt){ FILT.crt.time=t; if(!hasOverlayFx('crt')) addOverlayFx('crt',FILT.crt); }
+      // threads bob on skank
+      threads.forEach(o=>{ o.cont.y=520+swaySkank(t)*4*Math.sin(o.j); });
+      // strobe once per beat: beat(t)>0.85 ~ period 0.81s
+      const strobeOn = beat(t)>0.85;
+      if(strobeOn && t>=134.13){ if(FILT.strobe && !hasOverlayFx('strobe')){ FILT.strobe.alpha=0.25; addOverlayFx('strobe',FILT.strobe); FILT._strobeFire=t; } }
+      if(FILT.strobe && hasOverlayFx('strobe')){ FILT.strobe.alpha=0.25*(1-ph(t,FILT._strobeFire,FILT._strobeFire+0.12)); if(t-FILT._strobeFire>0.12) removeOverlayFx('strobe'); }
+      // histogram: tally increments as strobes accumulate (deterministic from t)
+      histo.clear();
+      const flashes=Math.max(0,Math.floor((t-134.13)/0.81)+1);
+      histo.beginFill(C.panel,0.6).lineStyle(1,C.border,0.7).drawRoundedRect(240,170,200,90,6).endFill();
+      for(let b=0;b<6;b++){ const h=Math.min(70,(((b*7+3)%11)/11)*flashes*9); histo.beginFill(b===2?C.sampling:C.reachable,0.8).drawRect(252+b*30,250-h,20,h).endFill(); }
+      // bracket sweeps all 12 threads @135.39
+      bracket.clear();
+      if(t>=135.39){ const ba=easeOut(ph(t,135.39,136.0))*(1-ph(t,136.7,137.0));
+        bracket.lineStyle(2,C.sampling,0.8*ba).moveTo(130,490).lineTo(130,470).lineTo(1130,470).lineTo(1130,490); }
+      cap.alpha=easeOut(ph(t,135.39,136.0))*(1-ph(t,136.7,137.0));
+    },destroy(){ }};
+  });
+
+  // ---------- S17 : BRIDGE 137.04-139.99 (statistical estimate) ----------
+  scene(137.04,139.99,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const histo=new PIXI.Graphics(); c.addChild(histo);
+    if(hasF('KawaseBlurFilter')){ var hk=new F.KawaseBlurFilter({strength:6,quality:2,pixelSize:1}); histo.filters=[hk]; }
+    const lbl=txt('statistický odhad',18,C.sampling,'800'); lbl.position.set(320,180); lbl.alpha=0; legible(lbl); c.addChild(lbl);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      if(FILT.crt){ FILT.crt.time=t; if(!hasOverlayFx('crt')) addOverlayFx('crt',FILT.crt); }
+      // haze -> sharp histogram @137.04
+      if(typeof hk!=='undefined' && hk) hk.strength=lerp(6,0.5,ph(t,137.04,139.0));
+      histo.clear();
+      histo.beginFill(C.panel,0.7).lineStyle(1,C.border,0.8).drawRoundedRect(240,170,260,110,6).endFill();
+      const hot=2; for(let b=0;b<6;b++){ const h=[24,40,72,30,18,12][b]; const col=(b===hot)?C.sampling:C.reachable;
+        histo.beginFill(col,0.85).drawRect(252+b*40,270-h,28,h).endFill();
+        // ± uncertainty band
+        histo.lineStyle(1,C.white,0.3*ph(t,137.85,139.0)).moveTo(252+b*40+14,270-h-6).lineTo(252+b*40+14,270-h+6); }
+      lbl.alpha=easeOut(ph(t,137.85,138.4))*(1-ph(t,139.5,139.95));
+    }};
+  });
+
+  // ---------- S18 : BRIDGE 139.99-143.20 (cheap; misses short) ----------
+  scene(139.99,143.20,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const gauge=new PIXI.Graphics(); c.addChild(gauge);
+    const gLbl=txt('bytecode: unchanged',13,C.reachable,'700'); gLbl.position.set(320,128); gLbl.alpha=0; legible(gLbl); c.addChild(gLbl);
+    const shortTask=new PIXI.Container(); c.addChild(shortTask); shortTask.alpha=0;
+    const stg=new PIXI.Graphics(); drawThread(stg,C.muted,1); shortTask.addChild(stg);
+    const q=txt('?',24,C.muted,'900'); q.position.set(0,-40); shortTask.addChild(q);
+    const cap=txt('krátkou metodu mine',18,C.muted,'800'); cap.position.set(640,560); cap.alpha=0; legible(cap); c.addChild(cap);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      if(FILT.crt){ FILT.crt.time=t; if(!hasOverlayFx('crt')) addOverlayFx('crt',FILT.crt); }
+      // overhead meter near 1-2%
+      gauge.clear();
+      gauge.beginFill(C.ink,0.6).lineStyle(1,C.border,0.7).drawRoundedRect(280,80,150,14,4).endFill();
+      gauge.beginFill(C.reachable,0.9).drawRoundedRect(280,80,150*0.04,14,4).endFill();
+      gLbl.alpha=easeOut(ph(t,139.99,140.6))*(1-ph(t,142.8,143.2));
+      // short task runs & finishes in the dark between flashes @141.71 -> @142.72 (never sampled)
+      const sp=ph(t,141.71,142.72);
+      shortTask.position.set(lerp(500,760,sp),520);
+      shortTask.alpha=(sp>0&&sp<1)?0.8:0; // disappears unsampled
+      q.alpha=(t>=142.72)?(0.6+0.4*beat(t)):0;
+      cap.alpha=easeOut(ph(t,142.72,143.1))*(1-ph(t,143.0,143.2)+0.0001);
+    }};
+  });
+
+  // ---------- S19 : BRIDGE 143.20-152.08 (no counts; tracing entry/exit, heavy) ----------
+  scene(143.20,152.08,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const noCounts=txt('počty volání: —',16,C.muted,'800'); noCounts.position.set(320,180); noCounts.alpha=0; legible(noCounts); c.addChild(noCounts);
+    // 4 method rooms (right lane) with entry+exit turnstiles
+    const ROOMS=[[760,200],[960,200],[760,360],[960,360]];
+    const rooms=new PIXI.Graphics(); c.addChild(rooms);
+    const turns=new PIXI.Graphics(); c.addChild(turns);
+    const ledger=txt('vstup/výstup · přesné počty i časy',16,C.tracing,'700'); ledger.position.set(960,180); ledger.alpha=0; legible(ledger); c.addChild(ledger);
+    const overGauge=new PIXI.Graphics(); c.addChild(overGauge);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      if(FILT.crt){ FILT.crt.time=t; if(!hasOverlayFx('crt')) addOverlayFx('crt',FILT.crt); }
+      // no counts @143.20
+      noCounts.alpha=easeOut(ph(t,143.20,143.8))*(1-ph(t,151.0,152.0));
+      // hand-off to tracing @146.06 (shockwave) + turnstiles
+      if(t>=146.06 && !S.fired.has('handoff')){ S.fired.add('handoff');
+        if(FILT.shock){ FILT.shock.center=[960,280]; FILT._shockFire=t; FILT.shock.time=0; addOverlayFx('s19shock',FILT.shock);} }
+      if(FILT.shock && hasOverlayFx('s19shock')){ FILT.shock.time=t-FILT._shockFire; if(t-FILT._shockFire>1.2) removeOverlayFx('s19shock'); }
+      rooms.clear(); turns.clear();
+      const ra=easeOut(ph(t,146.06,147.0));
+      ROOMS.forEach((p,i)=>{ rooms.beginFill(C.panel,0.7*ra).lineStyle(2,C.tracing,0.8*ra).drawRoundedRect(p[0]-50,p[1]-34,100,68,6).endFill();
+        // entry + exit turnstiles
+        const tn=Math.floor((t-146.06)*4);
+        turns.lineStyle(3,C.tracing,0.9*ra);
+        for(let a=0;a<3;a++){ const an=a/3*TAU+t*1.5; turns.moveTo(p[0]-50,p[1]).lineTo(p[0]-50+Math.cos(an)*10,p[1]+Math.sin(an)*10);
+          turns.moveTo(p[0]+50,p[1]).lineTo(p[0]+50+Math.cos(-an)*10,p[1]+Math.sin(-an)*10); }
+      });
+      ledger.alpha=easeOut(ph(t,147.12,147.7))*(1-ph(t,151.4,152.0));
+      // heavy režie gauge pins to MAX @150.84
+      overGauge.clear();
+      const og=easeOut(ph(t,150.84,151.44));
+      overGauge.beginFill(C.ink,0.6).lineStyle(1,C.border,0.7).drawRoundedRect(900,80,260,16,4).endFill();
+      overGauge.beginFill(C.danger,0.95).drawRoundedRect(900,80,260*lerp(0.3,1.0,og),16,4).endFill();
+      if(t>=150.84 && !S.fired.has('rezie')){ S.fired.add('rezie');
+        if(FILT.rgb){ FILT.rgb.red=[6,0]; FILT.rgb.blue=[-6,0]; addOverlayFx('rgbsplit',FILT.rgb);} }
+      if(FILT.rgb && hasOverlayFx('rgbsplit')){ const d=6*(1-ph(t,150.84,151.34)); FILT.rgb.red=[d,0]; FILT.rgb.blue=[-d,0]; if(t>=151.34) removeOverlayFx('rgbsplit'); }
+      // camera shake @150.84 via shakeAmp(t)
+    },destroy(){ removeOverlayFx('rgbsplit'); }};
+  });
+
+  // ---------- S20 : BRIDGE 152.08-164.94 (probe effect, inlining blocked; recommendation) ----------
+  scene(152.08,164.94,'BRIDGE','bridge',(S)=>{
+    const c=new PIXI.Container();
+    const rightLane=new PIXI.Container(); c.addChild(rightLane);
+    const bars=new PIXI.Graphics(); rightLane.addChild(bars);
+    const probeBanner=txt('měření zkresleno',16,C.danger,'800'); probeBanner.position.set(960,150); probeBanner.alpha=0; legible(probeBanner); c.addChild(probeBanner);
+    const inlineRooms=new PIXI.Graphics(); c.addChild(inlineRooms);
+    const inlineLbl=txt('inlining blokován',16,C.danger,'800'); inlineLbl.position.set(960,420); inlineLbl.alpha=0; legible(inlineLbl); c.addChild(inlineLbl);
+    const pipeline=new PIXI.Graphics(); c.addChild(pipeline);
+    const flame=new PIXI.Graphics(); c.addChild(flame);
+    if(hasF('GlowFilter')){ flame._g=new F.GlowFilter({distance:14,outerStrength:0,color:C.tracing,quality:0.4}); flame.filters=[flame._g]; }
+    const rec=txt('začni samplingem · trace jen kde pálí',18,C.accent,'800'); rec.position.set(640,560); rec.alpha=0; legible(rec); c.addChild(rec);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      if(FILT.crt){ FILT.crt.time=t; if(!hasOverlayFx('crt')) addOverlayFx('crt',FILT.crt); }
+      // probe effect wobble @152.08->154.5 (bulge/twist on right lane via overlay 'probe')
+      if(t>=152.08 && t<154.5){ if(!hasOverlayFx('probe')){ if(FILT.bulge) addOverlayFx('probe',FILT.bulge); else if(FILT.bulgeDisp) addOverlayFx('probe',FILT.bulgeDisp);} }
+      if(hasOverlayFx('probe')){ const st=0.15*Math.sin(t*8)*(1-ph(t,154.0,154.5));
+        if(FILT.bulge) FILT.bulge.strength=st; else if(FILT.bulgeDisp) FILT.bulgeDisp.scale.x=FILT.bulgeDisp.scale.y=Math.abs(st)*120;
+        if(t>=154.5) removeOverlayFx('probe'); }
+      bars.clear();
+      const wob=(t<154.5)?0.15*Math.sin(t*8):0;
+      for(let b=0;b<5;b++){ const h=[40,60,30,50,24][b]*(1+wob*Math.sin(b)); bars.beginFill(C.tracing,0.85).drawRect(820+b*52,360-h,32,h).endFill(); }
+      probeBanner.alpha=easeOut(ph(t,152.08,152.7))*(1-ph(t,154.5,155.2));
+      // inlining blocked @155.06->156.23 (two rooms bounce apart, turnstile between)
+      inlineRooms.clear();
+      const ib=ph(t,155.06,156.23);
+      if(t>=155.06){ const gap=lerp(0,40,Math.abs(Math.sin(ib*Math.PI*2)));
+        inlineRooms.beginFill(C.panel,0.7).lineStyle(2,C.tracing,0.8).drawRoundedRect(840-gap-40,400,80,50,6).endFill();
+        inlineRooms.beginFill(C.panel,0.7).lineStyle(2,C.tracing,0.8).drawRoundedRect(940+gap-40,400,80,50,6).endFill();
+        inlineRooms.lineStyle(3,C.danger,0.9); for(let a=0;a<3;a++){ const an=a/3*TAU+t*2; inlineRooms.moveTo(940,425).lineTo(940+Math.cos(an)*10,425+Math.sin(an)*10); } }
+      inlineLbl.alpha=easeOut(ph(t,155.06,155.6))*(1-ph(t,157.0,157.8));
+      // recommendation pipeline @157.86: sampling strobe finds hotspot, arrow -> trace only hot room @161.20
+      pipeline.clear(); flame.clear();
+      if(t>=157.86){ const pa=easeOut(ph(t,157.86,158.97));
+        pipeline.lineStyle(3,C.sampling,0.8*pa).moveTo(220,300).lineTo(520,300); // sampling sweep
+        pipeline.beginFill(C.accent,0.6*pa).drawCircle(540,300,8).endFill(); // found hotspot
+        pipeline.lineStyle(3,C.accent,0.7*pa).moveTo(560,300).lineTo(740,300); // arrow right
+        pipeline.beginFill(C.accent,0.7*pa).drawPolygon([740,294,752,300,740,306]); }
+      // flame on hotspot room @161.20 (only the hot room gets turnstiles)
+      if(t>=161.20){ const fa=0.6+0.4*beat(t*2); const fx=860,fy=300;
+        flame.beginFill(C.tracing,0.85).moveTo(fx,fy-26).quadraticCurveTo(fx+12,fy-8,fx+6,fy+6).quadraticCurveTo(fx,fy-2,fx-6,fy+6).quadraticCurveTo(fx-12,fy-8,fx,fy-26).endFill();
+        if(flame._g) flame._g.outerStrength=2+2*beat(t*2);
+        flame.lineStyle(2.5,C.tracing,0.9); for(let a=0;a<3;a++){ const an=a/3*TAU+t*2; flame.moveTo(fx,fy+18).lineTo(fx+Math.cos(an)*9,fy+18+Math.sin(an)*9); } }
+      rec.alpha=easeOut(ph(t,157.86,158.5))*(1-ph(t,164.3,164.9));
+    },destroy(){ removeOverlayFx('probe'); }};
+  });
+
+  // ---------- S21 : OUTRO 164.94-175.26 (static vs dynamic) ----------
+  scene(164.94,175.26,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    const divider=new PIXI.Graphics(); c.addChild(divider);
+    // LEFT static blueprint (wireframe cabins, desaturated)
+    const blueprint=new PIXI.Graphics(); c.addChild(blueprint);
+    if(PIXI.ColorMatrixFilter){ var bpGrade=new PIXI.ColorMatrixFilter(); bpGrade.desaturate(); bpGrade.brightness(0.9,true); blueprint.filters=[bpGrade]; }
+    const lStat=txt('statická — bez běhu',18,C.sampling,'800'); lStat.position.set(320,560); lStat.alpha=0; legible(lStat); c.addChild(lStat);
+    const magBP=new PIXI.Graphics(); c.addChild(magBP);
+    // RIGHT dynamic live feed (warm probe dip)
+    const liveProbe=new PIXI.Graphics(); c.addChild(liveProbe);
+    const rDyn=txt('dynamická — za běhu',18,C.reachable,'800'); rDyn.position.set(960,560); rDyn.alpha=0; legible(rDyn); c.addChild(rDyn);
+    return {c,update(lt,t){
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      if(t>=164.94){ ['crt','kawase','bridgeTwist','probe'].forEach(removeOverlayFx); }
+      if(godrayF) godrayF.gain=lerp(0.4,0.55,ph(t,164.94,168.0));
+      // divider stays at x=640
+      divider.clear(); const dva=easeOut(ph(t,164.94,166.0));
+      divider.lineStyle(2,C.muted,0.5*dva).moveTo(640,160).lineTo(640,600);
+      // left blueprint wireframe @166.35
+      blueprint.clear();
+      const bpa=easeOut(ph(t,166.35,167.5))*(1-ph(t,174.6,175.26));
+      if(bpa>0.01){ blueprint.lineStyle(1.6,C.sampling,0.7*bpa);
+        blueprint.drawRect(190,250,90,60); for(let j=0;j<4;j++){ blueprint.drawRect(180+j*70,400,50,40); blueprint.moveTo(235,310).lineTo(205+j*70,400); } }
+      lStat.alpha=easeOut(ph(t,166.35,167.0))*(1-ph(t,174.6,175.26));
+      magBP.clear(); if(bpa>0.5){ magBP.lineStyle(2,C.sampling,0.7*bpa).drawCircle(260,300,16).moveTo(272,312).lineTo(284,324); }
+      // L30->L31 intra-S21 held "programu" @169.34-170.00 ZoomBlur ('zoomHeld' center (640,300))
+      if(t>=169.34 && !hasOverlayFx('zoomHeld') && t<170.00){ if(FILT.zoomHeld){ FILT.zoomHeld.center=[640,300]; addOverlayFx('zoomHeld',FILT.zoomHeld);} }
+      if(FILT.zoomHeld && hasOverlayFx('zoomHeld')){ let st; if(t<170.00) st=0.20*easeInOut(ph(t,169.34,170.00)); else st=0.20*(1-ph(t,170.00,170.8));
+        FILT.zoomHeld.strength=clamp01(st); if(t>=170.8) removeOverlayFx('zoomHeld'); }
+      // right live feed probe @170.00
+      liveProbe.clear();
+      const lpa=easeOut(ph(t,170.00,171.0))*(1-ph(t,174.6,175.26));
+      if(lpa>0.01){ liveProbe.lineStyle(2,C.reachable,0.7*lpa).drawRect(720,250,360,200);
+        const pd=ph(t,172.50,174.24); liveProbe.lineStyle(2,C.accent,0.8*lpa).moveTo(760,440); for(let x=0;x<=20;x++){ const xx=760+x*16; liveProbe.lineTo(xx,440-Math.abs(Math.sin(x*0.6+t*2))*60*pd); } }
+      rDyn.alpha=easeOut(ph(t,170.00,170.7))*(1-ph(t,174.6,175.26));
+      heroSkin='cabin'; heroFieldsLit=1;
+    },destroy(){ removeOverlayFx('zoomHeld'); }};
+  });
+
+  // ---------- S22a : OUTRO close 175.26-186.70 (held summary couplet) ----------
+  scene(175.26,186.70,'OUTRO','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const divider=new PIXI.Graphics(); c.addChild(divider);
+    const blueprint=new PIXI.Graphics(); c.addChild(blueprint);
+    if(PIXI.ColorMatrixFilter){ var bpGrade2=new PIXI.ColorMatrixFilter(); bpGrade2.desaturate(); bpGrade2.brightness(0.9,true); blueprint.filters=[bpGrade2]; }
+    const liveProbe=new PIXI.Graphics(); c.addChild(liveProbe);
+    const lStat=txt('statická — bez běhu',18,C.sampling,'800'); lStat.position.set(320,560); legible(lStat); c.addChild(lStat);
+    const rDyn=txt('dynamická — za běhu',18,C.reachable,'800'); rDyn.position.set(960,560); legible(rDyn); c.addChild(rDyn);
+    const title=txt('RITEJND',56,C.accent,'900'); title.position.set(640,330); title.alpha=0; legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:2,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('co se uvolní se mnou',24,C.muted,'700'); sub.position.set(640,378); sub.alpha=0; legible(sub);
+    c.addChild(title,sub);
+    return {c,update(lt,t){
+      camDollyScale=lerp(1.04,1.0,easeInOut(ph(t,175.26,179.0))); camPivotX=640; camPivotY=360;
+      if(godrayF) godrayF.gain=0.55;
+      divider.clear(); divider.lineStyle(2,C.muted,0.4).moveTo(640,160).lineTo(640,600);
+      // both panels hold side by side
+      blueprint.clear();
+      blueprint.lineStyle(1.6,C.sampling,0.7*(0.7+0.3*ph(t,175.26,178.86)));
+      blueprint.drawRect(190,250,90,60); for(let j=0;j<4;j++){ blueprint.drawRect(180+j*70,400,50,40); blueprint.moveTo(235,310).lineTo(205+j*70,400); }
+      liveProbe.clear(); liveProbe.lineStyle(2,C.reachable,0.7).drawRect(720,250,360,200);
+      const pd=0.7+0.3*beat(t); liveProbe.lineStyle(2,C.accent,0.8).moveTo(760,440); for(let x=0;x<=20;x++){ const xx=760+x*16; liveProbe.lineTo(xx,440-Math.abs(Math.sin(x*0.6+t*2))*50*pd); }
+      // left flares on Statická@175.26 / bez běhu, right flares on dynamická@181.21 / za běhu@185.46
+      lStat.scale.set(1+0.06*easeOut(ph(t,175.26,176.0))*(1-ph(t,180.0,181.0)));
+      rDyn.scale.set(1+0.06*easeOut(ph(t,181.21,182.0)));
+      // title return @181.21
+      title.alpha=easeOut(ph(t,181.21,182.6)); if(title._g) title._g.outerStrength=2+1.5*beat(t);
+      sub.alpha=easeOut(ph(t,183.0,184.2));
+      if(bloomF) bloomF.bloomScale=1.0+0.4*beat(t);
+      heroSkin='cabin'; heroFieldsLit=1;
+    }};
+  });
+
+  // ---------- S22b : END-CARD 186.70-193.560 ----------
+  scene(186.70,193.560,'END','outro',(S)=>{
+    const c=new PIXI.Container();
+    let bloomF=null; if(hasF('AdvancedBloomFilter')){ bloomF=new F.AdvancedBloomFilter({threshold:0.4,bloomScale:1.0,brightness:1.0,blur:8,quality:4}); c.filters=[bloomF]; }
+    const title=txt('RITEJND',56,C.accent,'900'); title.position.set(640,330); legible(title);
+    if(hasF('GlowFilter')){ title._g=new F.GlowFilter({distance:18,outerStrength:1.5,color:C.accent,quality:0.4}); title.filters=(title.filters||[]).concat([title._g]); }
+    const sub=txt('co se uvolní se mnou',24,C.muted,'700'); sub.position.set(640,378); legible(sub);
+    const badge=txt('🌴  retained · shallow · profiling · ESW B4M36ESW',20,C.muted,'700'); badge.position.set(640,560); legible(badge);
+    c.addChild(title,sub,badge);
+    return {c,update(lt,t){
+      const q=ph(t,186.70,193.0);
+      camDollyScale=1; camPivotX=640; camPivotY=360;
+      moteVisibleRatio=lerp(1.0,0.18,easeInOut(q));
+      moteEnvelope=lerp(0.3,0.12,easeInOut(q));
+      if(title._g) title._g.outerStrength=lerp(1.5,0.2,easeInOut(q));
+      if(bloomF) bloomF.bloomScale=1.0+0.25*Math.exp(-Math.pow((t-191.0),2)/0.3);
+      heroSkin='cabin'; heroFieldsLit=1;
+    },destroy(){ moteVisibleRatio=1; }};
+  });
+
+  // ============================================================
+  //  SECTION / GRADE per scene
+  // ============================================================
+  function sectionGrade(t,sec){
+    bgGrade.reset();
+    if(sec==='bridge'){
+      const cool=ph(t,129.86,131.5)*(1-ph(t,163.0,164.94));
+      bgGrade.saturate(-0.22*cool,false);
+      bgGrade.brightness(1-0.06*cool,true);
+    } else if(sec==='chorus'){
+      bgGrade.saturate(0.2,false);
+    } else if(sec==='outro'){
+      bgGrade.saturate(0.08,false);
+    } else {
+      bgGrade.saturate(0.12,false);
+    }
+    // leak section S12/S13 dusk tint handled in render() gradient
+  }
+
+  // ============================================================
+  //  KARAOKE (DOM) — exact picker (storyboard §6)
+  // ============================================================
+  const subEl=document.getElementById('subtitle'), secEl=document.getElementById('seclabel');
+  let curLine=-1, wordEls=[];
+  function buildLine(L){ subEl.innerHTML=''; wordEls=[];
+    L.words.forEach(w=>{ const kw=document.createElement('span'); kw.className='kw';
+      const wb=document.createElement('span'); wb.className='wb'; wb.textContent=w.w;
+      const wf=document.createElement('span'); wf.className='wf'; wf.textContent=w.w;
+      kw.append(wb,wf); subEl.append(kw,document.createTextNode(' ')); wordEls.push({w,wf,kw}); });
+  }
+  const FIRST_WORD_START=170, LAST_WORD_END=186700;
+  function pickLine(ms){
+    if(ms<FIRST_WORD_START || ms>LAST_WORD_END) return null;   // GLOBAL GATE first
+    for(const ln of LINES){ if(ms>=ln.start_ms-250 && ms<=ln.end_ms+600) return ln; }
+    return null;                                                // FALLBACK REMOVED
+  }
+  function renderKaraoke(t){
+    const ms=t*1000;
+    const ln=pickLine(ms);
+    if(!ln){ if(curLine!==-1){ curLine=-1; subEl.innerHTML=''; wordEls=[]; } return; }
+    const li=LINES.indexOf(ln);
+    if(li!==curLine){ curLine=li; buildLine(ln); }
+    for(const we of wordEls){ const w=we.w; const dur=Math.max(120,w.end_ms-w.start_ms);
+      const p = ms>=w.end_ms?1: ms>=w.start_ms?(ms-w.start_ms)/dur:0;
+      we.wf.style.width=(clamp01(p)*100)+'%';
+      const active=(ms>=w.start_ms && ms<w.end_ms);
+      if(active) we.kw.classList.add('active'); else we.kw.classList.remove('active');
+    }
+  }
+
+  // ============================================================
+  //  MAIN RENDER (pure function of t)
+  // ============================================================
+  function currentSceneIndex(t){ let si=0; for(let i=0;i<SC.length;i++){ if(t>=SC[i].t0) si=i; } return si; }
+  function render(t){
+    RT=t;
+    const dt=app.ticker.deltaMS/1000;
+    bgIntent.kawase=false;
+    const si=currentSceneIndex(t);
+    const sc=SC[si];
+    const sec=sc.sec.trim();
+    // ----- background gradient (section-aware) -----
+    let top=C.bgTop, bot=C.bgBot;
+    if(sec==='bridge'){ const cool=ph(t,129.86,131.5)*(1-ph(t,163.0,164.94)); top=lerpColor(C.bgTop,C.bgTopCold,cool); bot=lerpColor(C.bgBot,C.bgBotCold,cool); }
+    // leak dusk tint S12/S13 (92.12..101.84)
+    if(t>=92.12 && t<101.84){ const d=ph(t,92.12,93.5)*(1-ph(t,100.8,101.84)); top=lerpColor(top,C.bgTopDusk,0.35*d); }
+    if(t>=186.70){ const q=easeInOut(ph(t,186.70,193.0)); top=lerpColor(top,0x0a141e,q); bot=lerpColor(bot,0x04111a,q); }
+    drawSky(top,bot);
+    sectionGrade(t,sec);
+    // dust drift
+    dustTile.tilePosition.y=(-(t*18))%256; dustTile.alpha=0.05*moteEnvelope/0.3;
+    if(reflF) reflF.time=t;
+    if(godrayF){ godrayF.time=t; }
+    bgIntent.godray=(sec==='intro'||sec==='chorus'||sec==='outro');
+
+    // ----- scene manager (with backward-jump reset) -----
+    if(si===activeIdx){ const a=SC[activeIdx]; const localT=t-a.t0; if(a.inst && a.lastLocal>=0 && localT < a.lastLocal-0.05){ a.fired=new Set(); } }
+    setSceneByIndex(si);
+    const cur=SC[activeIdx];
+    if(cur && cur.inst){
+      cur.inst.c.alpha=lerp(cur.inst.c.alpha,1,0.12);
+      try{ cur.inst.update(t-cur.t0,t); }catch(e){ showErr('scene '+cur.name+': '+e.message); }
+      cur.lastLocal=t-cur.t0;
+    }
+    // ----- compose bgLayer.filters once per frame from intent flags -----
+    { const arr=[bgGrade];
+      if(bgIntent.kawase && FILT.kawase) arr.push(FILT.kawase);
+      if(bgIntent.godray && godrayF) arr.push(godrayF);
+      bgLayer.filters=arr;
+    }
+
+    // ----- yard persistence -----
+    // bridge re-skins the yard into the profiling stage: recede yardLayer
+    let yardAlpha=1;
+    if(sec==='bridge'){ yardAlpha=lerp(1,0.25,ph(t,129.86,131.2)); if(t>=163.0) yardAlpha=lerp(0.25,1,easeOut(ph(t,164.94,166.0))); }
+    else if(sec==='outro' && t>=164.94 && t<166.0){ yardAlpha=lerp(0.25,1,easeOut(ph(t,164.94,166.0))); }
+    yardLayer.alpha=clamp01(yardAlpha);
+    // owned cabins shown after S1 entrance
+    if(t>=0.17){ for(const o of owned){ if(o.cont.alpha<1 && t>4.2 && sec!=='bridge' && !yardDrop.active){ o.cont.alpha=1; } } }
+
+    renderYard(t,sec);
+
+    // ----- camera -----
+    updateCamera(t,dt);
+
+    // ----- karaoke -----
+    renderKaraoke(t);
+    secEl.textContent=sc.name; secEl.style.opacity=sc.name?0.85:0;
+
+    // ----- controls -----
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(!seekDragging){ seek.value=t; seek.style.setProperty('--p',(t/dur*100)+'%'); }
+    tCur.textContent=fmt(t);
+  }
+
+  // ============================================================
+  //  AMBIENT (deltaMS) — motes + sparks (non-load-bearing)
+  // ============================================================
+  app.ticker.add(()=>{
+    const dt=app.ticker.deltaMS/1000;
+    const playing = !player.paused && !player.ended;
+    for(let i=0;i<motes.length;i++){ const m=motes[i];
+      if(playing){ m.s.x+=m.vx*dt; m.s.y+=m.vy*dt; m.phs+=dt*m.sp;
+        if(m.s.y<-20){ m.s.y=H+20; m.s.x=Math.random()*W; } }
+      const visible=(i/motes.length)<moteVisibleRatio || i< motes.length*0.18;
+      m.s.alpha=visible? moteEnvelope*(0.7+0.5*Math.sin(m.phs)) : 0;
+    }
+    if(playing){
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.life+=dt; s.s.x+=s.vx; s.s.y+=s.vy; s.vy+=0.04; s.s.alpha=0.9*(1-s.life/s.max);
+        if(s.life>=s.max){ s.s.destroy(); sparks.splice(i,1); } }
+    }
+    render(player.currentTime||0);
+  });
+
+  // ============================================================
+  //  PLAYER + CONTROLS
+  // ============================================================
+  const bigplay=document.getElementById('bigplay'), btnPlay=document.getElementById('btnPlay'), btnRestart=document.getElementById('btnRestart');
+  const seek=document.getElementById('seek'), tCur=document.getElementById('tCur'), tDur=document.getElementById('tDur');
+  let seekDragging=false;
+  const fmt=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  player.addEventListener('loadedmetadata',()=>{ const d=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR; seek.max=d; tDur.textContent=fmt(d); });
+  function play(){ player.play().catch(e=>showErr('play: '+e.message)); bigplay.classList.add('hidden'); btnPlay.textContent='⏸'; }
+  function pause(){ player.pause(); btnPlay.textContent='▶'; }
+  bigplay.addEventListener('click',play);
+  btnPlay.addEventListener('click',()=>player.paused?play():pause());
+  btnRestart.addEventListener('click',()=>{ player.currentTime=0; play(); });
+  player.addEventListener('ended',()=>{ btnPlay.textContent='▶'; bigplay.classList.remove('hidden'); const h=bigplay.querySelector('.hint'); if(h) h.innerHTML='Přehrát znovu?'; });
+  seek.addEventListener('input',()=>{ seekDragging=true; const v=parseFloat(seek.value); __seek(v); });
+  seek.addEventListener('change',()=>{ seekDragging=false; });
+  document.addEventListener('keydown',e=>{ const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    if(e.code==='Space'){ e.preventDefault(); player.paused?play():pause(); }
+    else if(e.code==='ArrowRight'){ player.currentTime=Math.min(dur,player.currentTime+5); }
+    else if(e.code==='ArrowLeft'){ player.currentTime=Math.max(0,player.currentTime-5); }
+    else if(e.key==='r'||e.key==='R'||e.code==='Home'){ player.currentTime=0; play(); }
+  });
+
+  // ============================================================
+  //  TEST HOOKS
+  // ============================================================
+  window.__APP__=app; window.__AUDIO__=player;
+  window.__seek=function(t){
+    const dur=(player.duration&&isFinite(player.duration))?player.duration:STAGE_DUR;
+    t=clamp(t,0,dur);
+    if(player.readyState>0){ try{ player.currentTime=t; }catch(e){} }
+    render(t);
+    try{ app.renderer.render(app.stage); }catch(e){}
+  };
+
+  // initial render
+  try{ render(0); }catch(e){ showErr('init render: '+e.message); }
+  window.__READY__=true;
+
+  })();</script>
+</body>
+</html>
